@@ -4,15 +4,8 @@
 import InputField from "@amzn/innovation-sandbox-frontend/components/FormFields/InputField";
 import { AttributeEditor, FormField } from "@cloudscape-design/components";
 import type { FormFieldProps } from "@cloudscape-design/components/form-field";
-import {
-  ArrayPath,
-  Control,
-  FieldArray,
-  FieldValues,
-  Path,
-  useFieldArray,
-  useFormContext,
-} from "react-hook-form";
+import type { ArrayPath, Control, FieldValues, Path } from "react-hook-form";
+import { useFieldArray, useFormContext } from "react-hook-form";
 
 export interface TagItem {
   key: string;
@@ -59,7 +52,7 @@ export default function TagEditorField<
 
   const { trigger } = useFormContext();
   const handleAdd = () => {
-    append({ key: "", value: "" } as FieldArray<TFieldValues, TName>);
+    append({ key: "", value: "" } as Parameters<typeof append>[0]);
   };
 
   const handleRemove = (itemIndex: number) => {

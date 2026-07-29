@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.15] - 2026-07-28
+
+### Security
+
+- Upgraded `postcss` to mitigate:
+  - [GHSA-r28c-9q8g-f849](https://github.com/advisories/GHSA-r28c-9q8g-f849) — path traversal in previous source map auto-loading (`sourceMappingURL`) leading to arbitrary `.map` file disclosure
+- Refreshed npm dependencies to their latest in-range versions.
+- Updated `amazonlinux:2023-minimal` base image digest to the latest available (routine hygiene; no outstanding high/critical OS CVEs).
+
+### Fixed
+
+- Updated `TagEditorField` to accommodate the `FieldArray` value/type export change introduced in `react-hook-form` 7.83.
+
 ## [1.2.14] - 2026-07-24
 
 ### Security
