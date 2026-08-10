@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # To update: docker manifest inspect public.ecr.aws/amazonlinux/amazonlinux:2023-minimal | jq -r '.manifests[] | select(.platform.architecture=="amd64") | .digest'
-ARG BASE_IMAGE_DIGEST=sha256:23a95c54c18f18ea84e7a2a2ecf6cec8a4a37b827c058a40e36fd1621e38fd6c
+ARG BASE_IMAGE_DIGEST=sha256:b069139a2e800c216efabaf44e22137c8741e3015510284e8b71b00ce2bb6945
 
 # Build aws-nuke from source
 FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@${BASE_IMAGE_DIGEST} AS builder

@@ -5,6 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.16] - 2026-08-10
+
+### Security
+
+- Upgraded `brace-expansion` to mitigate:
+  - [CVE-2026-14257](https://nvd.nist.gov/vuln/detail/CVE-2026-14257) — denial of service via malformed expansion input
+- Upgraded `fast-uri` to mitigate:
+  - [CVE-2026-18446](https://nvd.nist.gov/vuln/detail/CVE-2026-18446) — host confusion via backslash in URI authority
+- Upgraded `js-yaml` to mitigate:
+  - [GHSA-5p4m-2wfm-xmqj](https://github.com/advisories/GHSA-5p4m-2wfm-xmqj) — quadratic CPU consumption in `!!omap` resolution
+- Upgraded `nanoid` to mitigate:
+  - [CVE-2026-67213](https://nvd.nist.gov/vuln/detail/CVE-2026-67213) — infinite loop in the custom alphabet code path
+- Upgraded `pyasn1` in the AWS CLI Lambda layer via an `@aws-cdk/asset-awscli-v1` override to mitigate:
+  - [CVE-2026-59884](https://nvd.nist.gov/vuln/detail/CVE-2026-59884)
+  - [CVE-2026-59885](https://nvd.nist.gov/vuln/detail/CVE-2026-59885)
+  - [CVE-2026-59886](https://nvd.nist.gov/vuln/detail/CVE-2026-59886)
+- Updated `amazonlinux:2023-minimal` base image digest to mitigate:
+  - `gawk`:
+    - [CVE-2026-40467](https://nvd.nist.gov/vuln/detail/CVE-2026-40467)
+    - [CVE-2026-40553](https://nvd.nist.gov/vuln/detail/CVE-2026-40553)
+  - `glib2`:
+    - [CVE-2026-16118](https://nvd.nist.gov/vuln/detail/CVE-2026-16118)
+  - `python3`, `python3-libs`, `python-unversioned-command`:
+    - [CVE-2026-15308](https://nvd.nist.gov/vuln/detail/CVE-2026-15308)
+  - `rpm`, `rpm-libs`:
+    - [CVE-2026-44605](https://nvd.nist.gov/vuln/detail/CVE-2026-44605)
+
 ## [1.2.15] - 2026-07-28
 
 ### Security
