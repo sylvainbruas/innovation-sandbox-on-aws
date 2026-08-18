@@ -1,7 +1,7 @@
 {
   "name": "@amzn/innovation-sandbox-infrastructure",
   "description": "Infrastructure - Innovation Sandbox on AWS (SO0284)",
-  "version": "1.2.16",
+  "version": "1.2.17",
   "bin": {
     "infrastructure": "bin/app.js"
   },
@@ -17,7 +17,7 @@
     "@aws-solutions-constructs/aws-eventbridge-sqs": "^2.85.0",
     "@aws-solutions-constructs/aws-sqs-lambda": "^2.85.0",
     "aws-cdk": "^2.1031.0",
-    "aws-cdk-lib": "^2.221.0",
+    "aws-cdk-lib": "^2.265.0",
     "constructs": "^10.3.0"
   }
 }

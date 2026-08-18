@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.17] - 2026-08-18
+
+### Security
+
+- Upgraded `aws-cdk-lib` to 2.265.0, which refreshes its bundled `brace-expansion` to 5.0.9, to mitigate:
+  - [CVE-2026-69152](https://nvd.nist.gov/vuln/detail/CVE-2026-69152) — denial of service via unbounded intermediate arrays, bypassing the CVE-2026-14257 mitigation
+- Upgraded the Go toolchain used to build the `innovation-sandbox-on-aws-account-cleaner` container image from 1.26.5 to 1.26.6, rebuilding `aws-nuke` against a patched Go standard library to mitigate:
+  - [CVE-2026-39821](https://nvd.nist.gov/vuln/detail/CVE-2026-39821) — validation bypass / privilege escalation from failure to reject ASCII-only Punycode-encoded labels
+  - [CVE-2026-33818](https://nvd.nist.gov/vuln/detail/CVE-2026-33818) — stack exhaustion in `encoding/asn1` when parsing deeply nested structures
+  - [CVE-2026-46600](https://nvd.nist.gov/vuln/detail/CVE-2026-46600) — panic when parsing invalid SVCB/HTTPS DNS records
+  - [CVE-2026-56853](https://nvd.nist.gov/vuln/detail/CVE-2026-56853) — missing `ReadHeaderTimeout` on the unencrypted HTTP/2 preface check in `net/http`
+  - [CVE-2026-56859](https://nvd.nist.gov/vuln/detail/CVE-2026-56859) — stack exhaustion in `encoding/xml` from a reset recursion-depth counter
+  - [CVE-2026-56862](https://nvd.nist.gov/vuln/detail/CVE-2026-56862) — unbounded post-handshake key derivation in `crypto/tls`
+
 ## [1.2.16] - 2026-08-10
 
 ### Security

@@ -11,9 +11,10 @@ ARG AWS_NUKE_VERSION=v3.66.0
 # To update: curl -sL https://github.com/ekristen/aws-nuke/archive/refs/tags/vX.Y.Z.tar.gz | shasum -a 256 | awk '{print $1}'
 ARG AWS_NUKE_SOURCE_SHA256=3071dd7f1d61f42ca065af87aa675ada8ec11abfac08d135058845635561b676
 
-# Go 1.26.5 required by aws-nuke v3.65.0 (AL2023 only ships Go 1.25.x via dnf)
-ARG GO_VERSION=1.26.5
-ARG GO_SHA256=5c2c3b16caefa1d968a94c1daca04a7ca301a496d9b086e17ad77bb81393f053
+# Go 1.26.6 required by aws-nuke v3.66.0 (AL2023 only ships Go 1.25.x via dnf)
+# Patched to 1.26.6 to pick up Go stdlib security fixes (see CHANGELOG v1.2.17)
+ARG GO_VERSION=1.26.6
+ARG GO_SHA256=708effb774be8237570d0add163225abbdfaf4fca28b2611df167beba4feef89
 
 RUN dnf install -y tar gzip git patch && \
     curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" -o /tmp/go.tar.gz && \
