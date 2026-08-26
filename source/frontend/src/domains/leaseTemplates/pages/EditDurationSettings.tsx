@@ -41,7 +41,7 @@ export const EditDurationSettings = () => {
   const setBreadcrumb = useBreadcrumb();
   const { setTools } = useAppLayoutContext();
 
-  const query = useGetLeaseTemplateById(uuid!);
+  const query = useGetLeaseTemplateById(uuid);
   const { data: leaseTemplate, isLoading, isError, refetch, error } = query;
 
   const { mutateAsync: updateLeaseTemplate, isPending: isUpdating } =
@@ -111,12 +111,16 @@ export const EditDurationSettings = () => {
     if (!leaseTemplate) return;
 
     try {
+      // When a duration is required, the enable toggle is disabled (forced on)
+      // in the form, so `maxDurationEnabled` stays false even though the user
+      // entered a value. Treat "required" as enabled so it is sent, not dropped.
+      const durationEnabled = data.maxDurationEnabled || requireMaxDuration;
       const updatedLeaseTemplate: LeaseTemplate = {
         ...leaseTemplate,
-        leaseDurationInHours: data.maxDurationEnabled
+        leaseDurationInHours: durationEnabled
           ? data.leaseDurationInHours
           : undefined,
-        durationThresholds: data.maxDurationEnabled
+        durationThresholds: durationEnabled
           ? data.durationThresholds
           : undefined,
       };

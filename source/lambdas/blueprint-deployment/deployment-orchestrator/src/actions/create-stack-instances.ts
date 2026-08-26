@@ -22,36 +22,34 @@ import {
 
 import { withCloudFormationBackoff } from "@amzn/innovation-sandbox-blueprint-deployment-orchestrator/utils/cloudformation-backoff.js";
 
-export const CreateActionInputSchema = z
-  .object({
-    action: z.literal("CREATE"),
-    leaseId: z.string().uuid(),
-    blueprintId: z.string().uuid(),
-    accountId: AwsAccountIdSchema,
-    stackSetId: z.string().min(1),
-    regions: z.array(z.string()).min(1),
-    regionConcurrencyType: z.enum(
-      [RegionConcurrencyType.SEQUENTIAL, RegionConcurrencyType.PARALLEL],
+export const CreateActionInputSchema = z.strictObject({
+  action: z.literal("CREATE"),
+  leaseId: z.uuid(),
+  blueprintId: z.uuid(),
+  accountId: AwsAccountIdSchema,
+  stackSetId: z.string().min(1),
+  regions: z.array(z.string()).min(1),
+  regionConcurrencyType: z.enum(
+    [RegionConcurrencyType.SEQUENTIAL, RegionConcurrencyType.PARALLEL],
+    {
+      error: enumErrorMap,
+    },
+  ),
+  maxConcurrentPercentage: z.number().int().min(1).max(100).optional(),
+  failureTolerancePercentage: z.number().int().min(0).max(100).optional(),
+  concurrencyMode: z
+    .enum(
+      [
+        ConcurrencyMode.STRICT_FAILURE_TOLERANCE,
+        ConcurrencyMode.SOFT_FAILURE_TOLERANCE,
+      ],
       {
-        errorMap: enumErrorMap,
+        error: enumErrorMap,
       },
-    ),
-    maxConcurrentPercentage: z.number().int().min(1).max(100).optional(),
-    failureTolerancePercentage: z.number().int().min(0).max(100).optional(),
-    concurrencyMode: z
-      .enum(
-        [
-          ConcurrencyMode.STRICT_FAILURE_TOLERANCE,
-          ConcurrencyMode.SOFT_FAILURE_TOLERANCE,
-        ],
-        {
-          errorMap: enumErrorMap,
-        },
-      )
-      .optional(),
-    executionStartTime: z.string().optional(),
-  })
-  .strict();
+    )
+    .optional(),
+  executionStartTime: z.string().optional(),
+});
 
 export type CreateActionInput = z.infer<typeof CreateActionInputSchema>;
 

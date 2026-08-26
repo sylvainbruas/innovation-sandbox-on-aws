@@ -40,3 +40,7 @@ Strict (slow down on failure) or Soft (keep going at full speed).
 **Timeout**
 
 Maximum time to wait for deployment to complete. Sequential deployments across multiple regions need longer timeouts.
+
+---
+
+For more information, see [Registering a new blueprint](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/administrator-guide.html#registering-blueprint) in the implementation guide.

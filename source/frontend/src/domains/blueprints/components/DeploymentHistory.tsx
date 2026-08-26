@@ -9,6 +9,7 @@ import {
 } from "@cloudscape-design/components";
 import { DateTime } from "luxon";
 
+import { DEPLOYMENT_HISTORY_RETENTION_DAYS } from "@amzn/innovation-sandbox-commons/data/blueprint/blueprint-dynamodb-keys.js";
 import { getDeploymentStatusConfig } from "@amzn/innovation-sandbox-frontend/domains/blueprints/helpers";
 import { DeploymentHistory as DeploymentHistoryType } from "@amzn/innovation-sandbox-frontend/domains/blueprints/types";
 
@@ -81,14 +82,42 @@ const DeploymentIndicator = ({ deployment }: DeploymentIndicatorProps) => {
 
 interface DeploymentHistoryProps {
   deployments?: DeploymentHistoryType[];
+  totalDeploymentCount?: number;
 }
 
-export const DeploymentHistory = ({ deployments }: DeploymentHistoryProps) => {
+// Retention days come from the shared backend TTL constant so this copy can't drift.
+const HISTORY_RETENTION_NOTE = `Detailed deployment history is retained for ${DEPLOYMENT_HISTORY_RETENTION_DAYS} days. Older deployments still count toward the deployment totals but are no longer listed here.`;
+
+export const DeploymentHistory = ({
+  deployments,
+  totalDeploymentCount,
+}: DeploymentHistoryProps) => {
+  const total = totalDeploymentCount ?? 0;
+
   if (!deployments || deployments.length === 0) {
+    // count > 0 with no records = history aged out (TTL); distinguish from a
+    // never-deployed blueprint so it doesn't look like an empty/broken column.
+    if (total > 0) {
+      return (
+        <Popover
+          dismissButton={false}
+          position="top"
+          size="medium"
+          triggerType="text"
+          content={HISTORY_RETENTION_NOTE}
+        >
+          <Box color="text-status-inactive">No recent deployments</Box>
+        </Popover>
+      );
+    }
+
     return <Box>-</Box>;
   }
 
   const recentDeployments = deployments.slice(0, 10).reverse();
+  // Compare against what's actually rendered so the marker also appears when the
+  // 10-item cap hides some, not only when older records aged out.
+  const hasUnshownDeployments = total > recentDeployments.length;
 
   return (
     <SpaceBetween direction="horizontal" size="xxs">
@@ -98,6 +127,17 @@ export const DeploymentHistory = ({ deployments }: DeploymentHistoryProps) => {
           deployment={deployment}
         />
       ))}
+      {hasUnshownDeployments && (
+        <Popover
+          dismissButton={false}
+          position="top"
+          size="medium"
+          triggerType="text"
+          content={HISTORY_RETENTION_NOTE}
+        >
+          <Box color="text-status-inactive">…</Box>
+        </Popover>
+      )}
     </SpaceBetween>
   );
 };

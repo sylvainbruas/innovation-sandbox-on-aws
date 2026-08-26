@@ -1,34 +1,49 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { Button, Header, SpaceBetween } from "@cloudscape-design/components";
+import {
+  Button,
+  Header,
+  SpaceBetween,
+  Tabs,
+} from "@cloudscape-design/components";
 import { useEffect } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 
 import { ContentLayout } from "@amzn/innovation-sandbox-frontend/components/ContentLayout";
 import { ErrorPanel } from "@amzn/innovation-sandbox-frontend/components/ErrorPanel";
 import { Loader } from "@amzn/innovation-sandbox-frontend/components/Loader";
 import { LeaseSummary } from "@amzn/innovation-sandbox-frontend/domains/leases/components/LeaseSummary";
+import { PendingAssignmentsList } from "@amzn/innovation-sandbox-frontend/domains/leases/components/PendingAssignmentsList";
 import { ReviewLeaseConfirmation } from "@amzn/innovation-sandbox-frontend/domains/leases/components/ReviewLeaseConfirmation";
-import { generateBreadcrumb } from "@amzn/innovation-sandbox-frontend/domains/leases/helpers";
+import {
+  generateBreadcrumb,
+  getLeaseDisplayName,
+} from "@amzn/innovation-sandbox-frontend/domains/leases/helpers";
 import { useGetLeaseById } from "@amzn/innovation-sandbox-frontend/domains/leases/hooks";
+import { useGetConfigurations } from "@amzn/innovation-sandbox-frontend/domains/settings/hooks";
 import { useBreadcrumb } from "@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb";
 import { useModal } from "@amzn/innovation-sandbox-frontend/hooks/useModal";
 
 export const ApprovalDetails = () => {
   const { leaseId } = useParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = searchParams.get("tab") ?? "summary";
   const setBreadcrumb = useBreadcrumb();
 
   // modal hook
   const { showModal, hideModal } = useModal();
 
   // get leaseTemplate hook
-  const query = useGetLeaseById(leaseId!);
+  const query = useGetLeaseById(leaseId);
   const { data: lease, isLoading, isError, refetch, error } = query;
+
+  const { data: config } = useGetConfigurations();
+  const leaseSharingEnabled = config?.leases.leaseSharingEnabled ?? false;
 
   // update breadcrumb with approval details
   useEffect(() => {
-    const breadcrumb = generateBreadcrumb(query, true);
+    const breadcrumb = generateBreadcrumb(query, { isApprovalPage: true });
     setBreadcrumb(breadcrumb);
   }, [query.isLoading]);
 
@@ -91,11 +106,46 @@ export const ApprovalDetails = () => {
             </SpaceBetween>
           }
         >
-          {lease.userEmail}
+          {getLeaseDisplayName(lease)}
         </Header>
       }
     >
-      <LeaseSummary lease={lease} />
+      {lease.desiredAssignments && lease.desiredAssignments.length > 0 ? (
+        <Tabs
+          activeTabId={activeTab}
+          onChange={({ detail }) =>
+            setSearchParams({ tab: detail.activeTabId })
+          }
+          tabs={[
+            {
+              id: "summary",
+              label: "Summary",
+              content: (
+                <LeaseSummary
+                  lease={lease}
+                  showAdminFields={true}
+                  leaseSharingEnabled={leaseSharingEnabled}
+                />
+              ),
+            },
+            {
+              id: "sharing",
+              label: "Sharing",
+              content: (
+                <PendingAssignmentsList
+                  desiredAssignments={lease.desiredAssignments}
+                />
+              ),
+            },
+          ]}
+        />
+      ) : (
+        <LeaseSummary
+          lease={lease}
+          showAdminFields={true}
+          leaseSharingEnabled={leaseSharingEnabled}
+        />
+      )}
     </ContentLayout>
   );
 };

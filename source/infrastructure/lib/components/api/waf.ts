@@ -15,7 +15,7 @@ import {
   TreatMissingData,
 } from "aws-cdk-lib/aws-cloudwatch";
 import { IKey } from "aws-cdk-lib/aws-kms";
-import { LogGroup } from "aws-cdk-lib/aws-logs";
+import { CfnResourcePolicy, LogGroup } from "aws-cdk-lib/aws-logs";
 import {
   CfnIPSet,
   CfnLoggingConfiguration,
@@ -24,6 +24,11 @@ import {
 } from "aws-cdk-lib/aws-wafv2";
 import { Construct } from "constructs";
 
+import {
+  WAF_HUMAN_CALLS_METRIC_NAME,
+  WAF_M2M_CALLS_METRIC_NAME,
+} from "@amzn/innovation-sandbox-commons/observability/waf-auth-metrics";
+import { IDENTITY_HEADER } from "@amzn/innovation-sandbox-commons/utils/auth-utils";
 import { getContextFromMapping } from "@amzn/innovation-sandbox-infrastructure/helpers/cdk-context";
 import { addCfnGuardSuppression } from "@amzn/innovation-sandbox-infrastructure/helpers/cfn-guard";
 import { isDevMode } from "@amzn/innovation-sandbox-infrastructure/helpers/deployment-mode";
@@ -81,7 +86,9 @@ export class Waf extends Construct {
                   ipSetForwardedIpConfig: {
                     headerName: "X-Forwarded-For",
                     fallbackBehavior: "NO_MATCH",
-                    position: "FIRST",
+                    // LAST reads the IP appended by the trusted proxy (CloudFront),
+                    // which a client cannot spoof; FIRST is the client-supplied value.
+                    position: "LAST",
                   },
                 },
               },
@@ -180,6 +187,49 @@ export class Waf extends Construct {
             sampledRequestsEnabled: true,
           },
         },
+        // Caller-mix telemetry. Count is non-terminating and sits after the
+        // block rules, so CountedRequests tallies only WAF-allowed traffic.
+        // Human carries x-isb-identity; m2m is the exact complement.
+        {
+          name: "IsbHumanApiCallsRule",
+          priority: 5,
+          action: { count: {} },
+          statement: {
+            sizeConstraintStatement: {
+              fieldToMatch: { singleHeader: { Name: IDENTITY_HEADER } },
+              comparisonOperator: "GE",
+              size: 1,
+              textTransformations: [{ priority: 0, type: "NONE" }],
+            },
+          },
+          visibilityConfig: {
+            cloudWatchMetricsEnabled: true,
+            metricName: WAF_HUMAN_CALLS_METRIC_NAME,
+            sampledRequestsEnabled: true,
+          },
+        },
+        {
+          name: "IsbM2mApiCallsRule",
+          priority: 6,
+          action: { count: {} },
+          statement: {
+            notStatement: {
+              statement: {
+                sizeConstraintStatement: {
+                  fieldToMatch: { singleHeader: { Name: IDENTITY_HEADER } },
+                  comparisonOperator: "GE",
+                  size: 1,
+                  textTransformations: [{ priority: 0, type: "NONE" }],
+                },
+              },
+            },
+          },
+          visibilityConfig: {
+            cloudWatchMetricsEnabled: true,
+            metricName: WAF_M2M_CALLS_METRIC_NAME,
+            sampledRequestsEnabled: true,
+          },
+        },
       ],
     });
 
@@ -203,6 +253,12 @@ export class Waf extends Construct {
     ]); // Retention period is defined in CfnMapping and evades the CFN Guard check
 
     this.wafLogGroup.grantWrite(new ServicePrincipal("wafv2.amazonaws.com"));
+
+    // Namespace grantWrite's auto-named (construct-id-derived) Logs resource policy so
+    // multiple ISB instances in one account/region don't collide on the policy name.
+    const wafLogGroupPolicy = this.wafLogGroup.node.findChild("Policy").node
+      .defaultChild as CfnResourcePolicy;
+    wafLogGroupPolicy.policyName = `${props.namespace}-IsbWafLogGroupPolicy`;
 
     new CfnLoggingConfiguration(this, "WafLoggingConfiguration", {
       resourceArn: this.webAcl.attrArn,
@@ -234,6 +290,16 @@ export class Waf extends Construct {
         {
           singleHeader: {
             Name: "Authorization",
+          },
+        },
+        {
+          singleHeader: {
+            Name: "x-amz-security-token",
+          },
+        },
+        {
+          singleHeader: {
+            Name: IDENTITY_HEADER,
           },
         },
       ],

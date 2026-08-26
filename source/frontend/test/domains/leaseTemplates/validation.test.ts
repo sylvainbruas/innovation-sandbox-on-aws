@@ -24,6 +24,7 @@ describe("Lease Template Validation", () => {
         description: "Test Description",
         requiresApproval: true,
         visibility: "PRIVATE" as const,
+        allowOwnerToShareLease: false,
       };
 
       const result = BasicDetailsValidationSchema.safeParse(validData);
@@ -38,6 +39,7 @@ describe("Lease Template Validation", () => {
         name,
         requiresApproval: true,
         visibility: "PRIVATE" as const,
+        allowOwnerToShareLease: false,
       };
 
       const result = BasicDetailsValidationSchema.safeParse(invalidData);
@@ -336,6 +338,7 @@ describe("Lease Template Validation", () => {
         description: "Test Description",
         requiresApproval: true,
         visibility: "PRIVATE" as const,
+        allowOwnerToShareLease: false,
         blueprintEnabled: false,
         maxBudgetEnabled: true,
         maxSpend: 1000,
@@ -364,6 +367,7 @@ describe("Lease Template Validation", () => {
         name: "Test",
         requiresApproval: true,
         visibility: "PRIVATE" as const,
+        allowOwnerToShareLease: false,
         blueprintEnabled: false,
         maxBudgetEnabled: true,
         maxSpend: undefined,

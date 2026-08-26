@@ -44,10 +44,23 @@ export class LogMetricsSubscriber extends Construct {
       logGroup: IsbComputeResources.globalLogGroup,
     });
 
+    const destination = new LambdaDestination(
+      this.lambdaHandler.lambdaFunction,
+    );
+    const filterPattern = FilterPattern.all(
+      FilterPattern.exists("$.logDetailType"),
+    );
+
     new SubscriptionFilter(this, "LogSubscription", {
       logGroup: IsbComputeResources.globalLogGroup,
-      destination: new LambdaDestination(this.lambdaHandler.lambdaFunction),
-      filterPattern: FilterPattern.all(FilterPattern.exists("$.logDetailType")),
+      destination,
+      filterPattern,
+    });
+
+    new SubscriptionFilter(this, "CleanupLogSubscription", {
+      logGroup: IsbComputeResources.cleanupLogGroup,
+      destination,
+      filterPattern,
     });
   }
 }

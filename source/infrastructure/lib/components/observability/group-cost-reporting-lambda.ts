@@ -53,6 +53,7 @@ export class GroupCostReportingLambda extends Construct {
       encryptionMasterKey: IsbKmsKeys.get(scope, props.namespace),
       retentionPeriod: Duration.days(14),
       visibilityTimeout: Duration.minutes(5),
+      enforceSSL: true,
     });
 
     const groupCostReportingLambda = new IsbLambdaFunction(

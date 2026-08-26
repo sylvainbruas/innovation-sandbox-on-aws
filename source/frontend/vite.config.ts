@@ -3,7 +3,13 @@
 
 import react from "@vitejs/plugin-react";
 import path from "path";
-import { defineConfig, UserConfig } from "vite";
+import { defineConfig, loadEnv, ProxyOptions, UserConfig } from "vite";
+
+import {
+  buildDevProxy,
+  PROXIED_PATHS,
+  resolveApiProxyTarget,
+} from "./vite/resolve-proxy-target";
 
 export const commonConfig: UserConfig = {
   resolve: {
@@ -19,29 +25,47 @@ export const commonConfig: UserConfig = {
 };
 
 // https://vitejs.dev/config/
-export default defineConfig({
-  ...commonConfig,
-  define: {
-    global: {},
-    SOLUTION_VERSION: JSON.stringify(process.env.npm_package_version),
-  },
-  build: {
-    chunkSizeWarningLimit: 3000,
-    rollupOptions: {
-      onwarn(warning, defaultHandler) {
-        if (
-          warning.code === "UNRESOLVED_IMPORT" &&
-          /file-loader\?esModule=false!\.\/src-noconflict\//.test(
-            warning.message,
-          )
-        ) {
-          // Suppress the warning for ace-builds file-loader imports
-          return;
-        }
+export default defineConfig(async ({ command, mode }) => {
+  let proxy: Record<string, ProxyOptions> | undefined;
 
-        // Handle other warnings as usual
-        defaultHandler(warning);
+  // Only resolve/proxy for the dev server — never during `vite build`.
+  if (command === "serve") {
+    // Read deployment settings from the repo-root .env (two levels up).
+    const env = loadEnv(mode, path.resolve(__dirname, "..", ".."), "");
+    const target = await resolveApiProxyTarget(env);
+    if (target) {
+      proxy = buildDevProxy(target);
+      console.info(`[vite] Proxying ${PROXIED_PATHS.join(", ")} -> ${target}`);
+    }
+  }
+
+  return {
+    ...commonConfig,
+    server: {
+      proxy,
+    },
+    define: {
+      global: {},
+      SOLUTION_VERSION: JSON.stringify(process.env.npm_package_version),
+    },
+    build: {
+      chunkSizeWarningLimit: 3000,
+      rollupOptions: {
+        onwarn(warning, defaultHandler) {
+          if (
+            warning.code === "UNRESOLVED_IMPORT" &&
+            /file-loader\?esModule=false!\.\/src-noconflict\//.test(
+              warning.message,
+            )
+          ) {
+            // Suppress the warning for ace-builds file-loader imports
+            return;
+          }
+
+          // Handle other warnings as usual
+          defaultHandler(warning);
+        },
       },
     },
-  },
+  };
 });

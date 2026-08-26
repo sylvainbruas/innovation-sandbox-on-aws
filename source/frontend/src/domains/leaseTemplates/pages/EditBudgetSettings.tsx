@@ -41,7 +41,7 @@ export const EditBudgetSettings = () => {
   const setBreadcrumb = useBreadcrumb();
   const { setTools } = useAppLayoutContext();
 
-  const query = useGetLeaseTemplateById(uuid!);
+  const query = useGetLeaseTemplateById(uuid);
   const { data: leaseTemplate, isLoading, isError, refetch, error } = query;
 
   const { mutateAsync: updateLeaseTemplate, isPending: isUpdating } =
@@ -109,9 +109,13 @@ export const EditBudgetSettings = () => {
     if (!leaseTemplate) return;
 
     try {
+      // When a budget is required, the enable toggle is disabled (forced on) in
+      // the form, so `maxBudgetEnabled` stays false even though the user entered
+      // a value. Treat "required" as enabled so the value is sent, not dropped.
+      const budgetEnabled = data.maxBudgetEnabled || requireMaxBudget;
       const updatedLeaseTemplate: LeaseTemplate = {
         ...leaseTemplate,
-        maxSpend: data.maxBudgetEnabled ? data.maxSpend : undefined,
+        maxSpend: budgetEnabled ? data.maxSpend : undefined,
         budgetThresholds: data.budgetThresholds,
       };
 

@@ -20,7 +20,9 @@ import { VersionAlert } from "@amzn/innovation-sandbox-frontend/components/AppLa
 import { FullPageLoader } from "@amzn/innovation-sandbox-frontend/components/FullPageLoader";
 import { MaintenanceBanner } from "@amzn/innovation-sandbox-frontend/components/MaintenanceBanner";
 import { ApprovalsBadge } from "@amzn/innovation-sandbox-frontend/domains/leases/components/ApprovalsBadge";
-import { AuthService } from "@amzn/innovation-sandbox-frontend/helpers/AuthService";
+import { SettingsBadge } from "@amzn/innovation-sandbox-frontend/domains/settings/components/SettingsBadge";
+import { CognitoAuthService } from "@amzn/innovation-sandbox-frontend/helpers/CognitoAuthService";
+import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import { useUser } from "@amzn/innovation-sandbox-frontend/hooks/useUser";
 import { useVersionCheck } from "@amzn/innovation-sandbox-frontend/hooks/useVersion";
 
@@ -43,10 +45,15 @@ export const BaseLayout = ({ children }: AppLayoutProps) => {
     enabled: user?.roles?.includes("Admin"),
   });
 
-  const onExit = useCallback(() => {
+  const onExit = useCallback(async () => {
     setIsLoggingOut(true);
     queryClient.clear();
-    AuthService.logout();
+    try {
+      await CognitoAuthService.logout();
+    } catch (error) {
+      console.error("Logout failed", error);
+      globalThis.location.href = getConfig().AwsAccessPortalUrl;
+    }
   }, [queryClient]);
 
   const navigation = useMemo(() => {
@@ -56,6 +63,7 @@ export const BaseLayout = ({ children }: AppLayoutProps) => {
 
     // Home (all users)
     navigationItems.push({ href: "/", text: "Home", type: "link" });
+    navigationItems.push({ href: "/leases", text: "Leases", type: "link" });
 
     // Manager and Admin items
     if (isManager || isAdmin) {
@@ -66,7 +74,6 @@ export const BaseLayout = ({ children }: AppLayoutProps) => {
         type: "link",
         info: <ApprovalsBadge />,
       });
-      navigationItems.push({ href: "/leases", text: "Leases", type: "link" });
       navigationItems.push({
         href: "/lease_templates",
         text: "Lease Templates",
@@ -94,6 +101,7 @@ export const BaseLayout = ({ children }: AppLayoutProps) => {
         href: "/settings",
         text: "Settings",
         type: "link",
+        info: <SettingsBadge />,
       });
     }
 
@@ -159,6 +167,7 @@ export const BaseLayout = ({ children }: AppLayoutProps) => {
         tools={toolsContent}
         toolsOpen={toolsOpen}
         onToolsChange={({ detail }) => setToolsOpen(detail.open)}
+        notifications={<MaintenanceBanner />}
         breadcrumbs={
           <BreadcrumbGroup
             items={breadcrumb}
@@ -168,12 +177,7 @@ export const BaseLayout = ({ children }: AppLayoutProps) => {
             }}
           />
         }
-        content={
-          <>
-            <MaintenanceBanner />
-            {children}
-          </>
-        }
+        content={children}
       />
     </AppLayoutProvider>
   );

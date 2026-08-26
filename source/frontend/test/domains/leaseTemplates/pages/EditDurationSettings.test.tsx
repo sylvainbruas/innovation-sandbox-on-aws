@@ -12,7 +12,8 @@ import {
   showSuccessToast,
 } from "@amzn/innovation-sandbox-frontend/components/Toast";
 import { EditDurationSettings } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/pages/EditDurationSettings";
-import { config } from "@amzn/innovation-sandbox-frontend/helpers/config";
+import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
+import { createConfiguration } from "@amzn/innovation-sandbox-frontend/mocks/factories/configurationFactory";
 import { mockAdvancedLeaseTemplate } from "@amzn/innovation-sandbox-frontend/mocks/handlers/leaseTemplateHandlers";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
 import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
@@ -81,7 +82,7 @@ describe("EditDurationSettings", () => {
     const submitSpy = vi.fn();
     server.use(
       http.put(
-        `${config.ApiUrl}/leaseTemplates/${mockUuid}`,
+        `${getConfig().ApiUrl}/leaseTemplates/${mockUuid}`,
         async ({ request }) => {
           const data = await request.json();
           submitSpy(data);
@@ -117,7 +118,7 @@ describe("EditDurationSettings", () => {
 
   test("displays error toast on submission failure", async () => {
     server.use(
-      http.put(`${config.ApiUrl}/leaseTemplates/${mockUuid}`, () => {
+      http.put(`${getConfig().ApiUrl}/leaseTemplates/${mockUuid}`, () => {
         return HttpResponse.json(
           { status: "error", message: "Update failed" },
           { status: 500 },
@@ -161,5 +162,60 @@ describe("EditDurationSettings", () => {
 
     const saveButton = screen.getByRole("button", { name: /save changes/i });
     expect(saveButton).toBeDisabled();
+  });
+
+  test("assigns a duration when required and none was previously set", async () => {
+    // Regression: with a required duration and none set, the enable toggle is
+    // forced-on-but-disabled, so maxDurationEnabled stays false. Entering a
+    // value must still submit it (not undefined).
+    const configRequired = createConfiguration({
+      leases: {
+        maxDurationHours: 8760,
+        requireMaxDuration: true,
+      },
+    });
+
+    let submittedData: any = null;
+    server.use(
+      http.get(`${getConfig().ApiUrl}/configurations`, () =>
+        HttpResponse.json({ status: "success", data: configRequired }),
+      ),
+      http.get(`${getConfig().ApiUrl}/leaseTemplates/${mockUuid}`, () =>
+        HttpResponse.json({
+          status: "success",
+          data: {
+            ...mockAdvancedLeaseTemplate,
+            leaseDurationInHours: undefined,
+            durationThresholds: undefined,
+          },
+        }),
+      ),
+      http.put(
+        `${getConfig().ApiUrl}/leaseTemplates/${mockUuid}`,
+        async ({ request }) => {
+          submittedData = await request.json();
+          return HttpResponse.json({ status: "success", data: submittedData });
+        },
+      ),
+    );
+
+    renderComponent();
+    const user = userEvent.setup();
+
+    await waitFor(() => {
+      expect(
+        screen.getByLabelText("Maximum Duration (Hours)"),
+      ).toBeInTheDocument();
+    });
+
+    const durationInput = screen.getByLabelText("Maximum Duration (Hours)");
+    await user.tripleClick(durationInput);
+    await user.keyboard("240");
+
+    const saveButton = screen.getByRole("button", { name: /save changes/i });
+    await waitFor(() => expect(saveButton).toBeEnabled());
+    await user.click(saveButton);
+
+    await waitFor(() => expect(submittedData?.leaseDurationInHours).toBe(240));
   });
 });

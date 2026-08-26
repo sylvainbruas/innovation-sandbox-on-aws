@@ -57,6 +57,13 @@ beforeEach(() => {
   vi.spyOn(CostExplorerService.prototype, "getCostForLeases").mockResolvedValue(
     costsMock,
   );
+  // Default: tag query returns empty so existing tests fall through to the
+  // legacy `getCostForLeases` fallback (which returns `costsMock`). Specific
+  // tests below override this to exercise the tag-first partition.
+  vi.spyOn(
+    CostExplorerService.prototype,
+    "getCostForLeasesByTag",
+  ).mockResolvedValue(new AccountsCostReport());
 });
 afterEach(() => {
   vi.unstubAllEnvs();
@@ -309,6 +316,138 @@ describe("performAccountMonitoringScan", () => {
           actionRequested: "ALERT",
         }),
       );
+    });
+  });
+
+  describe("Tag-first cost attribution (Task 4.2 partition)", () => {
+    function buildTagReport(
+      entries: Record<string, number>,
+    ): AccountsCostReport {
+      const report = new AccountsCostReport();
+      for (const [leaseId, amount] of Object.entries(entries)) {
+        report.addCost(leaseId, amount);
+      }
+      return report;
+    }
+
+    it("does not call CostExplorer when no leases are being monitored", async () => {
+      leaseStore().findByStatus.returns({ Active: [], Frozen: [] });
+
+      const tagSpy = vi.spyOn(
+        CostExplorerService.prototype,
+        "getCostForLeasesByTag",
+      );
+      const fallbackSpy = vi.spyOn(
+        CostExplorerService.prototype,
+        "getCostForLeases",
+      );
+
+      await expect(
+        performAccountMonitoringScan({} as any, mockContext(testEnv)),
+      ).resolves.toBeDefined();
+      expect(tagSpy).not.toHaveBeenCalled();
+      expect(fallbackSpy).not.toHaveBeenCalled();
+    });
+
+    it("uses tag-only path when every lease is covered by the tag report (no fallback CE call)", async () => {
+      const monitoredLeases = monitoredLeasesBase;
+      leaseStore().findByStatus.returns({ Active: monitoredLeases });
+
+      const tagSpy = vi
+        .spyOn(CostExplorerService.prototype, "getCostForLeasesByTag")
+        .mockResolvedValue(
+          buildTagReport({
+            [monitoredLeases[0]!.uuid]: 90,
+            [monitoredLeases[1]!.uuid]: 110,
+          }),
+        );
+      const fallbackSpy = vi.spyOn(
+        CostExplorerService.prototype,
+        "getCostForLeases",
+      );
+
+      await performAccountMonitoringScan({} as any, mockContext(testEnv));
+
+      expect(tagSpy).toHaveBeenCalledTimes(1);
+      expect(fallbackSpy).not.toHaveBeenCalled();
+      // The lease store update should record the tag-derived costs against
+      // each lease's account ID — confirming the lease-UUID → account-ID
+      // re-keying happened.
+      const updateSpy = vi.spyOn(DynamoLeaseStore.prototype, "update");
+      const updates = updateSpy.mock.calls.map((c) => c[0]) as MonitoredLease[];
+      const account0Update = updates.find(
+        (u) => u.awsAccountId === monitoredLeases[0]!.awsAccountId,
+      );
+      const account1Update = updates.find(
+        (u) => u.awsAccountId === monitoredLeases[1]!.awsAccountId,
+      );
+      expect(account0Update?.totalCostAccrued).toBe(90);
+      expect(account1Update?.totalCostAccrued).toBe(110);
+    });
+
+    it("falls back entirely to legacy path when no leases are tag-covered", async () => {
+      const monitoredLeases = monitoredLeasesBase;
+      leaseStore().findByStatus.returns({ Active: monitoredLeases });
+
+      const tagSpy = vi
+        .spyOn(CostExplorerService.prototype, "getCostForLeasesByTag")
+        .mockResolvedValue(new AccountsCostReport());
+      const fallbackSpy = vi.spyOn(
+        CostExplorerService.prototype,
+        "getCostForLeases",
+      );
+
+      await performAccountMonitoringScan({} as any, mockContext(testEnv));
+
+      expect(tagSpy).toHaveBeenCalledTimes(1);
+      expect(fallbackSpy).toHaveBeenCalledTimes(1);
+      const fallbackArg = fallbackSpy.mock.calls[0]![0]!;
+      expect(Object.keys(fallbackArg).sort()).toEqual(
+        monitoredLeases.map((l) => l.awsAccountId).sort(),
+      );
+    });
+
+    it("partitions correctly when some leases are tag-covered and others are not", async () => {
+      const monitoredLeases = monitoredLeasesBase;
+      const taggedLease = monitoredLeases[0]!;
+      const untaggedLease = monitoredLeases[1]!;
+
+      leaseStore().findByStatus.returns({ Active: monitoredLeases });
+
+      vi.spyOn(
+        CostExplorerService.prototype,
+        "getCostForLeasesByTag",
+      ).mockResolvedValue(buildTagReport({ [taggedLease.uuid]: 95 }));
+
+      const fallbackSpy = vi
+        .spyOn(CostExplorerService.prototype, "getCostForLeases")
+        .mockResolvedValue(costsMock);
+
+      await performAccountMonitoringScan({} as any, mockContext(testEnv));
+
+      expect(fallbackSpy).toHaveBeenCalledTimes(1);
+      const fallbackArg = fallbackSpy.mock.calls[0]![0]!;
+      expect(Object.keys(fallbackArg)).toEqual([untaggedLease.awsAccountId]);
+    });
+
+    it("propagates tag-query CE failure without falling back (no silent masking)", async () => {
+      const monitoredLeases = monitoredLeasesBase;
+      leaseStore().findByStatus.returns({ Active: monitoredLeases });
+
+      const ceError = new Error("CE service unavailable");
+      vi.spyOn(
+        CostExplorerService.prototype,
+        "getCostForLeasesByTag",
+      ).mockRejectedValue(ceError);
+      const fallbackSpy = vi.spyOn(
+        CostExplorerService.prototype,
+        "getCostForLeases",
+      );
+
+      await expect(
+        performAccountMonitoringScan({} as any, mockContext(testEnv)),
+      ).rejects.toThrow("CE service unavailable");
+      expect(fallbackSpy).not.toHaveBeenCalled();
     });
   });
 

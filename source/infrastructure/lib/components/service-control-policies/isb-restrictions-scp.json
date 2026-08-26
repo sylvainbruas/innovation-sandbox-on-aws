@@ -27,7 +27,8 @@
             "arn:aws:iam::*:role/InnovationSandbox-${namespace}*",
             "arn:aws:iam::*:role/aws-reserved/sso.amazonaws.com/*AWSReservedSSO_${namespace}_IsbAdmins*",
             "arn:aws:iam::*:role/stacksets-exec-*",
-            "arn:aws:iam::*:role/AWSControlTowerExecution"
+            "arn:aws:iam::*:role/AWSControlTowerExecution",
+            "${additionalPrincipalExceptions}"
           ]
         }
       }
@@ -70,7 +71,8 @@
             "arn:aws:iam::*:role/InnovationSandbox-${namespace}*",
             "arn:aws:iam::*:role/aws-reserved/sso.amazonaws.com/*AWSReservedSSO_${namespace}_IsbAdmins*",
             "arn:aws:iam::*:role/stacksets-exec-*",
-            "arn:aws:iam::*:role/AWSControlTowerExecution"
+            "arn:aws:iam::*:role/AWSControlTowerExecution",
+            "${additionalPrincipalExceptions}"
           ]
         }
       }
@@ -83,6 +85,7 @@
         "auditmanager:DeregisterOrganizationAdminAccount",
         "auditmanager:RegisterOrganizationAdminAccount",
         "backup:PutBackupVaultLockConfiguration",
+        "bedrock-agentcore:*Registry*",
         "cassandra:UpdatePartitioner",
         "chime:*",
         "cloudhsm:*",
@@ -133,10 +136,20 @@
             "arn:aws:iam::*:role/InnovationSandbox-${namespace}*",
             "arn:aws:iam::*:role/aws-reserved/sso.amazonaws.com/*AWSReservedSSO_${namespace}_IsbAdmins*",
             "arn:aws:iam::*:role/stacksets-exec-*",
-            "arn:aws:iam::*:role/AWSControlTowerExecution"
+            "arn:aws:iam::*:role/AWSControlTowerExecution",
+            "${additionalPrincipalExceptions}"
           ]
         }
       }
+    },
+    {
+      "Sid": "ProtectSIREventBridgeRules",
+      "Effect": "Deny",
+      "Action": ["events:PutRule"],
+      "Resource": [
+        "arn:aws:events:*:*:rule/SIRGuardDutyRule",
+        "arn:aws:events:*:*:rule/SIRSecurityHubRule"
+      ]
     }
   ]
 }

@@ -14,7 +14,7 @@ import {
   showSuccessToast,
 } from "@amzn/innovation-sandbox-frontend/components/Toast";
 import { AssignLease } from "@amzn/innovation-sandbox-frontend/domains/leases/pages/AssignLease";
-import { config } from "@amzn/innovation-sandbox-frontend/helpers/config";
+import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import {
   mockAdvancedLeaseTemplate,
   mockBasicLeaseTemplate,
@@ -41,6 +41,57 @@ vi.mock("@amzn/innovation-sandbox-frontend/components/Toast", () => ({
   showErrorToast: vi.fn(),
 }));
 
+// Stub PrincipalTypeahead with deterministic fixture buttons so tests can
+// drive selection without wrestling with Cloudscape Autosuggest in jsdom.
+// The real typeahead has its own test file.
+const TYPEAHEAD_FIXTURE = [
+  {
+    principalId: "user-1",
+    principalType: "USER" as const,
+    displayName: "Test User",
+    email: "user@example.com",
+  },
+  {
+    principalId: "shared-1",
+    principalType: "USER" as const,
+    displayName: "Shared User",
+    email: "shared@example.com",
+  },
+  {
+    principalId: "group-1",
+    principalType: "GROUP" as const,
+    displayName: "Engineering",
+  },
+];
+vi.mock(
+  "@amzn/innovation-sandbox-frontend/domains/leases/components/PrincipalTypeahead",
+  () => ({
+    PrincipalTypeahead: ({
+      onSelect,
+      excludePrincipalIds = [],
+      type = "all",
+    }: {
+      onSelect: (p: (typeof TYPEAHEAD_FIXTURE)[number]) => void;
+      excludePrincipalIds?: string[];
+      type?: "users" | "groups" | "all";
+    }) => (
+      <div data-testid="typeahead-stub">
+        {TYPEAHEAD_FIXTURE.filter(
+          (p) =>
+            !excludePrincipalIds.includes(p.principalId) &&
+            (type === "all" ||
+              (type === "users" && p.principalType === "USER") ||
+              (type === "groups" && p.principalType === "GROUP")),
+        ).map((p) => (
+          <button key={p.principalId} type="button" onClick={() => onSelect(p)}>
+            Pick {p.email ?? p.displayName}
+          </button>
+        ))}
+      </div>
+    ),
+  }),
+);
+
 describe("AssignLease", () => {
   const renderComponent = () =>
     renderWithQueryClient(
@@ -48,6 +99,14 @@ describe("AssignLease", () => {
         <AssignLease />
       </Router>,
     );
+
+  // Drive the user-selection step via the mocked typeahead — single click
+  // populates userEmail with "user@example.com".
+  const pickUser = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.click(
+      await screen.findByRole("button", { name: "Pick user@example.com" }),
+    );
+  };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -75,6 +134,7 @@ describe("AssignLease", () => {
       expect(wizard?.findMenuNavigationLink(2, "disabled")).not.toBeNull();
       expect(wizard?.findMenuNavigationLink(3, "disabled")).not.toBeNull();
       expect(wizard?.findMenuNavigationLink(4, "disabled")).not.toBeNull();
+      expect(wizard?.findMenuNavigationLink(5, "disabled")).not.toBeNull();
     });
 
     // Check step titles using wizard navigation
@@ -87,9 +147,12 @@ describe("AssignLease", () => {
     ).toContain("Select user");
     expect(
       wizard?.findMenuNavigationLink(3)?.getElement().textContent,
-    ).toContain("Terms of Service");
+    ).toContain("Share access");
     expect(
       wizard?.findMenuNavigationLink(4)?.getElement().textContent,
+    ).toContain("Terms of Service");
+    expect(
+      wizard?.findMenuNavigationLink(5)?.getElement().textContent,
     ).toContain("Review & Submit");
   });
 
@@ -156,7 +219,7 @@ describe("AssignLease", () => {
     });
   });
 
-  test("validates email input in step 2", async () => {
+  test("step 2 requires a user before advancing", async () => {
     const user = userEvent.setup();
     renderComponent();
 
@@ -168,37 +231,26 @@ describe("AssignLease", () => {
     await user.click(leaseTemplateCard);
     await user.click(await screen.findByRole("button", { name: /next/i }));
 
-    // Try to proceed without email
+    // Try to proceed without picking a user — wizard should stay on step 2.
     await user.click(await screen.findByRole("button", { name: /next/i }));
     expect(
-      screen.getAllByText("You must provide a user email").length,
-    ).toBeGreaterThan(0);
+      createWrapper().findWizard()?.findMenuNavigationLink(2, "active"),
+    ).not.toBeNull();
 
-    // Enter invalid email
-    const emailInput = screen.getByRole("textbox");
-    await user.type(emailInput, "invalid-email");
+    // Pick a user — wizard advances to step 3.
+    await pickUser(user);
     await user.click(await screen.findByRole("button", { name: /next/i }));
-    expect(
-      screen.getAllByText("You must provide a valid email address").length,
-    ).toBeGreaterThan(0);
-
-    // Enter valid email
-    await user.clear(emailInput);
-    await user.type(emailInput, "user@example.com");
-    await user.click(await screen.findByRole("button", { name: /next/i }));
-
-    // Should navigate to step 3
     await waitFor(() => {
       const wizard = createWrapper().findWizard();
       expect(wizard?.findMenuNavigationLink(3, "active")).not.toBeNull();
     });
   });
 
-  test("validates terms acceptance in step 3", async () => {
+  test("validates terms acceptance in step 4", async () => {
     const user = userEvent.setup();
     renderComponent();
 
-    // Navigate to step 3
+    // Navigate to step 4 (ToS)
     await waitFor(() => {
       expect(screen.getByText(mockBasicLeaseTemplate.name)).toBeInTheDocument();
     });
@@ -206,8 +258,10 @@ describe("AssignLease", () => {
     await user.click(leaseTemplateCard);
     await user.click(await screen.findByRole("button", { name: /next/i }));
 
-    const emailInput = screen.getByRole("textbox");
-    await user.type(emailInput, "user@example.com");
+    await pickUser(user);
+    await user.click(await screen.findByRole("button", { name: /next/i }));
+
+    // Skip Share access step
     await user.click(await screen.findByRole("button", { name: /next/i }));
 
     // Try to proceed without accepting terms
@@ -224,14 +278,14 @@ describe("AssignLease", () => {
     await user.click(termsCheckbox);
     await user.click(await screen.findByRole("button", { name: /next/i }));
 
-    // Should navigate to step 4
+    // Should navigate to step 5 (Review)
     await waitFor(() => {
       const wizard = createWrapper().findWizard();
-      expect(wizard?.findMenuNavigationLink(4, "active")).not.toBeNull();
+      expect(wizard?.findMenuNavigationLink(5, "active")).not.toBeNull();
     });
   });
 
-  test("displays review information in step 4", async () => {
+  test("displays review information in step 5", async () => {
     const user = userEvent.setup();
     renderComponent();
 
@@ -243,8 +297,10 @@ describe("AssignLease", () => {
     await user.click(leaseTemplateCard);
     await user.click(await screen.findByRole("button", { name: /next/i }));
 
-    const emailInput = screen.getByRole("textbox");
-    await user.type(emailInput, "user@example.com");
+    await pickUser(user);
+    await user.click(await screen.findByRole("button", { name: /next/i }));
+
+    // Skip Share access step
     await user.click(await screen.findByRole("button", { name: /next/i }));
 
     const termsCheckbox = screen.getByLabelText(
@@ -265,7 +321,7 @@ describe("AssignLease", () => {
     const user = userEvent.setup();
 
     server.use(
-      http.post(`${config.ApiUrl}/leases`, async ({ request }) => {
+      http.post(`${getConfig().ApiUrl}/leases`, async ({ request }) => {
         const body = (await request.json()) as {
           userEmail: string;
           leaseTemplateUuid: string;
@@ -298,8 +354,10 @@ describe("AssignLease", () => {
     await user.click(leaseTemplateCard);
     await user.click(await screen.findByRole("button", { name: /next/i }));
 
-    const emailInput = screen.getByRole("textbox");
-    await user.type(emailInput, "user@example.com");
+    await pickUser(user);
+    await user.click(await screen.findByRole("button", { name: /next/i }));
+
+    // Skip Share access step
     await user.click(await screen.findByRole("button", { name: /next/i }));
 
     const termsCheckbox = screen.getByLabelText(
@@ -331,7 +389,7 @@ describe("AssignLease", () => {
     const user = userEvent.setup();
 
     server.use(
-      http.post(`${config.ApiUrl}/leases`, () => {
+      http.post(`${getConfig().ApiUrl}/leases`, () => {
         return HttpResponse.json(
           { status: "error", message: "API Error" },
           { status: 500 },
@@ -349,8 +407,10 @@ describe("AssignLease", () => {
     await user.click(leaseTemplateCard);
     await user.click(await screen.findByRole("button", { name: /next/i }));
 
-    const emailInput = screen.getByRole("textbox");
-    await user.type(emailInput, "user@example.com");
+    await pickUser(user);
+    await user.click(await screen.findByRole("button", { name: /next/i }));
+
+    // Skip Share access step
     await user.click(await screen.findByRole("button", { name: /next/i }));
 
     const termsCheckbox = screen.getByLabelText(
@@ -409,7 +469,7 @@ describe("AssignLease", () => {
 
   test("displays error when no lease templates are available", async () => {
     server.use(
-      http.get(`${config.ApiUrl}/leaseTemplates`, () => {
+      http.get(`${getConfig().ApiUrl}/leaseTemplates`, () => {
         const response: ApiResponse<ApiPaginatedResult<LeaseTemplate>> = {
           status: "success",
           data: {
@@ -452,5 +512,72 @@ describe("AssignLease", () => {
     expect(
       screen.queryByText("You must choose a lease template"),
     ).not.toBeInTheDocument();
+  });
+
+  test("shows the Share access step and submits assignments", async () => {
+    const user = userEvent.setup();
+
+    let postBody:
+      | {
+          userEmail: string;
+          leaseTemplateUuid: string;
+          assignments?: Array<{
+            principalId: string;
+            principalType: "USER" | "GROUP";
+          }>;
+        }
+      | undefined;
+    server.use(
+      http.post(`${getConfig().ApiUrl}/leases`, async ({ request }) => {
+        postBody = (await request.json()) as typeof postBody;
+        return HttpResponse.json({ status: "success" }, { status: 200 });
+      }),
+    );
+
+    renderComponent();
+
+    // Step 1: pick a template.
+    await waitFor(() => {
+      expect(screen.getByText(mockBasicLeaseTemplate.name)).toBeInTheDocument();
+    });
+    await user.click(screen.getByText(mockBasicLeaseTemplate.name));
+    await user.click(await screen.findByRole("button", { name: /next/i }));
+
+    // Step 2: pick the lease owner.
+    await pickUser(user);
+    await user.click(await screen.findByRole("button", { name: /next/i }));
+
+    // Step 3: Share access. The wizard should be on this step now.
+    await waitFor(() => {
+      const wizard = createWrapper().findWizard();
+      expect(wizard?.findMenuNavigationLink(3, "active")).not.toBeNull();
+    });
+    // Stage one extra principal.
+    await user.click(
+      await screen.findByRole("button", { name: "Pick shared@example.com" }),
+    );
+    await user.click(await screen.findByRole("button", { name: /next/i }));
+
+    // Step 4: ToS.
+    await user.click(
+      screen.getByLabelText(
+        "I accept the above terms of service on behalf of the assigned user.",
+      ),
+    );
+    await user.click(await screen.findByRole("button", { name: /next/i }));
+
+    // Step 5: Submit.
+    await user.click(
+      await screen.findByRole("button", { name: /assign lease/i }),
+    );
+
+    await waitFor(() => expect(postBody).toBeDefined());
+    expect(postBody?.userEmail).toBe("user@example.com");
+    expect(postBody?.assignments).toEqual([
+      { principalId: "shared-1", principalType: "USER" },
+    ]);
+    // Display fields are stripped — backend POST body schema is .strict().
+    expect(postBody?.assignments?.[0]).not.toHaveProperty("displayName");
+    expect(postBody?.assignments?.[0]).not.toHaveProperty("email");
   });
 });

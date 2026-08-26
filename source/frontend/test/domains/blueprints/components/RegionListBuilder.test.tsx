@@ -7,7 +7,7 @@ import { http, HttpResponse } from "msw";
 import { describe, expect, it, vi } from "vitest";
 
 import { RegionListBuilder } from "@amzn/innovation-sandbox-frontend/domains/blueprints/components/RegionListBuilder";
-import { config } from "@amzn/innovation-sandbox-frontend/helpers/config";
+import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
 import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
 
@@ -17,7 +17,7 @@ describe("RegionListBuilder", () => {
     const mockOnChange = vi.fn();
 
     server.use(
-      http.get(`${config.ApiUrl}/configurations`, () => {
+      http.get(`${getConfig().ApiUrl}/configurations`, () => {
         return HttpResponse.json({
           status: "success",
           data: {
@@ -57,7 +57,7 @@ describe("RegionListBuilder", () => {
     const mockOnChange = vi.fn();
 
     server.use(
-      http.get(`${config.ApiUrl}/configurations`, () => {
+      http.get(`${getConfig().ApiUrl}/configurations`, () => {
         return HttpResponse.json({
           status: "success",
           data: {
@@ -76,8 +76,12 @@ describe("RegionListBuilder", () => {
 
     // Verify regions appear in list
     await waitFor(() => {
-      expect(screen.getByText("us-east-1")).toBeInTheDocument();
-      expect(screen.getByText("us-west-2")).toBeInTheDocument();
+      expect(
+        screen.getByText("US East (N. Virginia) (us-east-1)"),
+      ).toBeInTheDocument();
+      expect(
+        screen.getByText("US West (Oregon) (us-west-2)"),
+      ).toBeInTheDocument();
     });
   });
 
@@ -86,7 +90,7 @@ describe("RegionListBuilder", () => {
     const mockOnChange = vi.fn();
 
     server.use(
-      http.get(`${config.ApiUrl}/configurations`, () => {
+      http.get(`${getConfig().ApiUrl}/configurations`, () => {
         return HttpResponse.json({
           status: "success",
           data: {
@@ -105,7 +109,9 @@ describe("RegionListBuilder", () => {
 
     // Wait for regions to appear
     await waitFor(() => {
-      expect(screen.getByText("us-east-1")).toBeInTheDocument();
+      expect(
+        screen.getByText("US East (N. Virginia) (us-east-1)"),
+      ).toBeInTheDocument();
     });
 
     // Click Remove button for first region

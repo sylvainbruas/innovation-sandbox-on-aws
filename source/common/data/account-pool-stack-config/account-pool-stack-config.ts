@@ -24,6 +24,8 @@ export const AccountPoolConfigSchema = z.object({
   isbManagedRegions: z
     .string()
     .transform((regions) => regions.split(",").map((region) => region.trim())),
+  additionalAllowedServices: z.string().optional(),
+  bedrockInferenceProfilePatterns: z.string().optional(),
 });
 
 export type AccountPoolConfig = z.output<typeof AccountPoolConfigSchema>;

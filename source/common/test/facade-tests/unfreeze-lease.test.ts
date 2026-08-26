@@ -1,6 +1,7 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+import { ResourceLockConflictError } from "@amzn/innovation-sandbox-commons/data/errors.js";
 import {
   ExpiredLeaseSchema,
   MonitoredLeaseSchema,
@@ -10,7 +11,6 @@ import { LeaseUnfrozenEvent } from "@amzn/innovation-sandbox-commons/events/leas
 import {
   AccountNotInFrozenError,
   CouldNotFindAccountError,
-  CouldNotRetrieveUserError,
   InnovationSandbox,
 } from "@amzn/innovation-sandbox-commons/innovation-sandbox.js";
 import {
@@ -23,10 +23,11 @@ import {
   mockedIdcService,
   mockedIsbEventBridge,
   mockedLeaseStore,
+  mockedOrganizationsTaggingService,
   mockedOrgsService,
 } from "@amzn/innovation-sandbox-commons/test/mocking/common-mocks.js";
 import { createMockOf } from "@amzn/innovation-sandbox-commons/test/mocking/mock-utils.js";
-import { IsbUserSchema } from "@amzn/innovation-sandbox-commons/types/isb-types.js";
+import { IdcIdentitySchema } from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
 import { Logger } from "@aws-lambda-powertools/logger";
 import { Tracer } from "@aws-lambda-powertools/tracer";
 import { DateTime } from "luxon";
@@ -38,6 +39,7 @@ function createMockContext() {
     sandboxAccountStore: mockedAccountStore(),
     idcService: mockedIdcService(),
     orgsService: mockedOrgsService(),
+    organizationsTaggingService: mockedOrganizationsTaggingService(),
     eventBridgeClient: mockedIsbEventBridge(),
     logger: createMockOf(Logger),
     tracer: new Tracer(),
@@ -49,8 +51,8 @@ const currentDateTime = DateTime.fromISO("2024-12-20T08:45:00.000Z", {
 }) as DateTime<true>;
 
 describe("InnovationSandbox.unfreezeLease()", async () => {
-  const mockContext = createMockContext();
-  const mockUser = generateSchemaData(IsbUserSchema);
+  let mockContext: ReturnType<typeof createMockContext>;
+  const mockUser = generateSchemaData(IdcIdentitySchema);
   const mockLeaseAccount = generateSchemaData(SandboxAccountSchema, {
     status: "Frozen",
   });
@@ -58,9 +60,11 @@ describe("InnovationSandbox.unfreezeLease()", async () => {
     status: "Frozen",
     awsAccountId: mockLeaseAccount.awsAccountId,
     userEmail: mockUser.email,
+    resourceLock: undefined,
   });
 
   beforeEach(() => {
+    mockContext = createMockContext();
     mockContext.sandboxAccountStore.get.mockImplementation(
       async (accountId) => {
         return {
@@ -92,6 +96,72 @@ describe("InnovationSandbox.unfreezeLease()", async () => {
     vi.useRealTimers();
   });
 
+  it("leaves the lease untouched when the assignment lock cannot be acquired", async () => {
+    // Regression: the lock used to be acquired AFTER the status/OU transaction,
+    // so a conflict (e.g. an in-flight FREEZE still revoking access) reported
+    // failure to the caller while the lease had already flipped Frozen ->
+    // Active. That left desired assignments with no records behind them.
+    mockContext.leaseStore.acquireLock.mockRejectedValue(
+      new ResourceLockConflictError("Lock held by another operation"),
+    );
+
+    await expect(
+      InnovationSandbox.unfreezeLease({ lease: mockLease }, mockContext),
+    ).rejects.toThrow(ResourceLockConflictError);
+
+    expect(mockContext.leaseStore.update).not.toHaveBeenCalled();
+    expect(mockContext.leaseStore.transactionalUpdate).not.toHaveBeenCalled();
+    expect(mockContext.orgsService.moveAccount).not.toHaveBeenCalled();
+    expect(
+      mockContext.orgsService.transactionalMoveAccount,
+    ).not.toHaveBeenCalled();
+    expect(
+      mockContext.organizationsTaggingService.updateStatusTag,
+    ).not.toHaveBeenCalled();
+    expect(mockContext.eventBridgeClient.sendIsbEvent).not.toHaveBeenCalled();
+  });
+
+  it("carries the acquired lock onto the status write so the put cannot erase it", async () => {
+    // See freeze-lease.test.ts: the full-item put must not drop resourceLock.
+    const acquiredLock = {
+      ownerId: "unfreeze-abc",
+      acquiredAt: "2024-12-20T08:45:00.000Z",
+      expiresAt: "2024-12-20T08:50:00.000Z",
+      meta: { intent: "UNFREEZE" as const },
+    };
+    mockContext.leaseStore.acquireLock.mockResolvedValue(acquiredLock);
+
+    await InnovationSandbox.unfreezeLease({ lease: mockLease }, mockContext);
+
+    expect(mockContext.leaseStore.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "Active",
+        resourceLock: acquiredLock,
+      }),
+    );
+  });
+
+  it("releases the lock when the status transition fails", async () => {
+    // Nothing was dispatched, so the lease must not be left waiting out the
+    // 300s lock timeout.
+    mockContext.orgsService.moveAccount.mockRejectedValue(
+      new Error("OU move failed"),
+    );
+    mockContext.leaseStore.releaseLock.mockResolvedValue(undefined);
+
+    await expect(
+      InnovationSandbox.unfreezeLease({ lease: mockLease }, mockContext),
+    ).rejects.toThrow("OU move failed");
+
+    expect(mockContext.leaseStore.releaseLock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        leaseId: mockLease.uuid,
+        userEmail: mockLease.userEmail,
+      }),
+    );
+    expect(mockContext.eventBridgeClient.sendIsbEvent).not.toHaveBeenCalled();
+  });
+
   it("Unfreeze lease", async () => {
     await InnovationSandbox.unfreezeLease(
       {
@@ -105,9 +175,25 @@ describe("InnovationSandbox.unfreezeLease()", async () => {
       status: "Active",
     });
 
-    expect(
-      mockContext.idcService.transactionalGrantUserAccess,
-    ).toHaveBeenCalledWith(mockLeaseAccount.awsAccountId, mockUser);
+    expect(mockContext.leaseStore.acquireLock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        leaseId: mockLease.uuid,
+        meta: { intent: "UNFREEZE" },
+      }),
+    );
+
+    // AssignmentRequested event emitted with UNFREEZE intent
+    expect(mockContext.eventBridgeClient.sendIsbEvent).toHaveBeenCalledWith(
+      mockContext.tracer,
+      expect.objectContaining({
+        DetailType: "AssignmentRequested",
+        Detail: expect.objectContaining({
+          intent: "UNFREEZE",
+          leaseId: mockLease.uuid,
+          leaseOwnerEmail: mockLease.userEmail,
+        }),
+      }),
+    );
 
     expect(mockContext.orgsService.moveAccount).toHaveBeenCalledWith(
       mockLeaseAccount,
@@ -116,7 +202,7 @@ describe("InnovationSandbox.unfreezeLease()", async () => {
     );
 
     expect(mockContext.logger.info).toHaveBeenCalledWith(
-      `Lease of type (${mockLease.originalLeaseTemplateName}) for (${mockUser.email}) unfrozen. Account (${mockLeaseAccount.awsAccountId}) Active`,
+      `Lease ${mockLease.uuid} owned by ${mockLease.userEmail} unfrozen`,
       {
         ...searchableAccountProperties(mockLeaseAccount),
         ...searchableLeaseProperties(mockLease),
@@ -167,16 +253,22 @@ describe("InnovationSandbox.unfreezeLease()", async () => {
     ).rejects.toThrow(CouldNotFindAccountError);
   });
 
-  it("Fails when user information cannot be recovered", async () => {
-    mockContext.idcService.getUserFromEmail.mockResolvedValue(undefined);
+  it("writes the Status tag as Active after the OU move", async () => {
+    await InnovationSandbox.unfreezeLease({ lease: mockLease }, mockContext);
 
-    await expect(
-      InnovationSandbox.unfreezeLease(
-        {
-          lease: mockLease,
-        },
-        mockContext,
-      ),
-    ).rejects.toThrow(CouldNotRetrieveUserError);
+    expect(
+      mockContext.organizationsTaggingService.updateStatusTag,
+    ).toHaveBeenCalledWith(mockLeaseAccount.awsAccountId, "Active");
+  });
+
+  it("status-tag failure does not block the lifecycle", async () => {
+    mockContext.organizationsTaggingService.updateStatusTag.mockRejectedValue(
+      new Error("AccessDenied"),
+    );
+
+    await InnovationSandbox.unfreezeLease({ lease: mockLease }, mockContext);
+
+    // Lifecycle continues — event still emitted.
+    expect(mockContext.eventBridgeClient.sendIsbEvent).toHaveBeenCalled();
   });
 });

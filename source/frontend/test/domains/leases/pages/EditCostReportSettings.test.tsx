@@ -13,7 +13,8 @@ import {
 } from "@amzn/innovation-sandbox-frontend/components/Toast";
 import { EditCostReportSettings } from "@amzn/innovation-sandbox-frontend/domains/leases/pages/EditCostReportSettings";
 import { MonitoredLeaseWithLeaseId } from "@amzn/innovation-sandbox-frontend/domains/leases/types";
-import { config } from "@amzn/innovation-sandbox-frontend/helpers/config";
+import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
+import { createConfiguration } from "@amzn/innovation-sandbox-frontend/mocks/factories/configurationFactory";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
 import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
 import { ApiResponse } from "@amzn/innovation-sandbox-frontend/types";
@@ -53,18 +54,12 @@ const mockLease: MonitoredLeaseWithLeaseId = {
   totalCostAccrued: 0,
 };
 
-const mockConfig = {
-  costReportGroups: ["engineering-team", "data-science-team", "ml-team"],
-  requireCostReportGroup: false,
-  leases: {
-    maxBudget: 500,
-    requireMaxBudget: false,
-    maxDurationHours: 720,
-    requireMaxDuration: false,
+const mockConfig = createConfiguration({
+  costReporting: {
+    costReportGroups: ["engineering-team", "data-science-team", "ml-team"],
+    requireCostReportGroup: false,
   },
-  termsOfService: "Terms",
-  isbManagedRegions: ["us-east-1"],
-};
+});
 
 describe("EditCostReportSettings", () => {
   const renderComponent = () =>
@@ -82,14 +77,14 @@ describe("EditCostReportSettings", () => {
 
     // Setup default MSW handlers
     server.use(
-      http.get(`${config.ApiUrl}/leases/lease-123`, () => {
+      http.get(`${getConfig().ApiUrl}/leases/lease-123`, () => {
         const response: ApiResponse<MonitoredLeaseWithLeaseId> = {
           status: "success",
           data: mockLease,
         };
         return HttpResponse.json(response);
       }),
-      http.get(`${config.ApiUrl}/configurations`, () => {
+      http.get(`${getConfig().ApiUrl}/configurations`, () => {
         const response: ApiResponse<typeof mockConfig> = {
           status: "success",
           data: mockConfig,
@@ -101,7 +96,7 @@ describe("EditCostReportSettings", () => {
 
   it("shows loading state while fetching lease data", () => {
     server.use(
-      http.get(`${config.ApiUrl}/leases/lease-123`, () => {
+      http.get(`${getConfig().ApiUrl}/leases/lease-123`, () => {
         // Simulate loading by delaying indefinitely
         return new Promise(() => {});
       }),
@@ -114,7 +109,7 @@ describe("EditCostReportSettings", () => {
 
   it("shows loading state while fetching config data", () => {
     server.use(
-      http.get(`${config.ApiUrl}/configurations`, () => {
+      http.get(`${getConfig().ApiUrl}/configurations`, () => {
         // Simulate loading by delaying indefinitely
         return new Promise(() => {});
       }),
@@ -127,7 +122,7 @@ describe("EditCostReportSettings", () => {
 
   it("shows error state when lease fails to load", async () => {
     server.use(
-      http.get(`${config.ApiUrl}/leases/lease-123`, () => {
+      http.get(`${getConfig().ApiUrl}/leases/lease-123`, () => {
         return HttpResponse.json(
           { status: "error", message: "Failed to load lease" },
           { status: 500 },
@@ -149,7 +144,7 @@ describe("EditCostReportSettings", () => {
 
     // Test retry functionality
     server.use(
-      http.get(`${config.ApiUrl}/leases/lease-123`, () => {
+      http.get(`${getConfig().ApiUrl}/leases/lease-123`, () => {
         const response: ApiResponse<MonitoredLeaseWithLeaseId> = {
           status: "success",
           data: mockLease,
@@ -167,7 +162,7 @@ describe("EditCostReportSettings", () => {
 
   it("shows error state when config fails to load", async () => {
     server.use(
-      http.get(`${config.ApiUrl}/configurations`, () => {
+      http.get(`${getConfig().ApiUrl}/configurations`, () => {
         return HttpResponse.json(
           { status: "error", message: "Failed to load config" },
           { status: 500 },
@@ -189,7 +184,7 @@ describe("EditCostReportSettings", () => {
 
     // Test retry functionality
     server.use(
-      http.get(`${config.ApiUrl}/configurations`, () => {
+      http.get(`${getConfig().ApiUrl}/configurations`, () => {
         const response: ApiResponse<typeof mockConfig> = {
           status: "success",
           data: mockConfig,
@@ -208,8 +203,11 @@ describe("EditCostReportSettings", () => {
   it("initializes form with lease cost report data", async () => {
     renderComponent();
 
+    // Wait for the form to fully load with data — the static header renders
+    // before the useEffect that resets form values from the loaded lease, so
+    // wait on data-bound text to avoid a flaky race on slower hosts.
     await waitFor(() => {
-      expect(screen.getByText("Edit Cost Report Settings")).toBeInTheDocument();
+      expect(screen.getByText("engineering-team")).toBeInTheDocument();
     });
 
     // Check that cost report group is enabled
@@ -226,10 +224,13 @@ describe("EditCostReportSettings", () => {
     let submittedData: any = null;
 
     server.use(
-      http.patch(`${config.ApiUrl}/leases/lease-123`, async ({ request }) => {
-        submittedData = await request.json();
-        return HttpResponse.json({ status: "success", data: {} });
-      }),
+      http.patch(
+        `${getConfig().ApiUrl}/leases/lease-123`,
+        async ({ request }) => {
+          submittedData = await request.json();
+          return HttpResponse.json({ status: "success", data: {} });
+        },
+      ),
     );
 
     const user = userEvent.setup();
@@ -272,10 +273,13 @@ describe("EditCostReportSettings", () => {
     let submittedData: any = null;
 
     server.use(
-      http.patch(`${config.ApiUrl}/leases/lease-123`, async ({ request }) => {
-        submittedData = await request.json();
-        return HttpResponse.json({ status: "success", data: {} });
-      }),
+      http.patch(
+        `${getConfig().ApiUrl}/leases/lease-123`,
+        async ({ request }) => {
+          submittedData = await request.json();
+          return HttpResponse.json({ status: "success", data: {} });
+        },
+      ),
     );
 
     const user = userEvent.setup();
@@ -321,7 +325,7 @@ describe("EditCostReportSettings", () => {
     const errorMessage = "Network error";
 
     server.use(
-      http.patch(`${config.ApiUrl}/leases/lease-123`, () => {
+      http.patch(`${getConfig().ApiUrl}/leases/lease-123`, () => {
         return HttpResponse.json(
           { status: "error", message: errorMessage },
           { status: 500 },
@@ -423,7 +427,7 @@ describe("EditCostReportSettings", () => {
     };
 
     server.use(
-      http.get(`${config.ApiUrl}/leases/lease-123`, () => {
+      http.get(`${getConfig().ApiUrl}/leases/lease-123`, () => {
         const response: ApiResponse<MonitoredLeaseWithLeaseId> = {
           status: "success",
           data: leaseWithNoCostReport as MonitoredLeaseWithLeaseId,
@@ -444,13 +448,12 @@ describe("EditCostReportSettings", () => {
   });
 
   it("handles empty cost report groups list", async () => {
-    const configWithNoGroups = {
-      ...mockConfig,
-      costReportGroups: [],
-    };
+    const configWithNoGroups = createConfiguration({
+      costReporting: { costReportGroups: [], requireCostReportGroup: false },
+    });
 
     server.use(
-      http.get(`${config.ApiUrl}/configurations`, () => {
+      http.get(`${getConfig().ApiUrl}/configurations`, () => {
         const response: ApiResponse<typeof configWithNoGroups> = {
           status: "success",
           data: configWithNoGroups,
@@ -470,10 +473,12 @@ describe("EditCostReportSettings", () => {
   });
 
   it("validates required cost report group when enabled", async () => {
-    const configWithRequired = {
-      ...mockConfig,
-      requireCostReportGroup: true,
-    };
+    const configWithRequired = createConfiguration({
+      costReporting: {
+        costReportGroups: ["engineering-team", "data-science-team", "ml-team"],
+        requireCostReportGroup: true,
+      },
+    });
 
     const leaseWithNoCostReport = {
       ...mockLease,
@@ -481,14 +486,14 @@ describe("EditCostReportSettings", () => {
     };
 
     server.use(
-      http.get(`${config.ApiUrl}/configurations`, () => {
+      http.get(`${getConfig().ApiUrl}/configurations`, () => {
         const response: ApiResponse<typeof configWithRequired> = {
           status: "success",
           data: configWithRequired,
         };
         return HttpResponse.json(response);
       }),
-      http.get(`${config.ApiUrl}/leases/lease-123`, () => {
+      http.get(`${getConfig().ApiUrl}/leases/lease-123`, () => {
         const response: ApiResponse<MonitoredLeaseWithLeaseId> = {
           status: "success",
           data: leaseWithNoCostReport as MonitoredLeaseWithLeaseId,
@@ -508,6 +513,67 @@ describe("EditCostReportSettings", () => {
 
     await waitFor(() => {
       expect(saveButton).toBeDisabled();
+    });
+  });
+
+  it("assigns a group when required and none was previously set", async () => {
+    // Regression: with a required group and none set, the enable toggle is
+    // forced-on-but-disabled, so costReportGroupEnabled stays false. Selecting a
+    // group must still submit it (not null).
+    const configWithRequired = createConfiguration({
+      costReporting: {
+        costReportGroups: ["engineering-team", "data-science-team", "ml-team"],
+        requireCostReportGroup: true,
+      },
+    });
+    const leaseWithNoCostReport = {
+      ...mockLease,
+      costReportGroup: undefined,
+    };
+
+    let submittedData: any = null;
+    server.use(
+      http.get(`${getConfig().ApiUrl}/configurations`, () =>
+        HttpResponse.json({ status: "success", data: configWithRequired }),
+      ),
+      http.get(`${getConfig().ApiUrl}/leases/lease-123`, () =>
+        HttpResponse.json({
+          status: "success",
+          data: leaseWithNoCostReport as MonitoredLeaseWithLeaseId,
+        }),
+      ),
+      http.patch(
+        `${getConfig().ApiUrl}/leases/lease-123`,
+        async ({ request }) => {
+          submittedData = await request.json();
+          return HttpResponse.json({ status: "success", data: {} });
+        },
+      ),
+    );
+
+    const user = userEvent.setup();
+    renderComponent();
+
+    await waitFor(() => {
+      expect(screen.getByText("Edit Cost Report Settings")).toBeInTheDocument();
+    });
+
+    // Open the select and choose a group.
+    const selectTrigger = screen
+      .getAllByRole("button")
+      .find((btn) => btn.textContent?.includes("Select a cost report group"));
+    expect(selectTrigger).toBeDefined();
+    await user.click(selectTrigger!);
+    await user.click(await screen.findByText("data-science-team"));
+
+    const saveButton = screen.getByRole("button", { name: "Save changes" });
+    await waitFor(() => expect(saveButton).not.toBeDisabled());
+    await user.click(saveButton);
+
+    await waitFor(() => {
+      expect(submittedData).toEqual({
+        costReportGroup: "data-science-team",
+      });
     });
   });
 });

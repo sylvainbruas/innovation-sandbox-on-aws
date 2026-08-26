@@ -22,6 +22,10 @@
  * efficient querying of related data using sort key (SK) patterns.
  */
 
+// Deployment-history record TTL (days). Shared so the backend TTL and the
+// frontend retention copy can't drift apart.
+export const DEPLOYMENT_HISTORY_RETENTION_DAYS = 90;
+
 // Partition Key (PK) Prefix
 export const BLUEPRINT_PK_PREFIX = "bp#";
 

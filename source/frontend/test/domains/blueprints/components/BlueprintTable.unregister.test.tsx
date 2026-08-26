@@ -14,7 +14,7 @@ import {
   showSuccessToast,
 } from "@amzn/innovation-sandbox-frontend/components/Toast";
 import { BlueprintTable } from "@amzn/innovation-sandbox-frontend/domains/blueprints/components/BlueprintTable";
-import { config } from "@amzn/innovation-sandbox-frontend/helpers/config";
+import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import { ModalProvider } from "@amzn/innovation-sandbox-frontend/hooks/useModal";
 import {
   createBlueprint,
@@ -99,7 +99,7 @@ describe("BlueprintTable - Unregister cache invalidation", () => {
 
   test("onSuccess callback invalidates blueprint query cache after successful unregister", async () => {
     server.use(
-      http.get(`${config.ApiUrl}/blueprints`, () => {
+      http.get(`${getConfig().ApiUrl}/blueprints`, () => {
         return HttpResponse.json({
           status: "success",
           data: {
@@ -108,7 +108,7 @@ describe("BlueprintTable - Unregister cache invalidation", () => {
           },
         });
       }),
-      http.delete(`${config.ApiUrl}/blueprints/:id`, () => {
+      http.delete(`${getConfig().ApiUrl}/blueprints/:id`, () => {
         return HttpResponse.json({ status: "success", data: {} });
       }),
     );
@@ -156,7 +156,7 @@ describe("BlueprintTable - Unregister cache invalidation", () => {
 
   test("partial failure shows only failed items on retry via per-item selection filtering", async () => {
     server.use(
-      http.get(`${config.ApiUrl}/blueprints`, () => {
+      http.get(`${getConfig().ApiUrl}/blueprints`, () => {
         return HttpResponse.json({
           status: "success",
           data: {
@@ -166,7 +166,7 @@ describe("BlueprintTable - Unregister cache invalidation", () => {
         });
       }),
       // Blueprint-1 deletes successfully, blueprint-2 fails
-      http.delete(`${config.ApiUrl}/blueprints/:id`, ({ params }) => {
+      http.delete(`${getConfig().ApiUrl}/blueprints/:id`, ({ params }) => {
         if (params.id === blueprint2.blueprint.blueprintId) {
           return HttpResponse.json(
             { status: "error", message: "Failed to delete" },
@@ -232,7 +232,7 @@ describe("BlueprintTable - Unregister cache invalidation", () => {
 
   test("onError callback invalidates blueprint query cache on partial failure", async () => {
     server.use(
-      http.get(`${config.ApiUrl}/blueprints`, () => {
+      http.get(`${getConfig().ApiUrl}/blueprints`, () => {
         return HttpResponse.json({
           status: "success",
           data: {
@@ -242,7 +242,7 @@ describe("BlueprintTable - Unregister cache invalidation", () => {
         });
       }),
       // Blueprint-1 succeeds, blueprint-2 fails
-      http.delete(`${config.ApiUrl}/blueprints/:id`, ({ params }) => {
+      http.delete(`${getConfig().ApiUrl}/blueprints/:id`, ({ params }) => {
         if (params.id === blueprint2.blueprint.blueprintId) {
           return HttpResponse.json(
             { status: "error", message: "Failed to delete" },

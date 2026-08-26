@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { PaginatedQueryResult } from "@amzn/innovation-sandbox-commons/data/common-types.js";
-import { GlobalConfigSchema } from "@amzn/innovation-sandbox-commons/data/global-config/global-config.js";
 import {
   Lease,
   MonitoredLease,
@@ -15,6 +14,7 @@ import { EventDetailTypes } from "@amzn/innovation-sandbox-commons/events/index.
 import { LeaseTerminatedEvent } from "@amzn/innovation-sandbox-commons/events/lease-terminated-event.js";
 import { InnovationSandbox } from "@amzn/innovation-sandbox-commons/innovation-sandbox.js";
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
+import { mockGlobalConfig } from "@amzn/innovation-sandbox-commons/test/lambdas/fixtures.js";
 import {
   mockedAccountStore,
   mockedBlueprintDeploymentService,
@@ -22,13 +22,14 @@ import {
   mockedIdcService,
   mockedIsbEventBridge,
   mockedLeaseStore,
+  mockedOrganizationsTaggingService,
   mockedOrgsService,
 } from "@amzn/innovation-sandbox-commons/test/mocking/common-mocks.js";
 import { createMockOf } from "@amzn/innovation-sandbox-commons/test/mocking/mock-utils.js";
 import {
-  IsbUser,
-  IsbUserSchema,
-} from "@amzn/innovation-sandbox-commons/types/isb-types.js";
+  type IdcIdentity,
+  IdcIdentitySchema,
+} from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
 import { Logger } from "@aws-lambda-powertools/logger";
 import { Tracer } from "@aws-lambda-powertools/tracer";
 import { DateTime } from "luxon";
@@ -40,16 +41,13 @@ function createMockContext() {
     sandboxAccountStore: mockedAccountStore(),
     idcService: mockedIdcService(),
     orgsService: mockedOrgsService(),
+    organizationsTaggingService: mockedOrganizationsTaggingService(),
     eventBridgeClient: mockedIsbEventBridge(),
     blueprintStore: mockedBlueprintStore(),
     blueprintDeploymentService: mockedBlueprintDeploymentService(),
     logger: createMockOf(Logger),
     tracer: new Tracer(),
-    globalConfig: generateSchemaData(GlobalConfigSchema, {
-      leases: generateSchemaData(GlobalConfigSchema.shape.leases, {
-        ttl: 30,
-      }),
-    }),
+    globalConfig: mockGlobalConfig(),
   };
 }
 
@@ -59,11 +57,11 @@ const currentDateTime = DateTime.fromISO("2024-12-20T08:45:00.000Z", {
 
 describe("InnovationSandbox.quarantineAccount()", () => {
   let mockContext: ReturnType<typeof createMockContext>;
-  let mockUser: IsbUser;
+  let mockUser: IdcIdentity;
 
   beforeEach(() => {
     mockContext = createMockContext();
-    mockUser = generateSchemaData(IsbUserSchema);
+    mockUser = generateSchemaData(IdcIdentitySchema);
 
     mockContext.idcService.getUserFromEmail.mockImplementation(
       async (email) => {
@@ -102,6 +100,7 @@ describe("InnovationSandbox.quarantineAccount()", () => {
         accountId: mockAccount.awsAccountId,
         currentOu: "Available",
         reason: "Test Quarantine",
+        reasonForQuarantine: "DRIFT",
       },
       mockContext,
     );
@@ -122,6 +121,16 @@ describe("InnovationSandbox.quarantineAccount()", () => {
           reason: "Test Quarantine",
         },
       } satisfies Partial<AccountQuarantinedEvent>),
+    );
+
+    //structured log emitted for log subscriber with reasonForQuarantine enum
+    expect(mockContext.logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining("quarantined"),
+      expect.objectContaining({
+        logDetailType: "AccountQuarantined",
+        accountId: mockAccount.awsAccountId,
+        reasonForQuarantine: "DRIFT",
+      }),
     );
   });
 
@@ -154,6 +163,7 @@ describe("InnovationSandbox.quarantineAccount()", () => {
         accountId: mockAccount.awsAccountId,
         currentOu: "Active",
         reason: "Test Quarantine",
+        reasonForQuarantine: "MANUAL",
       },
       mockContext,
     );
@@ -163,11 +173,6 @@ describe("InnovationSandbox.quarantineAccount()", () => {
       mockAccount,
       "Active",
       "Quarantine",
-    );
-
-    //user access revoked
-    expect(mockContext.idcService.revokeAllUserAccess).toHaveBeenCalledWith(
-      mockAccount.awsAccountId,
     );
 
     expect(mockContext.leaseStore.update).toHaveBeenCalledWith({
@@ -203,5 +208,53 @@ describe("InnovationSandbox.quarantineAccount()", () => {
       mockContext.tracer,
       expect.any(CleanAccountRequest),
     );
+  });
+
+  test("writes the Status tag as Quarantine after the OU move", async () => {
+    const mockAccount = generateSchemaData(SandboxAccountSchema, {
+      status: "Frozen",
+    });
+    mockContext.sandboxAccountStore.get.mockResolvedValue({
+      result: mockAccount,
+    });
+
+    await InnovationSandbox.quarantineAccount(
+      {
+        accountId: mockAccount.awsAccountId,
+        currentOu: "Available",
+        reason: "Test Quarantine",
+        reasonForQuarantine: "DRIFT",
+      },
+      mockContext,
+    );
+
+    expect(
+      mockContext.organizationsTaggingService.updateStatusTag,
+    ).toHaveBeenCalledWith(mockAccount.awsAccountId, "Quarantine");
+  });
+
+  test("status-tag failure does not block the lifecycle", async () => {
+    const mockAccount = generateSchemaData(SandboxAccountSchema, {
+      status: "Frozen",
+    });
+    mockContext.sandboxAccountStore.get.mockResolvedValue({
+      result: mockAccount,
+    });
+    mockContext.organizationsTaggingService.updateStatusTag.mockRejectedValue(
+      new Error("AccessDenied"),
+    );
+
+    await InnovationSandbox.quarantineAccount(
+      {
+        accountId: mockAccount.awsAccountId,
+        currentOu: "Available",
+        reason: "Test Quarantine",
+        reasonForQuarantine: "DRIFT",
+      },
+      mockContext,
+    );
+
+    // Lifecycle continues — quarantine event still emitted.
+    expect(mockContext.eventBridgeClient.sendIsbEvent).toHaveBeenCalled();
   });
 });

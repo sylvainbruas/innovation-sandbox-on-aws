@@ -3,12 +3,13 @@
 
 import { BlueprintWithStackSets } from "@amzn/innovation-sandbox-commons/data/blueprint/blueprint.js";
 import { PaginatedQueryResult } from "@amzn/innovation-sandbox-commons/data/common-types.js";
-import { GlobalConfigSchema } from "@amzn/innovation-sandbox-commons/data/global-config/global-config.js";
 import { LeaseTemplateSchema } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
 import {
   MonitoredLease,
   MonitoredLeaseSchema,
 } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
+import { PrincipalStore } from "@amzn/innovation-sandbox-commons/data/principal/principal-store.js";
+import { PrincipalCacheItemSchema } from "@amzn/innovation-sandbox-commons/data/principal/principal.js";
 import {
   SandboxAccount,
   SandboxAccountSchema,
@@ -18,6 +19,7 @@ import { LeaseRequestedEvent } from "@amzn/innovation-sandbox-commons/events/lea
 import { InnovationSandbox } from "@amzn/innovation-sandbox-commons/innovation-sandbox.js";
 import { IsbEventBridgeClient } from "@amzn/innovation-sandbox-commons/sdk-clients/event-bridge-client.js";
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
+import { mockGlobalConfig } from "@amzn/innovation-sandbox-commons/test/lambdas/fixtures.js";
 import {
   mockedAccountStore,
   mockedBlueprintDeploymentService,
@@ -25,13 +27,15 @@ import {
   mockedIdcService,
   mockedLeaseStore,
   mockedLeaseTemplateStore,
+  mockedOrganizationsTaggingService,
   mockedOrgsService,
 } from "@amzn/innovation-sandbox-commons/test/mocking/common-mocks.js";
 import { createMockOf } from "@amzn/innovation-sandbox-commons/test/mocking/mock-utils.js";
 import {
-  IsbUser,
-  IsbUserSchema,
-} from "@amzn/innovation-sandbox-commons/types/isb-types.js";
+  type IdcIdentity,
+  IdcIdentitySchema,
+  M2MIdentitySchema,
+} from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
 import { Logger } from "@aws-lambda-powertools/logger";
 import { Tracer } from "@aws-lambda-powertools/tracer";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -40,13 +44,15 @@ function createMockContext() {
   const context = {
     isbEventBridgeClient: createMockOf(IsbEventBridgeClient),
     orgsService: mockedOrgsService(),
+    organizationsTaggingService: mockedOrganizationsTaggingService(),
     idcService: mockedIdcService(),
     leaseStore: mockedLeaseStore(),
+    principalStore: createMockOf(PrincipalStore),
     sandboxAccountStore: mockedAccountStore(),
     blueprintStore: mockedBlueprintStore(),
     blueprintDeploymentService: mockedBlueprintDeploymentService(),
     leaseTemplateStore: mockedLeaseTemplateStore(),
-    globalConfig: generateSchemaData(GlobalConfigSchema),
+    globalConfig: mockGlobalConfig(),
     logger: new Logger(),
     tracer: new Tracer(),
   };
@@ -58,11 +64,11 @@ function createMockContext() {
 
 describe("InnovationSandbox.requestLease()", () => {
   let mockContext: ReturnType<typeof createMockContext>;
-  let mockUser: IsbUser;
+  let mockUser: IdcIdentity;
 
   beforeEach(() => {
     mockContext = createMockContext();
-    mockUser = generateSchemaData(IsbUserSchema);
+    mockUser = generateSchemaData(IdcIdentitySchema);
 
     mockContext.idcService.getUserFromEmail.mockImplementation(
       async (email) => {
@@ -72,6 +78,47 @@ describe("InnovationSandbox.requestLease()", () => {
           throw new Error("Invalid ISB User.");
         }
       },
+    );
+
+    // Mock owner resolution used by triggerAssignmentProcessing
+    mockContext.idcService.getCachedPrincipalByAttr.mockImplementation(
+      async (_type, email) => {
+        if (email === mockUser.email) {
+          return {
+            principalId: mockUser.userId,
+            principalType: "USER" as const,
+            displayName: mockUser.displayName,
+            email: mockUser.email,
+          };
+        }
+        return undefined;
+      },
+    );
+
+    // Default: return a matching cache entry for every requested principal so
+    // publishLease's enrichment doesn't hard-fail on zocker-generated random
+    // desiredAssignments. Tests that care about specific cache behavior override.
+    mockContext.principalStore.batchGetCacheItems.mockImplementation(
+      async (keys) =>
+        keys.map((k) =>
+          generateSchemaData(PrincipalCacheItemSchema, {
+            sk: `${k.principalType.toLowerCase()}#${k.principalId}`,
+            principalId: k.principalId,
+            principalType: k.principalType,
+            displayName:
+              k.principalId === mockUser.userId
+                ? mockUser.displayName
+                : `${k.principalType} ${k.principalId.slice(0, 8)}`,
+            ...(k.principalType === "USER"
+              ? {
+                  email:
+                    k.principalId === mockUser.userId
+                      ? mockUser.email
+                      : `${k.principalId.slice(0, 8)}@example.com`,
+                }
+              : {}),
+          }),
+        ),
     );
 
     mockContext.blueprintDeploymentService.validateBlueprintForDeployment.mockResolvedValue(
@@ -270,6 +317,132 @@ describe("InnovationSandbox.requestLease()", () => {
       expect(result.createdBy).toBe(mockUser.email);
       expect(result.userEmail).toBe(mockUser.email);
       expect(result.status).toBe("PendingApproval");
+    });
+  });
+
+  test("should reject lease request when targetUser is an M2M identity", async () => {
+    const m2mUser = generateSchemaData(M2MIdentitySchema);
+
+    await expect(
+      InnovationSandbox.requestLease(
+        {
+          leaseTemplate: generateSchemaData(LeaseTemplateSchema, {
+            requiresApproval: true,
+          }),
+          targetUser: m2mUser,
+        },
+        mockContext,
+      ),
+    ).rejects.toThrow("Target user must be an IDC user.");
+  });
+
+  describe("Pre-Approval Assignments", () => {
+    test("should store desiredAssignments on lease enriched with displayName/email when assignments provided and template allows sharing", async () => {
+      const assignments = [
+        {
+          principalId: "a1b2c3d4e5-550e8400-e29b-41d4-a716-446655440001",
+          principalType: "USER" as const,
+        },
+        {
+          principalId: "b2c3d4e5f6-660e8400-e29b-41d4-a716-446655440002",
+          principalType: "GROUP" as const,
+        },
+      ];
+
+      const result = await InnovationSandbox.requestLease(
+        {
+          leaseTemplate: generateSchemaData(LeaseTemplateSchema, {
+            requiresApproval: true,
+            allowOwnerToShareLease: true,
+          }),
+          targetUser: mockUser,
+          assignments,
+        },
+        mockContext,
+      );
+
+      // Pre-approval assignments are enriched against the principal cache
+      // before being stored, so the lease record carries displayName (and
+      // email for USERs) rather than bare principal refs. The owner is always
+      // included in desiredAssignments from creation time.
+      expect(result.desiredAssignments).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            principalId: assignments[0]!.principalId,
+            principalType: "USER",
+            displayName: expect.any(String),
+            email: expect.any(String),
+          }),
+          expect.objectContaining({
+            principalId: assignments[1]!.principalId,
+            principalType: "GROUP",
+            displayName: expect.any(String),
+          }),
+          expect.objectContaining({
+            principalId: mockUser.userId,
+            principalType: "USER",
+            email: mockUser.email,
+          }),
+        ]),
+      );
+    });
+
+    test("should always include owner in desiredAssignments even when no other assignments provided", async () => {
+      const result = await InnovationSandbox.requestLease(
+        {
+          leaseTemplate: generateSchemaData(LeaseTemplateSchema, {
+            requiresApproval: true,
+            allowOwnerToShareLease: true,
+          }),
+          targetUser: mockUser,
+        },
+        mockContext,
+      );
+
+      expect(result.desiredAssignments).toEqual([
+        expect.objectContaining({
+          principalId: mockUser.userId,
+          principalType: "USER",
+          email: mockUser.email,
+        }),
+      ]);
+    });
+
+    test("should include owner even with empty assignments array", async () => {
+      const result = await InnovationSandbox.requestLease(
+        {
+          leaseTemplate: generateSchemaData(LeaseTemplateSchema, {
+            requiresApproval: true,
+            allowOwnerToShareLease: true,
+          }),
+          targetUser: mockUser,
+          assignments: [],
+        },
+        mockContext,
+      );
+
+      expect(result.desiredAssignments).toEqual([
+        expect.objectContaining({
+          principalId: mockUser.userId,
+          principalType: "USER",
+          email: mockUser.email,
+        }),
+      ]);
+    });
+
+    test("should denormalize allowOwnerToShareLease from template to lease", async () => {
+      const result = await InnovationSandbox.requestLease(
+        {
+          leaseTemplate: generateSchemaData(LeaseTemplateSchema, {
+            requiresApproval: true,
+            allowOwnerToShareLease: true,
+          }),
+          targetUser: mockUser,
+        },
+        mockContext,
+      );
+
+      expect(result.allowOwnerToShareLease).toBe(true);
     });
   });
 });

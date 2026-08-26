@@ -36,6 +36,7 @@ import {
   searchableBlueprintProperties,
   summarizeUpdate,
 } from "@amzn/innovation-sandbox-commons/observability/logging.js";
+import { getUserEmail } from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
 import { enumErrorMap } from "@amzn/innovation-sandbox-commons/utils/zod.js";
 
 const tracer = new Tracer();
@@ -52,7 +53,7 @@ function getBlueprintIdFromPath(
   pathParameters?: Record<string, string | undefined>,
 ): string {
   const PathParametersSchema = z.object({
-    blueprintId: z.string().uuid(),
+    blueprintId: z.uuid(),
   });
 
   const result = PathParametersSchema.safeParse(pathParameters);
@@ -124,7 +125,7 @@ async function listStackSetsHandler(
     );
   }
 
-  const { pageIdentifier, pageSize } = parsedPaginationParametersResult.data;
+  const { pageIdentifier, maxResults } = parsedPaginationParametersResult.data;
 
   const blueprintDeploymentService = IsbServices.blueprintDeploymentService(
     context.env,
@@ -132,7 +133,7 @@ async function listStackSetsHandler(
 
   const response = await blueprintDeploymentService.listStackSets({
     pageIdentifier,
-    pageSize,
+    pageSize: maxResults,
   });
 
   logger.info("StackSets retrieved for blueprint registration", {
@@ -176,13 +177,13 @@ async function getBlueprintsHandler(
     );
   }
 
-  const { pageIdentifier, pageSize } = parsedPaginationParametersResult.data;
+  const { pageIdentifier, maxResults } = parsedPaginationParametersResult.data;
 
   const blueprintStore = IsbServices.blueprintStore(context.env);
 
   const blueprints = await blueprintStore.listBlueprints({
     pageIdentifier,
-    pageSize,
+    pageSize: maxResults,
   });
 
   logger.info("Blueprints retrieved", {
@@ -229,7 +230,7 @@ async function registerBlueprintHandler(
           ConcurrencyMode.SOFT_FAILURE_TOLERANCE,
         ],
         {
-          errorMap: enumErrorMap,
+          error: enumErrorMap,
         },
       )
       .optional(),
@@ -241,7 +242,7 @@ async function registerBlueprintHandler(
     throw createHttpJSendValidationError(parsedBodyResult.error);
   }
 
-  const userEmail = context.user.email;
+  const userEmail = getUserEmail(context.user);
 
   const blueprintStore = IsbServices.blueprintStore(context.env);
   const blueprintDeploymentService = IsbServices.blueprintDeploymentService(

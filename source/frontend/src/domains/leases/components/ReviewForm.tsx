@@ -14,6 +14,7 @@ import { BlueprintName } from "@amzn/innovation-sandbox-frontend/components/Blue
 import { BudgetStatus } from "@amzn/innovation-sandbox-frontend/components/BudgetStatus";
 import { DurationStatus } from "@amzn/innovation-sandbox-frontend/components/DurationStatus";
 import { Loader } from "@amzn/innovation-sandbox-frontend/components/Loader";
+import { SharingStatusIndicator } from "@amzn/innovation-sandbox-frontend/components/SharingStatusIndicator";
 import { useGetLeaseTemplateById } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/hooks";
 
 type ReviewStepProps = {
@@ -103,6 +104,14 @@ export const ReviewForm = (props: ReviewStepProps) => {
               value: <BudgetStatus maxSpend={leaseTemplate.maxSpend} />,
             },
             { label: "Approval", value: renderApprovalStatus() },
+            {
+              label: "Sharing",
+              value: (
+                <SharingStatusIndicator
+                  allowOwnerToShareLease={leaseTemplate.allowOwnerToShareLease}
+                />
+              ),
+            },
           ]}
         />
       </Container>

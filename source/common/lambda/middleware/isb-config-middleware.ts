@@ -2,58 +2,41 @@
 // SPDX-License-Identifier: Apache-2.0
 import { MiddlewareObj } from "@middy/core";
 import { Context } from "aws-lambda";
-import { ZodObject } from "zod";
 
+import { ConfigStore } from "@amzn/innovation-sandbox-commons/data/config/config-store.js";
 import {
-  GlobalConfig,
-  GlobalConfigSchema,
-} from "@amzn/innovation-sandbox-commons/data/global-config/global-config.js";
-import {
-  ReportingConfig,
-  ReportingConfigSchema,
-} from "@amzn/innovation-sandbox-commons/data/reporting-config/reporting-config.js";
-import yaml from "js-yaml";
+  ConfigSchemas,
+  ConfigSection,
+} from "@amzn/innovation-sandbox-commons/data/config/config.js";
+import { GlobalConfig } from "@amzn/innovation-sandbox-commons/data/global-config/global-config.js";
+import { IsbServices } from "@amzn/innovation-sandbox-commons/isb-services/index.js";
 
 export type ContextWithConfig = Context & {
   globalConfig: GlobalConfig;
 };
 
-export type ContextWithReportingConfig = Context & {
-  reportingConfig: ReportingConfig;
-};
+// Reuse the DynamoDB-backed store (and its client) across warm invocations.
+let configStoreInstance: ConfigStore | undefined;
 
-export type ContextWithGlobalAndReportingConfig = ContextWithConfig &
-  ContextWithReportingConfig;
-
-export class InvalidGlobalConfiguration extends Error {}
-export class InvalidReportingConfiguration extends Error {}
-
-async function fetchAndValidateConfig<T>(
-  profileIdEnvVar: string,
-  schema: ZodObject<any>,
-  ErrorClass: new (message: string) => Error,
-  configType: string,
-): Promise<T> {
-  const response = await fetch(
-    `http://localhost:2772/applications/${process.env.APP_CONFIG_APPLICATION_ID}/environments/${process.env.APP_CONFIG_ENVIRONMENT_ID}/configurations/${process.env[profileIdEnvVar]}`,
-  );
-
-  if (!response.ok) {
-    throw new Error(
-      `Error retrieving ${configType} configuration: ${response.status}`,
-    );
+function assembleGlobalConfig(
+  storedSections: Awaited<ReturnType<ConfigStore["getAllSections"]>>,
+): GlobalConfig {
+  const config = {} as GlobalConfig;
+  for (const section of Object.keys(ConfigSchemas) as ConfigSection[]) {
+    const stored = storedSections[section];
+    if (stored) {
+      // Strip the audit/metadata envelope; the `.strict()` section schemas
+      // reject the `lastSavedBy`/`meta` keys that `getAllSections()` returns.
+      const { lastSavedBy: _lastSavedBy, meta: _meta, ...fields } = stored;
+      (config as Record<ConfigSection, unknown>)[section] =
+        ConfigSchemas[section].parse(fields);
+    } else {
+      (config as Record<ConfigSection, unknown>)[section] = ConfigSchemas[
+        section
+      ].parse({});
+    }
   }
-
-  const config = yaml.load(await response.text());
-  const parsedConfig = schema.strict().safeParse(config);
-
-  if (!parsedConfig.success) {
-    throw new ErrorClass(
-      `Incorrect ${configType} configuration: ${parsedConfig.error}`,
-    );
-  }
-
-  return parsedConfig.data as T;
+  return config;
 }
 
 export function isbConfigMiddleware(): MiddlewareObj<
@@ -63,39 +46,16 @@ export function isbConfigMiddleware(): MiddlewareObj<
   ContextWithConfig
 > {
   const isbConfigMiddlewareBefore = async (request: any) => {
-    const globalConfig = await fetchAndValidateConfig(
-      "APP_CONFIG_PROFILE_ID",
-      GlobalConfigSchema,
-      InvalidGlobalConfiguration,
-      "global",
-    );
-
-    Object.assign(request.context, { globalConfig });
+    if (!configStoreInstance) {
+      configStoreInstance = IsbServices.configStore(request.context.env);
+    }
+    const storedSections = await configStoreInstance.getAllSections();
+    Object.assign(request.context, {
+      globalConfig: assembleGlobalConfig(storedSections),
+    });
   };
 
   return {
     before: isbConfigMiddlewareBefore,
-  };
-}
-
-export function isbReportingConfigMiddleware(): MiddlewareObj<
-  unknown,
-  any,
-  Error,
-  ContextWithReportingConfig
-> {
-  const isbReportingConfigMiddlewareBefore = async (request: any) => {
-    const reportingConfig = await fetchAndValidateConfig(
-      "REPORTING_CONFIG_PROFILE_ID",
-      ReportingConfigSchema,
-      InvalidReportingConfiguration,
-      "reporting",
-    );
-
-    Object.assign(request.context, { reportingConfig });
-  };
-
-  return {
-    before: isbReportingConfigMiddlewareBefore,
   };
 }

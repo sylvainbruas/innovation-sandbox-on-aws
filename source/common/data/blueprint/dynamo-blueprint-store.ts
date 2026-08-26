@@ -11,6 +11,7 @@ import { DateTime } from "luxon";
 
 import {
   BLUEPRINT_SK,
+  DEPLOYMENT_HISTORY_RETENTION_DAYS,
   DEPLOYMENT_SK_PREFIX,
   STACKSET_SK_PREFIX,
   generateBlueprintPK,
@@ -69,8 +70,10 @@ export class DynamoBlueprintStore extends BlueprintStore {
     this.ddbClient = props.client;
   }
 
-  private generateTTLFor90DaysFromNow(): number {
-    return DateTime.utc().plus({ days: 90 }).toUnixInteger();
+  private generateDeploymentRecordTtl(): number {
+    return DateTime.utc()
+      .plus({ days: DEPLOYMENT_HISTORY_RETENTION_DAYS })
+      .toUnixInteger();
   }
 
   public async createBlueprintWithStackSet(
@@ -457,7 +460,7 @@ export class DynamoBlueprintStore extends BlueprintStore {
       status: StackSetOperationStatus.RUNNING,
       operationId,
       deploymentStartedAt,
-      ttl: this.generateTTLFor90DaysFromNow(),
+      ttl: this.generateDeploymentRecordTtl(),
       meta: {
         schemaVersion: BlueprintSchemaVersion,
         createdTime: now,

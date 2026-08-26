@@ -6,8 +6,8 @@ import { z } from "zod";
 export class SchemaMismatchException extends Error {}
 
 export const MetadataSchema = z.object({
-  createdTime: z.string().datetime().optional(),
-  lastEditTime: z.string().datetime().optional(),
+  createdTime: z.iso.datetime().optional(),
+  lastEditTime: z.iso.datetime().optional(),
   schemaVersion: z.number().int(),
 });
 
@@ -40,8 +40,8 @@ export function createMetadataSchemaWithVersionValidation(
   versionSchema: z.ZodSchema<number>,
 ) {
   return z.object({
-    createdTime: z.string().datetime().optional(),
-    lastEditTime: z.string().datetime().optional(),
+    createdTime: z.iso.datetime().optional(),
+    lastEditTime: z.iso.datetime().optional(),
     schemaVersion: versionSchema,
   });
 }
@@ -71,7 +71,7 @@ export function checkSchemaVersion<T extends ItemWithMetadata>(
   if (item.meta?.schemaVersion) {
     const result = versionSchema.safeParse(item.meta.schemaVersion);
     if (!result.success) {
-      const errorMessage = result.error.errors
+      const errorMessage = result.error.issues
         .map((err) => err.message)
         .join(", ");
       throw new SchemaMismatchException(

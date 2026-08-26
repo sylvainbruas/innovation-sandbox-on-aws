@@ -38,7 +38,7 @@ export const ViewBlueprint = () => {
   const { setTools } = useAppLayoutContext();
   const { isAdmin } = useUser();
 
-  const query = useGetBlueprintById(blueprintId!);
+  const query = useGetBlueprintById(blueprintId);
   const { data, isLoading, isError, error, refetch } = query;
 
   useEffect(() => {

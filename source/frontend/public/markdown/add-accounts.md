@@ -6,13 +6,13 @@ Register AWS accounts from your organization to make them available as sandbox e
 
 ---
 
-## Unregistered Accounts
+## Unregistered accounts
 
 The table displays AWS accounts staged within the "Entry" organizational unit (OU) that are not yet registered with Innovation Sandbox. These accounts are available to be added to the account pool.
 
 ---
 
-## Register Accounts
+## Register accounts
 
 Select one or more accounts from the table and choose **Register** to add them to the account pool.
 
@@ -22,7 +22,7 @@ For more information, see [Managing the account pool](https://docs.aws.amazon.co
 
 ---
 
-## Account Cleanup Process
+## Account cleanup process
 
 After registration, accounts enter a cleanup phase where all supported resources are deleted. This ensures accounts are in a clean state before being made available for lease requests.
 

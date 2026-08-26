@@ -2,7 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { SandboxAccount } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
-import { UnregisteredAccount } from "@amzn/innovation-sandbox-frontend/domains/accounts/types";
+import {
+  CleanupReport,
+  UnregisteredAccount,
+} from "@amzn/innovation-sandbox-frontend/domains/accounts/types";
 import {
   ApiProxy,
   IApiProxy,
@@ -71,5 +74,43 @@ export class AccountService {
 
   async cleanupAccount(awsAccountId: string): Promise<void> {
     await this.api.post(`/accounts/${awsAccountId}/retryCleanup`);
+  }
+
+  async quarantineAccount(awsAccountId: string): Promise<void> {
+    await this.api.post(`/accounts/${awsAccountId}/quarantine`);
+  }
+
+  async getLatestCleanupReport(
+    accountId: string,
+  ): Promise<CleanupReport | null> {
+    try {
+      const response = await this.api.get<{
+        result: CleanupReport[];
+        nextPageIdentifier: string | null;
+      }>(`/accounts/${accountId}/cleanup-reports?maxResults=1`);
+      return response.result[0] ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  async getCleanupReports(
+    accountId: string,
+    pageIdentifier?: string,
+  ): Promise<{ result: CleanupReport[]; nextPageIdentifier: string | null }> {
+    const params = new URLSearchParams();
+    if (pageIdentifier) {
+      params.set("pageIdentifier", pageIdentifier);
+    }
+    const query = params.toString();
+    const url = `/accounts/${accountId}/cleanup-reports${query ? `?${query}` : ""}`;
+    return await this.api.get<{
+      result: CleanupReport[];
+      nextPageIdentifier: string | null;
+    }>(url);
+  }
+
+  async skipCooldown(awsAccountId: string): Promise<void> {
+    await this.api.post(`/accounts/${awsAccountId}/skipCooldown`);
   }
 }

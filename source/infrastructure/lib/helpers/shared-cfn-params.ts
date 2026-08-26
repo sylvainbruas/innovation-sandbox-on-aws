@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { Construct } from "constructs";
 
+import { NAMESPACE_PATTERN } from "@amzn/innovation-sandbox-commons/types/isb-types.js";
 import { ParameterWithLabel } from "@amzn/innovation-sandbox-infrastructure/helpers/cfn-utils";
 
 export class NamespaceParam extends ParameterWithLabel {
@@ -12,7 +13,7 @@ export class NamespaceParam extends ParameterWithLabel {
         "The namespace for this deployment of Innovation Sandbox (must be the same for all member stacks)." +
         " Alphanumeric characters of length between 3 and 8",
       default: "myisb",
-      allowedPattern: "^[0-9a-zA-Z]{3,8}$",
+      allowedPattern: NAMESPACE_PATTERN,
     });
     this.overrideLogicalId("Namespace");
   }

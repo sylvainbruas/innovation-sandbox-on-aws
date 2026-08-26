@@ -3,7 +3,6 @@
 import { Stack, type StackProps } from "aws-cdk-lib";
 import { Construct } from "constructs";
 
-import { ApplicationInsights } from "@amzn/innovation-sandbox-infrastructure/components/observability/app-insights";
 import {
   addParameterGroup,
   ParameterWithLabel,
@@ -73,6 +72,39 @@ export class IsbComputeStack extends Stack {
       },
     );
 
+    const customDomainName = new ParameterWithLabel(this, "CustomDomainName", {
+      label: "Custom Domain Name (Optional)",
+      description:
+        "A single fully-qualified domain to serve ISB on, e.g. isb.example.com. Provide Custom" +
+        " Domain Certificate ARN as well to attach it (with TLS) to the ISB CloudFront" +
+        " distribution. If you front ISB with your own edge/proxy, set this to your public" +
+        " domain and leave the certificate ARN empty. No wildcards, scheme, or path. Leave" +
+        " empty to use the default CloudFront URL.",
+      default: "",
+      allowedPattern: String.raw`^$|^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}$`,
+      constraintDescription:
+        "Must be a single domain like isb.example.com (no https://, no path, no '*'), or empty",
+    });
+
+    const customDomainCertificateArn = new ParameterWithLabel(
+      this,
+      "CustomDomainCertificateArn",
+      {
+        label: "Custom Domain Certificate ARN (Optional)",
+        description:
+          "ARN of an existing ACM certificate that covers the Custom Domain Name (a wildcard" +
+          " cert is fine). The certificate must be in us-east-1, because CloudFront only reads" +
+          " certificates from that Region regardless of where this stack is deployed. Provide" +
+          " this to serve the domain on the ISB CloudFront distribution. Leave empty if you" +
+          " terminate TLS on your own edge/proxy.",
+        default: "",
+        allowedPattern:
+          "^$|^arn:aws[a-zA-Z-]*:acm:us-east-1:[0-9]{12}:certificate/[0-9a-fA-F-]+$",
+        constraintDescription:
+          "Must be an ACM certificate ARN in us-east-1, or empty",
+      },
+    );
+
     addParameterGroup(this, {
       label: "Compute Stack Configuration",
       parameters: [
@@ -82,6 +114,8 @@ export class IsbComputeStack extends Stack {
         allowListedCidr,
         useStableTagging,
         acceptTerms,
+        customDomainName,
+        customDomainCertificateArn,
       ],
     });
 
@@ -98,10 +132,25 @@ export class IsbComputeStack extends Stack {
       idcAccountId: idcAccountId.valueAsString,
       allowListedCidr: allowListedCidr.valueAsList,
       useStableTaggingParameter: useStableTagging,
-    });
-
-    new ApplicationInsights(this, "IsbApplicationInsights", {
-      namespace: namespaceParam.valueAsString,
+      cognitoUserPoolId:
+        IsbComputeStack.sharedSpokeConfig.data.cognitoUserPoolId,
+      cognitoUserPoolArn:
+        IsbComputeStack.sharedSpokeConfig.data.cognitoUserPoolArn,
+      cognitoAppClientId:
+        IsbComputeStack.sharedSpokeConfig.data.cognitoAppClientId,
+      cognitoIdentityPoolId:
+        IsbComputeStack.sharedSpokeConfig.data.cognitoIdentityPoolId,
+      cognitoDomain: IsbComputeStack.sharedSpokeConfig.data.cognitoDomain,
+      awsAccessPortalUrl:
+        IsbComputeStack.sharedSpokeConfig.data.awsAccessPortalUrl,
+      identityPoolAdminRoleName:
+        IsbComputeStack.sharedSpokeConfig.data.identityPoolAdminRoleName,
+      identityPoolManagerRoleName:
+        IsbComputeStack.sharedSpokeConfig.data.identityPoolManagerRoleName,
+      identityPoolUserRoleName:
+        IsbComputeStack.sharedSpokeConfig.data.identityPoolUserRoleName,
+      customDomainName: customDomainName.valueAsString,
+      customDomainCertificateArn: customDomainCertificateArn.valueAsString,
     });
 
     applyIsbTag(this, `${namespaceParam.valueAsString}`);

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { PaginatedQueryResult } from "@amzn/innovation-sandbox-commons/data/common-types.js";
-import { IsbUser } from "@amzn/innovation-sandbox-commons/types/isb-types.js";
+import type { IsbUser } from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
 import { Logger } from "@aws-lambda-powertools/logger";
 
 const logger = new Logger();

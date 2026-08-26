@@ -32,6 +32,7 @@ import {
   useUpdateLeaseTemplate,
 } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/hooks";
 import { BasicDetailsValidationSchema } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/validation";
+import { useGetConfigurations } from "@amzn/innovation-sandbox-frontend/domains/settings/hooks";
 import { useBreadcrumb } from "@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb";
 
 export const EditBasicDetails = () => {
@@ -40,11 +41,14 @@ export const EditBasicDetails = () => {
   const setBreadcrumb = useBreadcrumb();
   const { setTools } = useAppLayoutContext();
 
-  const query = useGetLeaseTemplateById(uuid!);
+  const query = useGetLeaseTemplateById(uuid);
   const { data: leaseTemplate, isLoading, isError, refetch, error } = query;
 
   const { mutateAsync: updateLeaseTemplate, isPending: isUpdating } =
     useUpdateLeaseTemplate();
+
+  const { data: config } = useGetConfigurations();
+  const leaseSharingEnabled = config?.leases.leaseSharingEnabled || false;
 
   // Initialize form with React Hook Form
   const methods = useForm<BasicDetailsFormValues>({
@@ -55,6 +59,7 @@ export const EditBasicDetails = () => {
       description: "",
       requiresApproval: true,
       visibility: "PRIVATE",
+      allowOwnerToShareLease: false,
     },
   });
 
@@ -72,6 +77,7 @@ export const EditBasicDetails = () => {
         description: leaseTemplate.description || "",
         requiresApproval: leaseTemplate.requiresApproval,
         visibility: leaseTemplate.visibility,
+        allowOwnerToShareLease: leaseTemplate.allowOwnerToShareLease ?? false,
       });
     }
   }, [leaseTemplate, reset]);
@@ -97,6 +103,7 @@ export const EditBasicDetails = () => {
         description: data.description || "",
         requiresApproval: data.requiresApproval,
         visibility: data.visibility,
+        allowOwnerToShareLease: data.allowOwnerToShareLease,
       };
 
       await updateLeaseTemplate(updatedLeaseTemplate);
@@ -140,7 +147,7 @@ export const EditBasicDetails = () => {
             <Container
               header={<Header variant="h2">Edit Basic Details</Header>}
             >
-              <BasicDetailsForm />
+              <BasicDetailsForm leaseSharingEnabled={leaseSharingEnabled} />
             </Container>
             <Box float="right">
               <SpaceBetween direction="horizontal" size="xs">

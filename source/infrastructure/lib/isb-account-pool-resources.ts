@@ -6,6 +6,7 @@ import {
   ArnFormat,
   aws_ram,
   aws_ssm,
+  CfnCondition,
   Fn,
   IStackSynthesizer,
   Stack,
@@ -28,6 +29,7 @@ import { Construct } from "constructs";
 
 import { TokenSafeAccountPoolConfig } from "@amzn/innovation-sandbox-commons/data/account-pool-stack-config/account-pool-stack-config.js";
 import { sharedAccountPoolSsmParamName } from "@amzn/innovation-sandbox-commons/types/isb-types.js";
+import { isbAccountTagKeys } from "@amzn/innovation-sandbox-commons/utils/isb-account-tags.js";
 import { CostAllocationTagActivator } from "@amzn/innovation-sandbox-infrastructure/components/custom-resources/cost-allocation-tag-activator";
 import {
   getInnovationSandboxAwsNukeSupportedServicesScp,
@@ -41,6 +43,7 @@ import {
   getSolutionContext,
 } from "@amzn/innovation-sandbox-infrastructure/helpers/cdk-context";
 import { addCfnGuardSuppression } from "@amzn/innovation-sandbox-infrastructure/helpers/cfn-guard";
+import { type OptionalListParameter } from "@amzn/innovation-sandbox-infrastructure/helpers/cfn-utils";
 import {
   getIntermediateRoleName,
   getOrgMgtRoleName,
@@ -62,6 +65,11 @@ export interface IsbAccountPoolResourcesProps {
   readonly parentOuId: string;
   readonly hubAccountId: string;
   readonly isbManagedRegions: string[];
+  readonly additionalAllowedServices: string[];
+  readonly hasAdditionalAllowedServices: CfnCondition;
+  readonly additionalPrincipalExceptions: string[];
+  readonly hasAdditionalPrincipalExceptions: CfnCondition;
+  readonly bedrockInferenceProfilePatterns: OptionalListParameter;
   readonly synthesizer?: IStackSynthesizer;
 }
 
@@ -115,26 +123,37 @@ export class IsbAccountPoolResources {
     const organizationId = Fn.select(1, Fn.split("/", sandboxOu.attrArn));
 
     // Service Control Policies (SCPs)
+    const scpDirectoryPath = getSolutionContext(scope.node).scpDirectoryPath;
 
-    const allowedServicesScp = getInnovationSandboxAwsNukeSupportedServicesScp({
-      namespace: props.namespace,
-    });
+    const allowedServicesScpContent =
+      getInnovationSandboxAwsNukeSupportedServicesScp(
+        props.namespace,
+        props.additionalAllowedServices,
+        props.hasAdditionalAllowedServices.logicalId,
+        props.additionalPrincipalExceptions,
+        props.hasAdditionalPrincipalExceptions.logicalId,
+        scpDirectoryPath,
+      );
 
     new CfnPolicy(scope, "InnovationSandboxAwsNukeSupportedServicesScp", {
-      name: "InnovationSandboxAwsNukeSupportedServicesScp",
+      name: `${props.namespace}-InnovationSandboxAwsNukeSupportedServicesScp`,
       description:
         "Service Control Policy (SCP) to allow only services supported by AWS Nuke clean workflow. ",
       type: "SERVICE_CONTROL_POLICY",
-      content: allowedServicesScp.toJSON(),
+      content: allowedServicesScpContent,
       targetIds: [sandboxOu.attrId],
     });
 
     const restrictionScp = getInnovationSandboxRestrictionsScp({
       namespace: props.namespace,
+      scpDirectoryPath,
+      additionalPrincipalExceptions: props.additionalPrincipalExceptions,
+      hasAdditionalPrincipalExceptionsConditionId:
+        props.hasAdditionalPrincipalExceptions.logicalId,
     });
 
     new CfnPolicy(scope, "InnovationSandboxRestrictionsScp", {
-      name: "InnovationSandboxRestrictionsScp",
+      name: `${props.namespace}-InnovationSandboxRestrictionsScp`,
       description:
         "Service Control Policy (SCP) to add restrictions for security, isolation, cost and operations related resources.",
       type: "SERVICE_CONTROL_POLICY",
@@ -144,10 +163,12 @@ export class IsbAccountPoolResources {
 
     const protectionScp = getInnovationSandboxProtectScp({
       namespace: props.namespace,
+      isbManagedRegions: props.isbManagedRegions,
+      scpDirectoryPath,
     });
 
     new CfnPolicy(scope, "InnovationSandboxProtectISBScp", {
-      name: "InnovationSandboxProtectISBResourcesScp",
+      name: `${props.namespace}-InnovationSandboxProtectISBResourcesScp`,
       description:
         "Service Control Policy (SCP) for Innovation Sandbox to protect ISB control plane resources.",
       type: "SERVICE_CONTROL_POLICY",
@@ -158,10 +179,18 @@ export class IsbAccountPoolResources {
     const limitRegionsScp = getInnovationSandboxLimitRegionsScp({
       namespace: props.namespace,
       isbManagedRegions: props.isbManagedRegions,
+      scpDirectoryPath,
+      additionalPrincipalExceptions: props.additionalPrincipalExceptions,
+      hasAdditionalPrincipalExceptionsConditionId:
+        props.hasAdditionalPrincipalExceptions.logicalId,
+      bedrockInferenceProfilePatterns:
+        props.bedrockInferenceProfilePatterns.valueAsList,
+      hasBedrockInferenceProfilePatternsConditionId:
+        props.bedrockInferenceProfilePatterns.hasValuesCondition.logicalId,
     });
 
     new CfnPolicy(scope, "InnovationSandboxLimitRegionsScp", {
-      name: "InnovationSandboxLimitRegionsScp",
+      name: `${props.namespace}-InnovationSandboxLimitRegionsScp`,
       description:
         "Service Control Policy (SCP) for Innovation Sandbox to limit use of AWS Regions.",
       type: "SERVICE_CONTROL_POLICY",
@@ -171,10 +200,11 @@ export class IsbAccountPoolResources {
 
     const writeProtectionScp = getInnovationSandboxWriteProtectionScp({
       namespace: props.namespace,
+      scpDirectoryPath,
     });
 
     new CfnPolicy(scope, "InnovationSandboxWriteProtectionScp", {
-      name: "InnovationSandboxWriteProtectionScp",
+      name: `${props.namespace}-InnovationSandboxWriteProtectionScp`,
       description:
         "Service Control Policy (SCP) for Innovation Sandbox to restrict all resource to create or modify actions.",
       type: "SERVICE_CONTROL_POLICY",
@@ -265,6 +295,27 @@ export class IsbAccountPoolResources {
               }),
             ],
           }),
+          new PolicyStatement({
+            actions: [
+              "organizations:TagResource",
+              "organizations:UntagResource",
+            ],
+            resources: [
+              // Accounts only — ISB never tags OUs, policies, or roots.
+              Stack.of(scope).formatArn({
+                service: "organizations",
+                region: "",
+                resource: "account",
+                arnFormat: ArnFormat.SLASH_RESOURCE_NAME,
+                resourceName: `${organizationId}/*`,
+              }),
+            ],
+            conditions: {
+              "ForAllValues:StringEquals": {
+                "aws:TagKeys": isbAccountTagKeys(props.namespace),
+              },
+            },
+          }),
         ],
       }),
     );
@@ -272,13 +323,16 @@ export class IsbAccountPoolResources {
       new Policy(scope, "CostExplorerPolicy", {
         statements: [
           new PolicyStatement({
-            actions: ["ce:GetCostAndUsage"],
+            actions: [
+              "ce:GetCostAndUsage",
+              "ce:UpdateCostAllocationTagsStatus",
+              "ce:ListCostAllocationTags",
+            ],
             resources: ["*"], // We cannot use a custom billing view to effectively constrain this permission
           }),
         ],
       }),
     );
-
     addCfnGuardSuppression(orgMgtRole, ["CFN_NO_EXPLICIT_RESOURCE_NAMES"]);
 
     const ssmParamAccountPoolConfiguration = new aws_ssm.StringParameter(
@@ -299,6 +353,14 @@ export class IsbAccountPoolResources {
           solutionVersion: getContextFromMapping(scope, "version"),
           supportedSchemas: JSON.stringify(supportedSchemas),
           isbManagedRegions: Fn.join(",", props.isbManagedRegions),
+          additionalAllowedServices: Fn.join(
+            ",",
+            props.additionalAllowedServices,
+          ),
+          bedrockInferenceProfilePatterns: Fn.join(
+            ",",
+            props.bedrockInferenceProfilePatterns.valueAsList,
+          ),
         } satisfies TokenSafeAccountPoolConfig),
         tier: ParameterTier.ADVANCED,
         simpleName: true,

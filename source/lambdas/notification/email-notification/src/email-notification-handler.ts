@@ -41,8 +41,8 @@ async function eventHandler(
   // Early exit if email notifications are not configured
   const {
     notification: { emailFrom },
-    auth: { webAppUrl },
   } = context.globalConfig;
+  const webAppUrl = context.env.WEB_APP_URL;
   if (!emailFrom || emailFrom.trim() === "") {
     logger.warn("Email notifications are disabled - emailFrom not configured");
     return;

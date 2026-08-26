@@ -3,9 +3,16 @@
 
 import { LeaseWithLeaseId } from "@amzn/innovation-sandbox-commons/data/lease/lease";
 import {
+  AssignmentPrincipalRef,
+  GetLeaseAssignmentsResponse,
   LeasePatchRequest,
   MonitoredLeaseWithLeaseId,
   NewLeaseRequest,
+  PrincipalSearchResponse,
+  PrincipalSearchType,
+  SharedLeaseAccessType,
+  SharedLeasesResponse,
+  UpdateLeaseAssignmentsResponse,
 } from "@amzn/innovation-sandbox-frontend/domains/leases/types";
 import {
   ApiProxy,
@@ -80,5 +87,80 @@ export class LeaseService {
 
   async unfreezeLease(leaseId: string): Promise<void> {
     await this.api.post(`/leases/${leaseId}/unfreeze`);
+  }
+
+  async getPrincipals(
+    type: PrincipalSearchType,
+    query: string = "",
+    limit: number = 20,
+    exact: boolean = false,
+  ): Promise<PrincipalSearchResponse> {
+    const params = new URLSearchParams({
+      type,
+      limit: String(limit),
+      exact: String(exact),
+    });
+    if (query.length > 0) {
+      params.set("q", query);
+    }
+
+    return await this.api.get<PrincipalSearchResponse>(
+      `/principals/search?${params.toString()}`,
+    );
+  }
+
+  async getAssignments(leaseId: string): Promise<GetLeaseAssignmentsResponse> {
+    return await this.api.get<GetLeaseAssignmentsResponse>(
+      `/leases/${leaseId}/assignments`,
+    );
+  }
+
+  async updateAssignments(
+    leaseId: string,
+    assignments: AssignmentPrincipalRef[],
+  ): Promise<UpdateLeaseAssignmentsResponse> {
+    return await this.api.put<UpdateLeaseAssignmentsResponse>(
+      `/leases/${leaseId}/assignments`,
+      { assignments },
+    );
+  }
+
+  async getSharedLeases(
+    userId: string,
+    accessType: SharedLeaseAccessType,
+  ): Promise<SharedLeasesResponse> {
+    const allResults: SharedLeasesResponse["result"] = [];
+    let nextPageIdentifier: string | undefined;
+    const maxResults = 100;
+    const MAX_PAGES = 50;
+    let pageCount = 0;
+
+    do {
+      const params = new URLSearchParams({
+        userId,
+        accessType,
+        maxResults: String(maxResults),
+      });
+      if (nextPageIdentifier) {
+        params.set("pageIdentifier", nextPageIdentifier);
+      }
+      const response = await this.api.get<SharedLeasesResponse>(
+        `/leases/shared?${params.toString()}`,
+      );
+      allResults.push(...response.result);
+      nextPageIdentifier = response.nextPageIdentifier ?? undefined;
+      pageCount++;
+    } while (nextPageIdentifier && pageCount < MAX_PAGES);
+
+    if (pageCount >= MAX_PAGES && nextPageIdentifier) {
+      console.warn(
+        `[LeaseService] getSharedLeases hit MAX_PAGES (${MAX_PAGES}) limit. Results may be incomplete.`,
+      );
+    }
+
+    return {
+      result: allResults,
+      nextPageIdentifier: nextPageIdentifier ?? null,
+    };
   }
 }

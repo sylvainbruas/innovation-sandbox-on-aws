@@ -143,7 +143,7 @@ describe("Blueprint Tags Validation (Frontend)", () => {
 
       expect(result.success).toBe(false);
       if (!result.success) {
-        const errors = result.error.errors;
+        const errors = result.error.issues;
         // Both duplicate keys should have errors
         expect(errors).toHaveLength(2);
         expect(errors[0].path).toEqual(["tags", 0, "key"]);

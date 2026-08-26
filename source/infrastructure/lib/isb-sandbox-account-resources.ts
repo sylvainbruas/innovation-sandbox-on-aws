@@ -3,11 +3,13 @@
 import { Stack } from "aws-cdk-lib";
 import {
   AccountPrincipal,
+  CompositePrincipal,
   Effect,
   PolicyDocument,
   PolicyStatement,
   PrincipalWithConditions,
   Role,
+  ServicePrincipal,
 } from "aws-cdk-lib/aws-iam";
 import { Construct } from "constructs";
 
@@ -27,19 +29,27 @@ export class IsbSandboxAccountResources {
     const sandboxAccountRole = new Role(scope, "SandboxAccountRole", {
       roleName: getSandboxAccountRoleName(props.namespace),
       description: "Role to be assumed when operating on sandbox accounts",
-      assumedBy: new PrincipalWithConditions(
-        new AccountPrincipal(props.hubAccountId),
-        {
-          ArnEquals: {
-            "aws:PrincipalArn": Stack.of(scope).formatArn({
-              service: "iam",
-              resource: "role",
-              region: "",
-              account: props.hubAccountId,
-              resourceName: getIntermediateRoleName(props.namespace),
-            }),
+      // CloudFormation trust is required so that aws-nuke's UseCurrentRoleToDeleteStack
+      // feature can pass this role as RoleARN on DeleteStack calls. Without it,
+      // CloudFormation cannot assume the spoke role to perform stack deletion.
+      // Confused deputy is mitigated by the ProtectIsbControlPlaneResources SCP on
+      // sandboxOu, which denies all actions on ISB role resources from non-ISB principals.
+      assumedBy: new CompositePrincipal(
+        new PrincipalWithConditions(
+          new AccountPrincipal(props.hubAccountId),
+          {
+            ArnEquals: {
+              "aws:PrincipalArn": Stack.of(scope).formatArn({
+                service: "iam",
+                resource: "role",
+                region: "",
+                account: props.hubAccountId,
+                resourceName: getIntermediateRoleName(props.namespace),
+              }),
+            },
           },
-        },
+        ),
+        new ServicePrincipal("cloudformation.amazonaws.com"),
       ),
       inlinePolicies: {
         SandboxAccountAdministration: new PolicyDocument({

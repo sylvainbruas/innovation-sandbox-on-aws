@@ -5,6 +5,7 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
+    setupFiles: [path.resolve(__dirname, "./test/lambdas/api-test-setup.ts")],
     coverage: {
       include: ["*.ts"],
     },
@@ -18,6 +19,10 @@ export default defineConfig({
       "@amzn/innovation-sandbox-commons/test": path.resolve(
         __dirname,
         "./test",
+      ),
+      "@amzn/innovation-sandbox-commons/utils": path.resolve(
+        __dirname,
+        "./utils",
       ),
     },
   },

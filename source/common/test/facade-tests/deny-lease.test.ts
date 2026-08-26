@@ -4,16 +4,17 @@ import { Logger } from "@aws-lambda-powertools/logger";
 import { Tracer } from "@aws-lambda-powertools/tracer";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { GlobalConfigSchema } from "@amzn/innovation-sandbox-commons/data/global-config/global-config.js";
 import { PendingLeaseSchema } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import { LeaseDeniedEvent } from "@amzn/innovation-sandbox-commons/events/lease-denied-event.js";
 import { InnovationSandbox } from "@amzn/innovation-sandbox-commons/innovation-sandbox.js";
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
+import { mockGlobalConfig } from "@amzn/innovation-sandbox-commons/test/lambdas/fixtures.js";
 import {
   mockedIsbEventBridge,
   mockedLeaseStore,
 } from "@amzn/innovation-sandbox-commons/test/mocking/common-mocks.js";
 import { createMockOf } from "@amzn/innovation-sandbox-commons/test/mocking/mock-utils.js";
+import { IdcIdentitySchema } from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
 import { DateTime } from "luxon";
 
 function createMockContext() {
@@ -22,11 +23,7 @@ function createMockContext() {
     isbEventBridgeClient: mockedIsbEventBridge(),
     logger: createMockOf(Logger),
     tracer: new Tracer(),
-    globalConfig: generateSchemaData(GlobalConfigSchema, {
-      leases: generateSchemaData(GlobalConfigSchema.shape.leases, {
-        ttl: 30,
-      }),
-    }),
+    globalConfig: mockGlobalConfig(),
   };
 }
 
@@ -54,9 +51,9 @@ describe("InnovationSandbox.denyLease()", () => {
     const leaseToDeny = generateSchemaData(PendingLeaseSchema, {
       status: "PendingApproval",
     });
-    const denier = {
+    const denier = generateSchemaData(IdcIdentitySchema, {
       email: "UnhappyManager@managers.com",
-    };
+    });
 
     await InnovationSandbox.denyLease(
       {
@@ -70,7 +67,7 @@ describe("InnovationSandbox.denyLease()", () => {
       ...leaseToDeny,
       ttl: Math.floor(currentDateTime.plus({ days: 30 }).valueOf() / 1000),
       status: "ApprovalDenied",
-      approvedBy: denier.email,
+      approvedBy: "UnhappyManager@managers.com",
     });
   });
 
@@ -78,9 +75,9 @@ describe("InnovationSandbox.denyLease()", () => {
     const leaseToDeny = generateSchemaData(PendingLeaseSchema, {
       status: "PendingApproval",
     });
-    const denier = {
+    const denier = generateSchemaData(IdcIdentitySchema, {
       email: "UnhappyManager@managers.com",
-    };
+    });
 
     await InnovationSandbox.denyLease(
       {
@@ -95,7 +92,7 @@ describe("InnovationSandbox.denyLease()", () => {
       new LeaseDeniedEvent({
         leaseId: leaseToDeny.uuid,
         userEmail: leaseToDeny.userEmail,
-        deniedBy: denier.email,
+        deniedBy: "UnhappyManager@managers.com",
       }),
     );
   });
@@ -112,9 +109,9 @@ describe("InnovationSandbox.denyLease()", () => {
             lease: generateSchemaData(PendingLeaseSchema, {
               status: "PendingApproval",
             }),
-            denier: {
+            denier: generateSchemaData(IdcIdentitySchema, {
               email: "UnhappyManager@managers.com",
-            },
+            }),
           },
           mockContext,
         ),
@@ -132,9 +129,9 @@ describe("InnovationSandbox.denyLease()", () => {
           lease: generateSchemaData(PendingLeaseSchema, {
             status: "PendingApproval",
           }),
-          denier: {
+          denier: generateSchemaData(IdcIdentitySchema, {
             email: "UnhappyManager@managers.com",
-          },
+          }),
         },
         mockContext,
       );

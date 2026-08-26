@@ -9,7 +9,7 @@ import { AwsAccountIdSchema } from "@amzn/innovation-sandbox-commons/utils/zod.j
 
 export const BlueprintDeploymentSucceededEventSchema = z.object({
   leaseId: LeaseKeySchema,
-  blueprintId: z.string().uuid(),
+  blueprintId: z.uuid(),
   accountId: AwsAccountIdSchema,
   operationId: z.string(),
   duration: z.number(),

@@ -21,7 +21,6 @@ import {
   BlueprintWithStackSets,
 } from "@amzn/innovation-sandbox-commons/data/blueprint/blueprint.js";
 import { DynamoBlueprintStore } from "@amzn/innovation-sandbox-commons/data/blueprint/dynamo-blueprint-store.js";
-import { GlobalConfigSchema } from "@amzn/innovation-sandbox-commons/data/global-config/global-config.js";
 import { DynamoLeaseTemplateStore } from "@amzn/innovation-sandbox-commons/data/lease-template/dynamo-lease-template-store.js";
 import {
   BlueprintDeploymentService,
@@ -37,20 +36,14 @@ import {
   createFailureResponseBody,
   isbAuthorizedUser,
   mockAuthorizedContext,
+  mockGlobalConfig,
   responseHeaders,
 } from "@amzn/innovation-sandbox-commons/test/lambdas/fixtures.js";
 import {
   bulkStubEnv,
   mockAppConfigMiddleware,
 } from "@amzn/innovation-sandbox-commons/test/lambdas/utils.js";
-import {
-  GetSecretValueCommand,
-  SecretsManagerClient,
-} from "@aws-sdk/client-secrets-manager";
-
 const mockCloudFormationClient = mockClient(CloudFormationClient);
-const secretsManagerMock = mockClient(SecretsManagerClient);
-
 const testEnv = generateSchemaData(BlueprintLambdaEnvironmentSchema, {
   BLUEPRINT_TABLE_NAME: "test-blueprint-table",
   LEASE_TEMPLATE_TABLE_NAME: "test-lease-template-table",
@@ -60,7 +53,7 @@ const testEnv = generateSchemaData(BlueprintLambdaEnvironmentSchema, {
   HUB_ACCOUNT_ID: "222222222222",
 });
 
-const mockedGlobalConfig = generateSchemaData(GlobalConfigSchema);
+const mockedGlobalConfig = mockGlobalConfig();
 
 let handler: typeof import("../src/blueprints-handler.js").handler;
 
@@ -73,20 +66,13 @@ describe("Blueprint API Handlers", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockCloudFormationClient.reset();
-    secretsManagerMock.reset();
     bulkStubEnv(testEnv);
     mockAppConfigMiddleware(mockedGlobalConfig);
-
-    // Mock Secrets Manager to return JWT secret
-    secretsManagerMock.on(GetSecretValueCommand).resolves({
-      SecretString: "testSecret",
-    });
   });
 
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.restoreAllMocks();
-    secretsManagerMock.reset();
   });
 
   it("should return 500 response when environment variables are misconfigured", async () => {
@@ -96,8 +82,8 @@ describe("Blueprint API Handlers", () => {
       path: "/blueprints",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${isbAuthorizedUser.token}`,
       },
+      isbUser: isbAuthorizedUser.user,
     });
     expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
       statusCode: 500,
@@ -131,8 +117,8 @@ describe("Blueprint API Handlers", () => {
         path: "/blueprints/stacksets",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
       });
 
       expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
@@ -172,8 +158,8 @@ describe("Blueprint API Handlers", () => {
         path: "/blueprints/stacksets",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
       });
 
       expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
@@ -208,8 +194,8 @@ describe("Blueprint API Handlers", () => {
         path: "/blueprints/stacksets",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
       });
 
       expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
@@ -233,22 +219,44 @@ describe("Blueprint API Handlers", () => {
       });
     });
 
+    it("should map maxResults to CloudFormation MaxResults", async () => {
+      mockCloudFormationClient.on(ListStackSetsCommand).resolves({
+        Summaries: [],
+      });
+
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "GET",
+        path: "/blueprints/stacksets",
+        queryStringParameters: { maxResults: "7" },
+        headers: {
+          "Content-Type": "application/json",
+        },
+        isbUser: isbAuthorizedUser.user,
+      });
+
+      await handler(event, mockAuthorizedContext(testEnv));
+
+      const calls = mockCloudFormationClient.commandCalls(ListStackSetsCommand);
+      expect(calls).toHaveLength(1);
+      expect(calls[0]!.args[0].input.MaxResults).toBe(7);
+    });
+
     it("should return 400 for invalid pagination parameters", async () => {
       const event = createAPIGatewayProxyEvent({
         httpMethod: "GET",
         path: "/blueprints/stacksets",
-        queryStringParameters: { pageSize: "999" },
+        queryStringParameters: { maxResults: "999" },
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
       });
 
       expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
         statusCode: 400,
         body: createFailureResponseBody({
-          field: "pageSize",
-          message: "Number must be less than or equal to 100",
+          field: "maxResults",
+          message: "Too big: expected number to be <=100",
         }),
         headers: responseHeaders,
       });
@@ -292,8 +300,8 @@ describe("Blueprint API Handlers", () => {
         path: "/blueprints/stacksets",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
       });
 
       const result = await handler(event, mockAuthorizedContext(orgMgmtEnv));
@@ -339,8 +347,8 @@ describe("Blueprint API Handlers", () => {
         path: "/blueprints/stacksets",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
       });
 
       const result = await handler(
@@ -389,8 +397,8 @@ describe("Blueprint API Handlers", () => {
         path: "/blueprints",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
       });
 
       expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
@@ -422,8 +430,8 @@ describe("Blueprint API Handlers", () => {
         path: "/blueprints",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
       });
 
       expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
@@ -468,8 +476,8 @@ describe("Blueprint API Handlers", () => {
         path: "/blueprints",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
       });
 
       expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
@@ -485,7 +493,7 @@ describe("Blueprint API Handlers", () => {
       });
     });
 
-    it("should support pagination with pageIdentifier and pageSize", async () => {
+    it("should map pageIdentifier and maxResults to the store", async () => {
       const mockBlueprints: BlueprintWithStackSets[] = [
         {
           blueprint: createTestBlueprintItem({
@@ -513,12 +521,12 @@ describe("Blueprint API Handlers", () => {
         path: "/blueprints",
         queryStringParameters: {
           pageIdentifier: "previous-token",
-          pageSize: "50",
+          maxResults: "50",
         },
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
       });
 
       await handler(event, mockAuthorizedContext(testEnv));
@@ -534,19 +542,19 @@ describe("Blueprint API Handlers", () => {
         httpMethod: "GET",
         path: "/blueprints",
         queryStringParameters: {
-          pageSize: "999",
+          maxResults: "999",
         },
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
       });
 
       expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
         statusCode: 400,
         body: createFailureResponseBody({
-          field: "pageSize",
-          message: "Number must be less than or equal to 100",
+          field: "maxResults",
+          message: "Too big: expected number to be <=100",
         }),
         headers: responseHeaders,
       });
@@ -565,8 +573,8 @@ describe("Blueprint API Handlers", () => {
         path: "/blueprints",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
       });
 
       expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
@@ -617,8 +625,8 @@ describe("Blueprint API Handlers", () => {
         }),
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
       });
 
       expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
@@ -643,8 +651,8 @@ describe("Blueprint API Handlers", () => {
         }),
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
       });
 
       // Multi-line assertion to verify all 2 missing fields are reported by Zod
@@ -667,15 +675,15 @@ describe("Blueprint API Handlers", () => {
         }),
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
       });
 
       expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
         statusCode: 400,
         body: createFailureResponseBody({
           field: "regions",
-          message: "Array must contain at least 1 element(s)",
+          message: "Too small: expected array to have >=1 items",
         }),
         headers: responseHeaders,
       });
@@ -701,8 +709,8 @@ describe("Blueprint API Handlers", () => {
         }),
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
       });
 
       expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
@@ -736,8 +744,8 @@ describe("Blueprint API Handlers", () => {
         }),
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
       });
 
       expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
@@ -772,8 +780,8 @@ describe("Blueprint API Handlers", () => {
         pathParameters: { blueprintId: "650e8400-e29b-41d4-a716-446655440001" },
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
       });
 
       expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
@@ -799,8 +807,8 @@ describe("Blueprint API Handlers", () => {
         pathParameters: { blueprintId: "650e8400-e29b-41d4-a716-446655440001" },
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
       });
 
       expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
@@ -860,8 +868,8 @@ describe("Blueprint API Handlers", () => {
         }),
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
       });
 
       const response = await handler(event, mockAuthorizedContext(testEnv));
@@ -918,8 +926,8 @@ describe("Blueprint API Handlers", () => {
         }),
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
       });
 
       const response = await handler(event, mockAuthorizedContext(testEnv));
@@ -948,15 +956,15 @@ describe("Blueprint API Handlers", () => {
         }),
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
       });
 
       expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
         statusCode: 400,
         body: createFailureResponseBody({
           field: "input",
-          message: "Unrecognized key(s) in object: 'regions'",
+          message: 'Unrecognized key: "regions"',
         }),
         headers: responseHeaders,
       });
@@ -978,8 +986,8 @@ describe("Blueprint API Handlers", () => {
         }),
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
       });
 
       expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
@@ -1020,8 +1028,8 @@ describe("Blueprint API Handlers", () => {
         pathParameters: { blueprintId: "650e8400-e29b-41d4-a716-446655440001" },
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
       });
 
       expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
@@ -1071,8 +1079,8 @@ describe("Blueprint API Handlers", () => {
         pathParameters: { blueprintId: "650e8400-e29b-41d4-a716-446655440001" },
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
       });
 
       expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
@@ -1103,8 +1111,8 @@ describe("Blueprint API Handlers", () => {
         pathParameters: { blueprintId: "650e8400-e29b-41d4-a716-446655440001" },
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
       });
 
       expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({

@@ -4,10 +4,14 @@
 import createWrapper from "@cloudscape-design/components/test-utils/dom";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { http, HttpResponse } from "msw";
 import { BrowserRouter as Router } from "react-router-dom";
-import { describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { Home } from "@amzn/innovation-sandbox-frontend/domains/home/pages/Home";
+import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
+import { ModalProvider } from "@amzn/innovation-sandbox-frontend/hooks/useModal";
+import { createConfiguration } from "@amzn/innovation-sandbox-frontend/mocks/factories/configurationFactory";
 import { createActiveLease } from "@amzn/innovation-sandbox-frontend/mocks/factories/leaseFactory";
 import { mockLeaseApi } from "@amzn/innovation-sandbox-frontend/mocks/mockApi";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
@@ -28,20 +32,25 @@ vi.mock("@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb", () => ({
   useBreadcrumb: () => mockSetBreadcrumb,
 }));
 
-vi.mock("@amzn/innovation-sandbox-frontend/helpers/AuthService", () => ({
-  AuthService: {
-    getCurrentUser: vi.fn().mockResolvedValue({ email: "test@example.com" }),
-    getAccessToken: vi.fn().mockReturnValue("mocked-access-token"),
+vi.mock(
+  "@amzn/innovation-sandbox-frontend/helpers/CognitoAuthService",
+  async () => {
+    const [{ authenticated }, { buildCognitoAuthServiceMock }] =
+      await Promise.all([
+        import("@amzn/innovation-sandbox-frontend-test/utils/cognitoFixtures"),
+        import("@amzn/innovation-sandbox-frontend-test/utils/cognitoServiceMock"),
+      ]);
+    return {
+      CognitoAuthService: buildCognitoAuthServiceMock({
+        getCurrentUser: vi.fn().mockResolvedValue(authenticated()),
+      }),
+    };
   },
-}));
+);
 
 vi.mock("@amzn/innovation-sandbox-frontend/domains/settings/hooks", () => ({
   useGetConfigurations: () => ({
-    data: {
-      auth: {
-        awsAccessPortalUrl: "https://mock-portal-url.com",
-      },
-    },
+    data: createConfiguration(),
     isLoading: false,
     isError: false,
   }),
@@ -50,10 +59,24 @@ vi.mock("@amzn/innovation-sandbox-frontend/domains/settings/hooks", () => ({
 describe("Home", () => {
   const renderComponent = () =>
     renderWithQueryClient(
-      <Router>
-        <Home />
-      </Router>,
+      <ModalProvider>
+        <Router>
+          <Home />
+        </Router>
+      </ModalProvider>,
     );
+
+  beforeEach(() => {
+    // ActiveLeases component fetches shared leases
+    server.use(
+      http.get(`${getConfig().ApiUrl}/leases/shared`, () =>
+        HttpResponse.json({
+          status: "success",
+          data: { result: [], nextPageIdentifier: null },
+        }),
+      ),
+    );
+  });
 
   test("renders correctly", async () => {
     mockLeaseApi.returns([]);
@@ -80,33 +103,8 @@ describe("Home", () => {
       const infoPanel = createWrapper().findAlert();
       expect(infoPanel?.getElement()).toBeInTheDocument();
       expect(
-        screen.getByText("You currently don't have any leases."),
+        screen.getByText("You currently don't have any active leases."),
       ).toBeInTheDocument();
-    });
-  });
-
-  test("displays lease data when available", async () => {
-    const mockLease1 = createActiveLease({
-      originalLeaseTemplateName: "Lease 1",
-      userEmail: "test@example.com",
-      awsAccountId: "123456789011",
-    });
-    const mockLease2 = createActiveLease({
-      originalLeaseTemplateName: "Lease 2",
-      userEmail: "test@example.com",
-      awsAccountId: "123456789012",
-    });
-    mockLeaseApi.returns([mockLease1, mockLease2]);
-    server.use(mockLeaseApi.getHandler());
-
-    renderComponent();
-
-    await waitFor(() => {
-      expect(screen.getByText("My Leases")).toBeInTheDocument();
-      expect(screen.getByText("Lease 1")).toBeInTheDocument();
-      expect(screen.getByText("Lease 2")).toBeInTheDocument();
-      expect(screen.getByText("123456789011")).toBeInTheDocument();
-      expect(screen.getByText("123456789012")).toBeInTheDocument();
     });
   });
 

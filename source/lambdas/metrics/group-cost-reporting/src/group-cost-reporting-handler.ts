@@ -158,6 +158,7 @@ async function fetchRelevantLeases(
     "Ejected",
     "Expired",
     "ManuallyTerminated",
+    "UserTerminated",
   ];
 
   const leases: (MonitoredLease | ExpiredLease)[] = (

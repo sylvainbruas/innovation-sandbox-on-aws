@@ -21,15 +21,18 @@ export const LeaseTemplateDetails = () => {
   const setBreadcrumb = useBreadcrumb();
   const { setTools } = useAppLayoutContext();
 
-  const query = useGetLeaseTemplateById(uuid!);
+  const query = useGetLeaseTemplateById(uuid);
   const { data: leaseTemplate, isFetching, isError, refetch, error } = query;
 
   const {
     isLoading: isLoadingConfig,
     isError: isConfigError,
+    data: config,
     refetch: refetchConfig,
     error: configError,
   } = useGetConfigurations();
+
+  const leaseSharingEnabled = config?.leases.leaseSharingEnabled || false;
 
   // Set page breadcrumb on page init
   useEffect(() => {
@@ -78,6 +81,7 @@ export const LeaseTemplateDetails = () => {
       <LeaseTemplateSummary
         leaseTemplate={leaseTemplate}
         showEditButtons={true}
+        leaseSharingEnabled={leaseSharingEnabled}
         onEditBasic={() =>
           navigate(`/lease_templates/${leaseTemplate.uuid}/edit/basic`)
         }

@@ -5,11 +5,7 @@ import { z } from "zod";
 import { BaseLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/base-lambda-environment.js";
 
 export const FinalizeCleanupLambdaEnvironmentSchema =
-  BaseLambdaEnvironmentSchema.extend({
-    APP_CONFIG_APPLICATION_ID: z.string(),
-    APP_CONFIG_PROFILE_ID: z.string(),
-    APP_CONFIG_ENVIRONMENT_ID: z.string(),
-  });
+  BaseLambdaEnvironmentSchema;
 
 export type FinalizeCleanupLambdaEnvironment = z.infer<
   typeof FinalizeCleanupLambdaEnvironmentSchema

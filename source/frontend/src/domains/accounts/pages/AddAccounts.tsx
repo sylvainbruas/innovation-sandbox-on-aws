@@ -55,6 +55,9 @@ export const AddAccounts = () => {
     setTools(<Markdown file="add-accounts" />);
   }, []);
 
+  const deselectAccount = (accountId: string) =>
+    setSelectedAccounts((prev) => prev.filter((a) => a.Id !== accountId));
+
   const showRegisterModal = () =>
     showModal({
       header: "Review Accounts to Register",
@@ -75,9 +78,7 @@ export const AddAccounts = () => {
           }
           onSubmit={async (account: UnregisteredAccount) => {
             await addAccount(account.Id);
-            setSelectedAccounts((prev) =>
-              prev.filter((a) => a.Id !== account.Id),
-            );
+            deselectAccount(account.Id);
           }}
           onSuccess={() => {
             // Invalidate both queries after all submissions complete

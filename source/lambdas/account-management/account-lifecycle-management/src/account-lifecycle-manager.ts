@@ -30,7 +30,7 @@ import {
   ContextWithConfig,
   isbConfigMiddleware,
 } from "@amzn/innovation-sandbox-commons/lambda/middleware/isb-config-middleware.js";
-import { SubscribableLog } from "@amzn/innovation-sandbox-commons/observability/log-types.js";
+import { logTaggingFailure } from "@amzn/innovation-sandbox-commons/observability/logging.js";
 import { assertNever } from "@amzn/innovation-sandbox-commons/types/type-guards.js";
 import { AwsConsoleLink } from "@amzn/innovation-sandbox-commons/utils/aws-console-links.js";
 import {
@@ -180,11 +180,11 @@ async function handleLeaseBudgetExceeded(
     },
     {
       leaseStore,
-      idcService: IsbServices.idcService(
-        context.env,
-        fromTemporaryIsbIdcCredentials(context.env),
-      ),
       orgsService: IsbServices.orgsService(
+        context.env,
+        fromTemporaryIsbOrgManagementCredentials(context.env),
+      ),
+      organizationsTaggingService: IsbServices.organizationsTaggingService(
         context.env,
         fromTemporaryIsbOrgManagementCredentials(context.env),
       ),
@@ -234,11 +234,11 @@ async function handleLeaseExpired(
     },
     {
       leaseStore,
-      idcService: IsbServices.idcService(
-        context.env,
-        fromTemporaryIsbIdcCredentials(context.env),
-      ),
       orgsService: IsbServices.orgsService(
+        context.env,
+        fromTemporaryIsbOrgManagementCredentials(context.env),
+      ),
+      organizationsTaggingService: IsbServices.organizationsTaggingService(
         context.env,
         fromTemporaryIsbOrgManagementCredentials(context.env),
       ),
@@ -260,21 +260,18 @@ async function handleAccountCleanupSuccessful(
   context: AccountLifecycleManagerContext,
 ) {
   const minutesSinceCleanupStarted = minutesSinceStarted(event);
-  const stateMachineExecutionArn =
-    event.Detail.cleanupExecutionContext.stateMachineExecutionArn;
+  const executionArn = event.Detail.cleanupExecutionContext.executionArn;
 
   logger.info(
-    `Account cleanup succeeded for account (${event.Detail.accountId}) after ${minutesSinceCleanupStarted.toFixed(1)} minutes. CleanupExecutionId: ${event.Detail.cleanupExecutionContext.stateMachineExecutionArn}`,
+    `Account cleanup succeeded for account (${event.Detail.accountId}) after ${minutesSinceCleanupStarted.toFixed(1)} minutes. CleanupExecutionId: ${event.Detail.cleanupExecutionContext.executionArn}`,
     {
       logDetailType: "AccountCleanupSuccess",
       accountId: event.Detail.accountId,
       durationMinutes: minutesSinceCleanupStarted,
-      stateMachineExecutionArn: stateMachineExecutionArn,
-      stateMachineExecutionURL: AwsConsoleLink.stateMachineExecution(
-        stateMachineExecutionArn,
-      ),
+      executionArn: executionArn,
+      executionURL: AwsConsoleLink.executionConsoleUrl(executionArn),
       reason: event.Detail.reason,
-    } satisfies SubscribableLog,
+    },
   );
 
   const orgsService = IsbServices.orgsService(
@@ -282,6 +279,10 @@ async function handleAccountCleanupSuccessful(
     fromTemporaryIsbOrgManagementCredentials(context.env),
   );
   const sandboxAccountStore = IsbServices.sandboxAccountStore(context.env);
+  const organizationsTaggingService = IsbServices.organizationsTaggingService(
+    context.env,
+    fromTemporaryIsbOrgManagementCredentials(context.env),
+  );
   const cleanSandboxAccountResponse = await sandboxAccountStore.get(
     event.Detail.accountId,
   );
@@ -305,6 +306,17 @@ async function handleAccountCleanupSuccessful(
   await orgsService
     .transactionalMoveAccount(cleanSandboxAccount, "CleanUp", "Available")
     .complete();
+
+  await organizationsTaggingService
+    .updateStatusTag(cleanSandboxAccount.awsAccountId, "Available")
+    .catch((error) =>
+      logTaggingFailure(
+        logger,
+        cleanSandboxAccount.awsAccountId,
+        ["Status"],
+        error,
+      ),
+    );
 }
 
 async function handleAccountCleanupFailure(
@@ -312,21 +324,18 @@ async function handleAccountCleanupFailure(
   context: AccountLifecycleManagerContext,
 ) {
   const minutesSinceCleanupStarted = minutesSinceStarted(event);
-  const stateMachineExecutionArn =
-    event.Detail.cleanupExecutionContext.stateMachineExecutionArn;
+  const executionArn = event.Detail.cleanupExecutionContext.executionArn;
 
   logger.info(
-    `Account cleanup failed for account (${event.Detail.accountId}) after ${minutesSinceCleanupStarted.toFixed(1)} minutes. CleanupExecutionId: ${event.Detail.cleanupExecutionContext.stateMachineExecutionArn}`,
+    `Account cleanup failed for account (${event.Detail.accountId}) after ${minutesSinceCleanupStarted.toFixed(1)} minutes. CleanupExecutionId: ${event.Detail.cleanupExecutionContext.executionArn}`,
     {
       logDetailType: "AccountCleanupFailure",
       accountId: event.Detail.accountId,
       durationMinutes: minutesSinceCleanupStarted,
-      stateMachineExecutionArn: stateMachineExecutionArn,
-      stateMachineExecutionURL: AwsConsoleLink.stateMachineExecution(
-        stateMachineExecutionArn,
-      ),
+      executionArn: executionArn,
+      executionURL: AwsConsoleLink.executionConsoleUrl(executionArn),
       reason: event.Detail.reason,
-    } satisfies SubscribableLog,
+    },
   );
 
   await InnovationSandbox.quarantineAccount(
@@ -334,9 +343,14 @@ async function handleAccountCleanupFailure(
       accountId: event.Detail.accountId,
       reason: "Cleanup Failed",
       currentOu: "CleanUp",
+      reasonForQuarantine: "CLEANUP_FAILED",
     },
     {
       orgsService: IsbServices.orgsService(
+        context.env,
+        fromTemporaryIsbOrgManagementCredentials(context.env),
+      ),
+      organizationsTaggingService: IsbServices.organizationsTaggingService(
         context.env,
         fromTemporaryIsbOrgManagementCredentials(context.env),
       ),
@@ -377,9 +391,14 @@ async function handleAccountDrift(
       accountId: event.Detail.accountId,
       reason: `Drift Detected: {expectedOU: ${event.Detail.expectedOu}, actualOU: ${event.Detail.actualOu}}`,
       currentOu: event.Detail.actualOu,
+      reasonForQuarantine: "DRIFT",
     },
     {
       orgsService: IsbServices.orgsService(
+        context.env,
+        fromTemporaryIsbOrgManagementCredentials(context.env),
+      ),
+      organizationsTaggingService: IsbServices.organizationsTaggingService(
         context.env,
         fromTemporaryIsbOrgManagementCredentials(context.env),
       ),
@@ -433,11 +452,11 @@ async function handleLeaseFreezingAlert(
     },
     {
       leaseStore,
-      idcService: IsbServices.idcService(
-        context.env,
-        fromTemporaryIsbIdcCredentials(context.env),
-      ),
       orgsService: IsbServices.orgsService(
+        context.env,
+        fromTemporaryIsbOrgManagementCredentials(context.env),
+      ),
+      organizationsTaggingService: IsbServices.organizationsTaggingService(
         context.env,
         fromTemporaryIsbOrgManagementCredentials(context.env),
       ),
@@ -476,9 +495,14 @@ async function handleBlueprintDeploymentSucceeded(
     { lease },
     {
       leaseStore,
+      principalStore: IsbServices.principalStore(context.env),
       idcService: IsbServices.idcService(
         context.env,
         fromTemporaryIsbIdcCredentials(context.env),
+      ),
+      organizationsTaggingService: IsbServices.organizationsTaggingService(
+        context.env,
+        fromTemporaryIsbOrgManagementCredentials(context.env),
       ),
       isbEventBridgeClient: IsbServices.isbEventBridge(context.env),
       logger,
@@ -544,11 +568,11 @@ async function handleBlueprintDeploymentFailed(
       },
       {
         leaseStore,
-        idcService: IsbServices.idcService(
-          context.env,
-          fromTemporaryIsbIdcCredentials(context.env),
-        ),
         orgsService: IsbServices.orgsService(
+          context.env,
+          fromTemporaryIsbOrgManagementCredentials(context.env),
+        ),
+        organizationsTaggingService: IsbServices.organizationsTaggingService(
           context.env,
           fromTemporaryIsbOrgManagementCredentials(context.env),
         ),
@@ -606,8 +630,7 @@ function minutesSinceStarted(
 ): number {
   try {
     const startTime = DateTime.fromISO(
-      cleanupEvent.Detail.cleanupExecutionContext
-        .stateMachineExecutionStartTime,
+      cleanupEvent.Detail.cleanupExecutionContext.executionStartTime,
     );
     const now = DateTime.now();
     const duration = now.diff(startTime);

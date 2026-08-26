@@ -183,6 +183,7 @@ describe("BatchActionReview", () => {
         expect(screen.queryAllByText("Loading").length).toBe(3);
       });
 
+      // Clean up: resolve all pending promises
       resolvers.forEach((resolve) => resolve());
     });
 

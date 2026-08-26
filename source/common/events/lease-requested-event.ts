@@ -10,7 +10,7 @@ import { FreeTextSchema } from "@amzn/innovation-sandbox-commons/utils/zod.js";
 export const LeaseRequestedEventSchema = z.object({
   leaseId: LeaseKeySchema,
   comments: FreeTextSchema.optional(),
-  userEmail: z.string().email(),
+  userEmail: z.email(),
   requiresManualApproval: z.boolean(),
 });
 

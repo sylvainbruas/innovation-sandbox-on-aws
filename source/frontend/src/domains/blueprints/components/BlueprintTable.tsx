@@ -159,7 +159,10 @@ export const BlueprintTable = () => {
         header: "Deployment history",
         // prettier-ignore
         cell: (item: Blueprint) => ( // NOSONAR typescript:S6478 - Table API requires cell render functions
-          <DeploymentHistory deployments={item.recentDeployments} />
+          <DeploymentHistory
+            deployments={item.recentDeployments}
+            totalDeploymentCount={item.totalHealthMetrics.totalDeploymentCount}
+          />
         ),
       },
       {
@@ -191,6 +194,11 @@ export const BlueprintTable = () => {
     [],
   );
 
+  const deselectBlueprint = (blueprintId: string) =>
+    setSelectedItems((prev) =>
+      prev.filter((b) => b.blueprintId !== blueprintId),
+    );
+
   const showUnregisterModal = () => {
     showModal({
       header: `Unregister blueprint${selectedItems.length > 1 ? "s" : ""}`,
@@ -214,9 +222,7 @@ export const BlueprintTable = () => {
           sequential
           onSubmit={async (blueprint: Blueprint) => {
             await unregisterBlueprint([blueprint.blueprintId]);
-            setSelectedItems((prev) =>
-              prev.filter((b) => b.blueprintId !== blueprint.blueprintId),
-            );
+            deselectBlueprint(blueprint.blueprintId);
           }}
           onSuccess={() => {
             queryClient.invalidateQueries({

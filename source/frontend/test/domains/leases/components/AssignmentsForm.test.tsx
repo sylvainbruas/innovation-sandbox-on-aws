@@ -1,0 +1,176 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+import { zodResolver } from "@hookform/resolvers/zod";
+import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { useEffect } from "react";
+import { FormProvider, useForm } from "react-hook-form";
+import { describe, expect, it, vi } from "vitest";
+
+import { AssignmentsForm } from "@amzn/innovation-sandbox-frontend/domains/leases/components/AssignmentsForm";
+import {
+  RequestLeaseFormValues,
+  RequestLeaseValidationSchema,
+} from "@amzn/innovation-sandbox-frontend/domains/leases/validation";
+
+// Stub the typeahead with deterministic fixture buttons — same pattern the
+// AssignmentsTab tests use. The real component has its own test file.
+const TYPEAHEAD_FIXTURE = [
+  {
+    principalId: "user-1",
+    principalType: "USER" as const,
+    displayName: "Alice Smith",
+    email: "alice@example.com",
+  },
+  {
+    principalId: "group-1",
+    principalType: "GROUP" as const,
+    displayName: "Engineering",
+  },
+];
+vi.mock(
+  "@amzn/innovation-sandbox-frontend/domains/leases/components/PrincipalTypeahead",
+  () => ({
+    PrincipalTypeahead: ({
+      onSelect,
+      shouldExclude = () => false,
+    }: {
+      onSelect: (p: (typeof TYPEAHEAD_FIXTURE)[number]) => void;
+      shouldExclude?: (p: (typeof TYPEAHEAD_FIXTURE)[number]) => boolean;
+    }) => (
+      <div data-testid="typeahead-stub">
+        {TYPEAHEAD_FIXTURE.filter((p) => !shouldExclude(p)).map((p) => (
+          <button key={p.principalId} type="button" onClick={() => onSelect(p)}>
+            Add {p.principalId}
+          </button>
+        ))}
+      </div>
+    ),
+  }),
+);
+
+// Captures form state into a ref-like object so tests can assert on the
+// shape after interactions.
+function renderWithForm(
+  captured: { values: RequestLeaseFormValues | null },
+  componentProps?: { ownerEmail?: string },
+) {
+  const Harness = () => {
+    const methods = useForm<RequestLeaseFormValues>({
+      resolver: zodResolver(RequestLeaseValidationSchema),
+      mode: "all",
+      defaultValues: {
+        leaseTemplateUuid: "00000000-0000-0000-0000-000000000001",
+        acceptTerms: false,
+        comments: "",
+      },
+    });
+
+    const { watch } = methods;
+    const all = watch();
+    useEffect(() => {
+      captured.values = all;
+    });
+
+    return (
+      <FormProvider {...methods}>
+        <AssignmentsForm ownerEmail={componentProps?.ownerEmail} />
+      </FormProvider>
+    );
+  };
+
+  return render(<Harness />);
+}
+
+describe("AssignmentsForm", () => {
+  it("renders the empty state when no assignments are staged", () => {
+    renderWithForm({ values: null });
+    expect(screen.getByText("No one added yet")).toBeInTheDocument();
+  });
+
+  it("stages a typeahead pick into form state", async () => {
+    const captured = { values: null as RequestLeaseFormValues | null };
+    renderWithForm(captured);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Add user-1" }));
+
+    // The row appears in the table.
+    expect(screen.getByText("Alice Smith")).toBeInTheDocument();
+
+    // Form state carries the wire fields plus display fields (kept so the
+    // table can render across wizard back/forward navigation).
+    expect(captured.values?.assignments).toEqual([
+      {
+        principalId: "user-1",
+        principalType: "USER",
+        displayName: "Alice Smith",
+        email: "alice@example.com",
+      },
+    ]);
+  });
+
+  it("removes a staged row when Remove is clicked", async () => {
+    const captured = { values: null as RequestLeaseFormValues | null };
+    renderWithForm(captured);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: "Add user-1" }));
+    await user.click(screen.getByRole("button", { name: "Add group-1" }));
+    expect(screen.getByText("Engineering")).toBeInTheDocument();
+
+    const aliceRow = screen.getByText("Alice Smith").closest("tr")!;
+    await user.click(within(aliceRow).getByRole("button", { name: "Remove" }));
+
+    expect(screen.queryByText("Alice Smith")).not.toBeInTheDocument();
+    expect(captured.values?.assignments).toEqual([
+      {
+        principalId: "group-1",
+        principalType: "GROUP",
+        displayName: "Engineering",
+      },
+    ]);
+  });
+
+  it("excludes already-staged principals from the typeahead suggestions", async () => {
+    renderWithForm({ values: null });
+    const user = userEvent.setup();
+
+    expect(
+      screen.getByRole("button", { name: "Add user-1" }),
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Add user-1" }));
+
+    expect(
+      screen.queryByRole("button", { name: "Add user-1" }),
+    ).not.toBeInTheDocument();
+    // The other one is still selectable.
+    expect(
+      screen.getByRole("button", { name: "Add group-1" }),
+    ).toBeInTheDocument();
+  });
+
+  it("does not add the owner as a shared assignment", async () => {
+    const captured = { values: null as RequestLeaseFormValues | null };
+    renderWithForm(captured, { ownerEmail: "alice@example.com" });
+    const user = userEvent.setup();
+
+    // The typeahead should exclude alice (owner) from suggestions entirely.
+    expect(
+      screen.queryByRole("button", { name: "Add user-1" }),
+    ).not.toBeInTheDocument();
+
+    // The group is still available
+    await user.click(screen.getByRole("button", { name: "Add group-1" }));
+
+    expect(captured.values?.assignments).toEqual([
+      {
+        principalId: "group-1",
+        principalType: "GROUP",
+        displayName: "Engineering",
+      },
+    ]);
+  });
+});

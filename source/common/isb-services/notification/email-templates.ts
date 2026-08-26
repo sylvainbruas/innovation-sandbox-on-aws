@@ -3,6 +3,8 @@
 
 import { AccountCleanupFailureEvent } from "@amzn/innovation-sandbox-commons/events/account-cleanup-failure-event.js";
 import { AccountDriftDetectedAlert } from "@amzn/innovation-sandbox-commons/events/account-drift-detected-alert.js";
+import { AssignmentCreatedEvent } from "@amzn/innovation-sandbox-commons/events/assignment-created-event.js";
+import { AssignmentRemovedEvent } from "@amzn/innovation-sandbox-commons/events/assignment-removed-event.js";
 import { GroupCostReportGeneratedEvent } from "@amzn/innovation-sandbox-commons/events/group-cost-report-generated-event.js";
 import { GroupCostReportGeneratedFailureEvent } from "@amzn/innovation-sandbox-commons/events/group-cost-report-generated-failure-event.js";
 import { LeaseApprovedEvent } from "@amzn/innovation-sandbox-commons/events/lease-approved-event.js";
@@ -49,7 +51,7 @@ export namespace EmailTemplates {
       htmlBody: `
     <h1>Request to approve or deny lease from ${event.Detail.userEmail}</h1>
     <p>A new lease has been requested by sandbox user ${event.Detail.userEmail}.
-    Sign in to Innovation Sandbox on AWS ${context.webAppUrl} to approve or deny the lease request.</p>
+    Sign in to <a href="${context.webAppUrl}">Innovation Sandbox on AWS</a> to approve or deny the lease request.</p>
     `,
       textBody: `
       Request to approve or deny lease from ${event.Detail.userEmail}
@@ -69,7 +71,7 @@ export namespace EmailTemplates {
       htmlBody: `
       <h1>Welcome to Innovation Sandbox on AWS ${event.Detail.userEmail}!</h1>
       <p>Your sandbox lease request ${event.Detail.leaseId} has been ${event.Detail.approvedBy === "AUTO_APPROVED" ? "auto approved" : "approved by " + event.Detail.approvedBy}.
-      Sign in to Innovation Sandbox on AWS ${context.webAppUrl} to access your sandbox account.</p>
+      Sign in to <a href="${context.webAppUrl}">Innovation Sandbox on AWS</a> to access your sandbox account.</p>
     `,
       textBody: `
       Welcome to Innovation Sandbox on AWS ${event.Detail.userEmail}!
@@ -196,7 +198,7 @@ export namespace EmailTemplates {
       htmlBody: `
       <p>The lease ID: ${event.Detail.leaseId.uuid} for account ID: ${event.Detail.accountId} has been unfrozen
       with the new budget limit of \$${event.Detail.maxBudget} and lease duration of ${event.Detail.leaseDurationInHours}
-      hours. Sign in to Innovation Sandbox on AWS ${context.webAppUrl} to access your sandbox account
+      hours. Sign in to <a href="${context.webAppUrl}">Innovation Sandbox on AWS</a> to access your sandbox account
       and use within the prescribed limits.</p>
     `,
       textBody: `
@@ -410,7 +412,7 @@ export namespace EmailTemplates {
           "[Informational] Innovation Sandbox: Blueprint Deployment Failed",
         htmlBody: `
       <p>The blueprint deployment for your sandbox lease (lease ID: ${event.Detail.leaseId.uuid}) failed and the lease has been terminated.
-      You can submit a new lease request through Innovation Sandbox on AWS ${context.webAppUrl} or contact your
+      You can submit a new lease request through <a href="${context.webAppUrl}">Innovation Sandbox on AWS</a> or contact your
       Innovation Sandbox on AWS administrator or manager for assistance.</p>
     `,
         textBody: `
@@ -432,7 +434,7 @@ export namespace EmailTemplates {
         htmlBody: `
       <p>Blueprint deployment failed for an auto-approved lease (lease ID: ${event.Detail.leaseId.uuid}) on account ID: ${event.Detail.accountId}.
       The lease has been terminated and the account will be cleaned up and returned to the Available pool.
-      Sign in to Innovation Sandbox on AWS ${context.webAppUrl} to investigate the blueprint configuration.</p>
+      Sign in to <a href="${context.webAppUrl}">Innovation Sandbox on AWS</a> to investigate the blueprint configuration.</p>
     `,
         textBody: `
       Blueprint deployment failed for an auto-approved lease (lease ID: ${event.Detail.leaseId.uuid}) on account ID: ${event.Detail.accountId}.
@@ -613,13 +615,54 @@ export namespace EmailTemplates {
       <p>Blueprint deployment failed for "${event.Detail.blueprintName}" on lease ID: ${event.Detail.leaseId.uuid}, account ID: ${event.Detail.accountId}.
       The lease has been reset to PendingApproval status and requires manager re-approval.
       The account (${event.Detail.accountId}) will be cleaned up and returned to the Available pool.
-      Sign in to Innovation Sandbox on AWS ${context.webAppUrl} to investigate the blueprint configuration and retry the approval.</p>
+      Sign in to <a href="${context.webAppUrl}">Innovation Sandbox on AWS</a> to investigate the blueprint configuration and retry the approval.</p>
     `,
       textBody: `
       Blueprint deployment failed for "${event.Detail.blueprintName}" on lease ID: ${event.Detail.leaseId.uuid}, account ID: ${event.Detail.accountId}.
       The lease has been reset to PendingApproval status and requires manager re-approval.
       The account (${event.Detail.accountId}) will be cleaned up and returned to the Available pool.
       Sign in to Innovation Sandbox on AWS ${context.webAppUrl} to investigate the blueprint configuration and retry the approval.
+    `,
+    };
+  }
+
+  export function AssignmentCreated(
+    event: AssignmentCreatedEvent,
+    context: EmailTemplatesContext,
+  ): SynthesizedEmail {
+    const principalLabel =
+      event.Detail.assigneeEmail ?? event.Detail.principalId;
+    return {
+      to: context.destination.to!,
+      subject: "[Informational] Innovation Sandbox: Access granted to a lease",
+      htmlBody: `
+      <p>Access for ${principalLabel} to sandbox lease (ID: ${event.Detail.leaseId}) for account ID: ${event.Detail.accountId} has been granted by ${event.Detail.addedBy}.</p>
+      <p>Sign in to <a href="${context.webAppUrl}">Innovation Sandbox on AWS</a> to view lease details.</p>
+    `,
+      textBody: `
+      Access for ${principalLabel} to sandbox lease (ID: ${event.Detail.leaseId}) for account ID: ${event.Detail.accountId} has been granted by ${event.Detail.addedBy}.
+      Sign in to Innovation Sandbox on AWS ${context.webAppUrl} to view lease details.
+    `,
+    };
+  }
+
+  export function AssignmentRemoved(
+    event: AssignmentRemovedEvent,
+    context: EmailTemplatesContext,
+  ): SynthesizedEmail {
+    const principalLabel =
+      event.Detail.assigneeEmail ?? event.Detail.principalId;
+    return {
+      to: context.destination.to!,
+      subject:
+        "[Informational] Innovation Sandbox: Access removed from a lease",
+      htmlBody: `
+      <p>Access for ${principalLabel} to sandbox lease (ID: ${event.Detail.leaseId}) for account ID: ${event.Detail.accountId} has been removed.</p>
+      <p>Sign in to <a href="${context.webAppUrl}">Innovation Sandbox on AWS</a> for more details.</p>
+    `,
+      textBody: `
+      Access for ${principalLabel} to sandbox lease (ID: ${event.Detail.leaseId}) for account ID: ${event.Detail.accountId} has been removed.
+      Sign in to Innovation Sandbox on AWS ${context.webAppUrl} for more details.
     `,
     };
   }

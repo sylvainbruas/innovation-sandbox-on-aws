@@ -12,6 +12,10 @@ import {
 } from "@cloudscape-design/components";
 
 import { useGetConfigurations } from "@amzn/innovation-sandbox-frontend/domains/settings/hooks";
+import {
+  formatRegionLabel,
+  getRegionDisplayName,
+} from "@amzn/innovation-sandbox-frontend/helpers/region-display-names";
 
 interface RegionListBuilderProps {
   selectedRegions: string[];
@@ -82,7 +86,7 @@ export const RegionListBuilder = ({
             items={selectedRegions}
             renderItem={(region) => ({
               id: region,
-              content: region,
+              content: formatRegionLabel(region),
               actions: (
                 <Button
                   onClick={() =>
@@ -106,10 +110,14 @@ export const RegionListBuilder = ({
               onChange([...selectedRegions, detail.selectedOption.value]);
             }
           }}
-          options={availableRegions.map((region) => ({
-            value: region,
-            label: region,
-          }))}
+          options={availableRegions.map((region) => {
+            const displayName = getRegionDisplayName(region);
+            return {
+              value: region,
+              label: displayName,
+              description: displayName !== region ? region : undefined,
+            };
+          })}
           placeholder={getPlaceholderText()}
           loadingText="Loading ISB managed regions..."
           statusType={isLoading ? "loading" : "finished"}

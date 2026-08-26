@@ -9,6 +9,7 @@ import {
 import { IsbEventBridgeClient } from "@amzn/innovation-sandbox-commons/sdk-clients/event-bridge-client.js";
 import {
   mockedIdcService,
+  mockedOrganizationsTaggingService,
   mockedOrgsService,
 } from "@amzn/innovation-sandbox-commons/test/mocking/common-mocks.js";
 import { createMockOf } from "@amzn/innovation-sandbox-commons/test/mocking/mock-utils.js";
@@ -20,6 +21,7 @@ function createMockContext() {
   return {
     eventBridgeClient: createMockOf(IsbEventBridgeClient),
     orgsService: mockedOrgsService(),
+    organizationsTaggingService: mockedOrganizationsTaggingService(),
     idcService: mockedIdcService(),
     logger: new Logger(),
     tracer: new Tracer(),
@@ -110,5 +112,24 @@ describe("InnovationSandbox.registerAccount()", () => {
     ).rejects.toThrow("Transaction Failed: Error: IDC Service Offline");
 
     expect(mockContext.eventBridgeClient.sendIsbEvents).not.toHaveBeenCalled();
+  });
+
+  test("writes the Status tag as CleanUp after the Entry → CleanUp move", async () => {
+    await InnovationSandbox.registerAccount(account.accountId, mockContext);
+
+    expect(
+      mockContext.organizationsTaggingService.updateStatusTag,
+    ).toHaveBeenCalledWith(account.accountId, "CleanUp");
+  });
+
+  test("status-tag failure does not block the lifecycle", async () => {
+    mockContext.organizationsTaggingService.updateStatusTag.mockRejectedValue(
+      new Error("AccessDenied"),
+    );
+
+    await InnovationSandbox.registerAccount(account.accountId, mockContext);
+
+    // Lifecycle continues — CleanAccountRequest still emitted.
+    expect(mockContext.eventBridgeClient.sendIsbEvents).toHaveBeenCalled();
   });
 });

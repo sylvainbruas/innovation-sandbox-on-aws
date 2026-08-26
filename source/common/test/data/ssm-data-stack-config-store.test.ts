@@ -30,16 +30,29 @@ describe("SsmDataStackConfigStore", () => {
       const mockConfig = {
         configApplicationId: "app-123",
         configEnvironmentId: "env-123",
-        globalConfigConfigurationProfileId: "profile-global-123",
+        configTableName: "ConfigTable-123",
         nukeConfigConfigurationProfileId: "profile-nuke-123",
-        reportingConfigConfigurationProfileId: "profile-reporting-123",
+        validatorExclusionConfigConfigurationProfileId:
+          "profile-validator-exclusion-123",
         accountTable: "AccountTable",
         leaseTemplateTable: "LeaseTemplateTable",
         leaseTable: "LeaseTable",
         blueprintTable: "BlueprintTable",
+        principalTable: "PrincipalTable",
+        cleanupReportTable: "CleanupReportTable",
         tableKmsKeyId: "key-123",
         solutionVersion: "1.0.0",
         supportedSchemas: "1",
+        cognitoUserPoolId: "us-east-1_abc123",
+        cognitoUserPoolArn:
+          "arn:aws:cognito-idp:us-east-1:123456789012:userpool/us-east-1_abc123",
+        cognitoAppClientId: "1234567890abcdef",
+        cognitoIdentityPoolId: "us-east-1:00000000-0000-0000-0000-000000000000",
+        cognitoDomain: "test-isb",
+        awsAccessPortalUrl: "https://d-0000000000.awsapps.com/start",
+        identityPoolAdminRoleName: "test-isb-admin-role",
+        identityPoolManagerRoleName: "test-isb-manager-role",
+        identityPoolUserRoleName: "test-isb-user-role",
       };
 
       mockSsmClient.on(GetParameterCommand).resolves({

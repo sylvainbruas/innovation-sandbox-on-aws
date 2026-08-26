@@ -9,7 +9,15 @@ import {
   Lease,
   MonitoredLease,
 } from "@amzn/innovation-sandbox-commons/data/lease/lease";
-import { leaseExpirySortingComparator } from "@amzn/innovation-sandbox-frontend/domains/leases/helpers";
+import {
+  enrichLeasesWithName,
+  getLeaseDisplayName,
+  getLeaseStatusDisplayName,
+  isAssignmentLockActive,
+  isCriticalAssignmentLockActive,
+  isTerminationLockActive,
+  leaseExpirySortingComparator,
+} from "@amzn/innovation-sandbox-frontend/domains/leases/helpers";
 import {
   createActiveLease,
   createExpiredLease,
@@ -110,5 +118,223 @@ describe("leaseExpirySortingComparator", () => {
     const b = createActiveLease({ expirationDate: date });
 
     expect(leaseExpirySortingComparator(a, b)).toBe(0);
+  });
+});
+
+describe("getLeaseStatusDisplayName", () => {
+  it("returns 'Terminated by User' for UserTerminated", () => {
+    expect(getLeaseStatusDisplayName("UserTerminated")).toBe(
+      "Terminated by User",
+    );
+  });
+
+  it("returns 'Lease Manually Terminated' for ManuallyTerminated", () => {
+    expect(getLeaseStatusDisplayName("ManuallyTerminated")).toBe(
+      "Lease Manually Terminated",
+    );
+  });
+});
+
+describe("getLeaseDisplayName", () => {
+  it("returns templateName (first8) format", () => {
+    expect(
+      getLeaseDisplayName({
+        uuid: "abcdefgh-1234-5678-9012-ijklmnopqrst",
+        originalLeaseTemplateName: "Developer Sandbox",
+      }),
+    ).toBe("Developer Sandbox (abcdefgh)");
+  });
+
+  it("uses only the first 8 characters of the uuid", () => {
+    expect(
+      getLeaseDisplayName({
+        uuid: "12345678-abcd-efgh-ijkl-mnopqrstuvwx",
+        originalLeaseTemplateName: "Test",
+      }),
+    ).toBe("Test (12345678)");
+  });
+});
+
+describe("enrichLeasesWithName", () => {
+  it("adds a name field to each lease", () => {
+    const leases = [
+      {
+        uuid: "aaaaaaaa-1111-2222-3333-444444444444",
+        originalLeaseTemplateName: "Dev Sandbox",
+      },
+      {
+        uuid: "bbbbbbbb-5555-6666-7777-888888888888",
+        originalLeaseTemplateName: "Prod Sandbox",
+      },
+    ];
+
+    const enriched = enrichLeasesWithName(leases);
+
+    expect(enriched[0].name).toBe("Dev Sandbox (aaaaaaaa)");
+    expect(enriched[1].name).toBe("Prod Sandbox (bbbbbbbb)");
+  });
+
+  it("preserves all original fields", () => {
+    const lease = {
+      uuid: "cccccccc-1234-5678-9012-dddddddddddd",
+      originalLeaseTemplateName: "My Template",
+      status: "Active",
+      userEmail: "user@example.com",
+    };
+
+    const [enriched] = enrichLeasesWithName([lease]);
+
+    expect(enriched.uuid).toBe(lease.uuid);
+    expect(enriched.status).toBe("Active");
+    expect(enriched.userEmail).toBe("user@example.com");
+    expect(enriched.name).toBe("My Template (cccccccc)");
+  });
+
+  it("returns empty array for empty input", () => {
+    expect(enrichLeasesWithName([])).toEqual([]);
+  });
+});
+
+const lock = (expiresAt: string, intent?: string) => ({
+  ownerId: "assignment-execution",
+  acquiredAt: new Date(Date.now() - 60_000).toISOString(),
+  expiresAt,
+  ...(intent ? { meta: { intent: intent as "UPDATE" } } : {}),
+});
+
+describe("isAssignmentLockActive", () => {
+  it("is false when the lease has no resource lock", () => {
+    expect(
+      isAssignmentLockActive(createActiveLease({ resourceLock: undefined })),
+    ).toBe(false);
+  });
+
+  it("is false when the resource lock is explicitly null", () => {
+    // The API returns null (not undefined) once the processor clears the lock.
+    expect(
+      isAssignmentLockActive(createActiveLease({ resourceLock: null })),
+    ).toBe(false);
+  });
+
+  it("is true while the lock has not expired", () => {
+    expect(
+      isAssignmentLockActive(
+        createActiveLease({
+          resourceLock: lock(new Date(Date.now() + 60_000).toISOString()),
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  it("is false once the lock has expired (the stuck-execution case)", () => {
+    // The backend acquire condition also treats an expired lock as free, so a
+    // stuck Step Function execution must not permanently block actions.
+    expect(
+      isAssignmentLockActive(
+        createActiveLease({
+          resourceLock: lock(new Date(Date.now() - 60_000).toISOString()),
+        }),
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("isCriticalAssignmentLockActive", () => {
+  const future = () => new Date(Date.now() + 60_000).toISOString();
+
+  it.each(["TERMINATE", "FREEZE"])(
+    "is true for a live %s lock (cannot be preempted)",
+    (intent) => {
+      expect(
+        isCriticalAssignmentLockActive(
+          createActiveLease({ resourceLock: lock(future(), intent) }),
+        ),
+      ).toBe(true);
+    },
+  );
+
+  it.each(["UPDATE", "PUBLISH", "UNFREEZE"])(
+    "is false for a live %s lock (a critical operation preempts it)",
+    (intent) => {
+      expect(
+        isCriticalAssignmentLockActive(
+          createActiveLease({ resourceLock: lock(future(), intent) }),
+        ),
+      ).toBe(false);
+    },
+  );
+
+  it("is false when the lock carries no intent", () => {
+    expect(
+      isCriticalAssignmentLockActive(
+        createActiveLease({ resourceLock: lock(future()) }),
+      ),
+    ).toBe(false);
+  });
+
+  it("is false for an expired critical lock", () => {
+    expect(
+      isCriticalAssignmentLockActive(
+        createActiveLease({
+          resourceLock: lock(
+            new Date(Date.now() - 60_000).toISOString(),
+            "FREEZE",
+          ),
+        }),
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("isTerminationLockActive", () => {
+  const future = () => new Date(Date.now() + 60_000).toISOString();
+
+  it("is true for a live TERMINATE lock", () => {
+    expect(
+      isTerminationLockActive(
+        createActiveLease({ resourceLock: lock(future(), "TERMINATE") }),
+      ),
+    ).toBe(true);
+  });
+
+  it("is false for a live FREEZE lock so terminate stays available", () => {
+    // Terminate is the escape hatch and is intentionally narrower than
+    // isCriticalAssignmentLockActive, which does block on FREEZE.
+    const lease = createActiveLease({
+      resourceLock: lock(future(), "FREEZE"),
+    });
+
+    expect(isTerminationLockActive(lease)).toBe(false);
+    expect(isCriticalAssignmentLockActive(lease)).toBe(true);
+  });
+
+  it.each(["UPDATE", "PUBLISH", "UNFREEZE"])(
+    "is false for a live %s lock",
+    (intent) => {
+      expect(
+        isTerminationLockActive(
+          createActiveLease({ resourceLock: lock(future(), intent) }),
+        ),
+      ).toBe(false);
+    },
+  );
+
+  it("is false for an expired TERMINATE lock", () => {
+    expect(
+      isTerminationLockActive(
+        createActiveLease({
+          resourceLock: lock(
+            new Date(Date.now() - 60_000).toISOString(),
+            "TERMINATE",
+          ),
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it("is false when there is no lock", () => {
+    expect(
+      isTerminationLockActive(createActiveLease({ resourceLock: undefined })),
+    ).toBe(false);
   });
 });

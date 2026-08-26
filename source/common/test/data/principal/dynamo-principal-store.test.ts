@@ -1,0 +1,1252 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+
+import {
+  ConditionalCheckFailedException,
+  DynamoDBClient,
+} from "@aws-sdk/client-dynamodb";
+import {
+  BatchGetCommand,
+  BatchWriteCommand,
+  DeleteCommand,
+  DynamoDBDocumentClient,
+  GetCommand,
+  PutCommand,
+  QueryCommand,
+  ScanCommand,
+} from "@aws-sdk/lib-dynamodb";
+import { mockClient } from "aws-sdk-client-mock";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import {
+  BatchUnprocessedItemsError,
+  ItemAlreadyExists,
+} from "@amzn/innovation-sandbox-commons/data/errors.js";
+import { DynamoPrincipalStore } from "@amzn/innovation-sandbox-commons/data/principal/dynamo-principal-store.js";
+import {
+  GROUP_MEMBERSHIP_SK,
+  groupPk,
+  LEASE_SK_PREFIX,
+  leaseSk,
+  userPk,
+} from "@amzn/innovation-sandbox-commons/data/principal/principal-dynamodb-keys.js";
+import {
+  GroupAssignmentSchema,
+  GroupMembershipCacheSchema,
+  UserAssignmentSchema,
+} from "@amzn/innovation-sandbox-commons/data/principal/principal.js";
+import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
+
+const ddbDocClient = DynamoDBDocumentClient.from(new DynamoDBClient({}));
+const mockDynamoClient = mockClient(ddbDocClient);
+
+const TABLE_NAME = "test-principal-table";
+const VALID_UUID = "00000000-0000-4000-8000-000000000001";
+const VALID_UUID_2 = "00000000-0000-4000-8000-000000000002";
+const NOW = "2024-01-01T00:00:00.000Z";
+
+function makeUserAssignment(overrides: Record<string, unknown> = {}) {
+  return generateSchemaData(UserAssignmentSchema, {
+    pk: userPk(VALID_UUID),
+    sk: leaseSk(VALID_UUID),
+    userId: VALID_UUID,
+    principalType: "USER",
+    leaseId: VALID_UUID,
+    meta: {
+      schemaVersion: 1,
+      createdTime: NOW,
+      lastEditTime: NOW,
+    },
+    ...overrides,
+  });
+}
+
+function makeGroupAssignment(overrides: Record<string, unknown> = {}) {
+  return generateSchemaData(GroupAssignmentSchema, {
+    pk: groupPk(VALID_UUID),
+    sk: leaseSk(VALID_UUID),
+    leaseId: VALID_UUID,
+    groupId: VALID_UUID,
+    principalType: "GROUP",
+    meta: {
+      schemaVersion: 1,
+      createdTime: NOW,
+      lastEditTime: NOW,
+    },
+    ...overrides,
+  });
+}
+
+function makeGroupMembershipCache(overrides: Record<string, unknown> = {}) {
+  return generateSchemaData(GroupMembershipCacheSchema, {
+    pk: userPk(VALID_UUID),
+    sk: GROUP_MEMBERSHIP_SK,
+    groupIds: [VALID_UUID],
+    ttl: Math.floor(Date.now() / 1000) + 86400,
+    ...overrides,
+  });
+}
+
+describe("DynamoPrincipalStore", () => {
+  const store = new DynamoPrincipalStore({
+    principalTableName: TABLE_NAME,
+    client: ddbDocClient,
+  });
+
+  beforeEach(() => {
+    mockDynamoClient.reset();
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date(NOW));
+  });
+
+  afterEach(() => {
+    vi.resetAllMocks();
+    vi.useRealTimers();
+  });
+
+  describe("createUserAssignment", () => {
+    it("should create a user assignment with conditional write", async () => {
+      mockDynamoClient.on(PutCommand).resolves({});
+      const assignment = makeUserAssignment();
+
+      const result = await store.createUserAssignment(assignment);
+
+      expect(result).toMatchObject(assignment);
+
+      const putCalls = mockDynamoClient.commandCalls(PutCommand);
+      expect(putCalls).toHaveLength(1);
+      const input = putCalls[0]!.args[0].input;
+      expect(input.TableName).toBe(TABLE_NAME);
+      expect(input.ConditionExpression).toBe(
+        "attribute_not_exists(pk) AND attribute_not_exists(sk)",
+      );
+    });
+
+    it("should throw ItemAlreadyExists on duplicate", async () => {
+      mockDynamoClient.on(PutCommand).rejects(
+        new ConditionalCheckFailedException({
+          $metadata: {},
+          message: "Condition not met",
+        }),
+      );
+
+      await expect(
+        store.createUserAssignment(makeUserAssignment()),
+      ).rejects.toThrow(ItemAlreadyExists);
+    });
+
+    it("should re-throw non-conditional errors", async () => {
+      mockDynamoClient.on(PutCommand).rejects(new Error("Network error"));
+
+      await expect(
+        store.createUserAssignment(makeUserAssignment()),
+      ).rejects.toThrow("Network error");
+    });
+
+    it("should exclude undefined optional fields from DynamoDB write", async () => {
+      mockDynamoClient.on(PutCommand).resolves({});
+      const assignment = makeUserAssignment();
+      delete (assignment as Record<string, unknown>)["accountId"];
+      delete (assignment as Record<string, unknown>)["permissionSetArn"];
+      delete (assignment as Record<string, unknown>)["statusMessage"];
+
+      await store.createUserAssignment(assignment);
+
+      const putCalls = mockDynamoClient.commandCalls(PutCommand);
+      const writtenItem = putCalls[0]!.args[0].input.Item;
+      expect(writtenItem).not.toHaveProperty("accountId");
+      expect(writtenItem).not.toHaveProperty("permissionSetArn");
+      expect(writtenItem).not.toHaveProperty("statusMessage");
+    });
+  });
+
+  describe("createGroupAssignment", () => {
+    it("should create a group assignment with conditional write", async () => {
+      mockDynamoClient.on(PutCommand).resolves({});
+      const assignment = makeGroupAssignment();
+
+      const result = await store.createGroupAssignment(assignment);
+
+      expect(result).toMatchObject(assignment);
+
+      const putCalls = mockDynamoClient.commandCalls(PutCommand);
+      expect(putCalls).toHaveLength(1);
+      const input = putCalls[0]!.args[0].input;
+      expect(input.ConditionExpression).toBe(
+        "attribute_not_exists(pk) AND attribute_not_exists(sk)",
+      );
+    });
+
+    it("should throw ItemAlreadyExists on duplicate", async () => {
+      mockDynamoClient.on(PutCommand).rejects(
+        new ConditionalCheckFailedException({
+          $metadata: {},
+          message: "Condition not met",
+        }),
+      );
+
+      await expect(
+        store.createGroupAssignment(makeGroupAssignment()),
+      ).rejects.toThrow(ItemAlreadyExists);
+    });
+
+    it("should re-throw non-conditional errors", async () => {
+      mockDynamoClient.on(PutCommand).rejects(new Error("Network error"));
+
+      await expect(
+        store.createGroupAssignment(makeGroupAssignment()),
+      ).rejects.toThrow("Network error");
+    });
+  });
+
+  describe("getUserAssignment", () => {
+    it("should return a user assignment by userId and leaseId", async () => {
+      const item = makeUserAssignment();
+      mockDynamoClient.on(GetCommand).resolves({ Item: item });
+
+      const result = await store.getUserAssignment(VALID_UUID, VALID_UUID);
+
+      expect(result.result).toEqual(item);
+
+      const getCalls = mockDynamoClient.commandCalls(GetCommand);
+      expect(getCalls[0]!.args[0].input.Key).toEqual({
+        pk: userPk(VALID_UUID),
+        sk: leaseSk(VALID_UUID),
+      });
+    });
+
+    it("should return undefined result when not found", async () => {
+      mockDynamoClient.on(GetCommand).resolves({ Item: undefined });
+
+      const result = await store.getUserAssignment(VALID_UUID, VALID_UUID);
+
+      expect(result.result).toBeUndefined();
+    });
+  });
+
+  describe("getGroupAssignment", () => {
+    it("should return a group assignment by groupId and leaseId", async () => {
+      const item = makeGroupAssignment();
+      mockDynamoClient.on(GetCommand).resolves({ Item: item });
+
+      const result = await store.getGroupAssignment(VALID_UUID, VALID_UUID);
+
+      expect(result.result).toEqual(item);
+
+      const getCalls = mockDynamoClient.commandCalls(GetCommand);
+      expect(getCalls[0]!.args[0].input.Key).toEqual({
+        pk: groupPk(VALID_UUID),
+        sk: leaseSk(VALID_UUID),
+      });
+    });
+
+    it("should return undefined result when not found", async () => {
+      mockDynamoClient.on(GetCommand).resolves({ Item: undefined });
+
+      const result = await store.getGroupAssignment(VALID_UUID, VALID_UUID);
+
+      expect(result.result).toBeUndefined();
+    });
+  });
+
+  describe("getAssignmentsForLease (LeaseIndex GSI)", () => {
+    it("should query LeaseIndex GSI with leaseId", async () => {
+      const userItem = makeUserAssignment();
+      const groupItem = makeGroupAssignment();
+      mockDynamoClient
+        .on(QueryCommand)
+        .resolves({ Items: [userItem, groupItem] });
+
+      const result = await store.getAssignmentsForLease({
+        leaseId: VALID_UUID,
+      });
+
+      expect(result.result).toEqual([userItem, groupItem]);
+      expect(result.nextPageIdentifier).toBeNull();
+
+      const queryCalls = mockDynamoClient.commandCalls(QueryCommand);
+      const input = queryCalls[0]!.args[0].input;
+      expect(input.IndexName).toBe("LeaseIndex");
+      expect(input.ExpressionAttributeValues).toEqual({
+        ":leaseId": VALID_UUID,
+      });
+    });
+
+    it("should handle pagination across two pages", async () => {
+      const page1Item = makeUserAssignment();
+      const page2Item = makeGroupAssignment();
+
+      mockDynamoClient
+        .on(QueryCommand)
+        .resolvesOnce({
+          Items: [page1Item],
+          LastEvaluatedKey: { leaseId: VALID_UUID, pk: userPk(VALID_UUID) },
+        })
+        .resolvesOnce({
+          Items: [page2Item],
+        });
+
+      const page1 = await store.getAssignmentsForLease({
+        leaseId: VALID_UUID,
+        pageSize: 1,
+      });
+
+      expect(page1.result).toHaveLength(1);
+      expect(page1.result[0]).toEqual(page1Item);
+      expect(page1.nextPageIdentifier).not.toBeNull();
+
+      const page2 = await store.getAssignmentsForLease({
+        leaseId: VALID_UUID,
+        pageSize: 1,
+        pageIdentifier: page1.nextPageIdentifier!,
+      });
+
+      expect(page2.result).toHaveLength(1);
+      expect(page2.result[0]).toEqual(page2Item);
+      expect(page2.nextPageIdentifier).toBeNull();
+
+      const queryCalls = mockDynamoClient.commandCalls(QueryCommand);
+      expect(queryCalls).toHaveLength(2);
+      expect(queryCalls[1]!.args[0].input.ExclusiveStartKey).toBeDefined();
+    });
+
+    it("should return empty results when no assignments exist", async () => {
+      mockDynamoClient.on(QueryCommand).resolves({ Items: [] });
+
+      const result = await store.getAssignmentsForLease({
+        leaseId: VALID_UUID,
+      });
+
+      expect(result.result).toHaveLength(0);
+    });
+  });
+
+  describe("getDirectAssignmentsForUser", () => {
+    it("should query by user pk with lease# sk prefix", async () => {
+      const item = makeUserAssignment();
+      mockDynamoClient.on(QueryCommand).resolves({ Items: [item] });
+
+      const result = await store.getDirectAssignmentsForUser({
+        userId: VALID_UUID,
+      });
+
+      expect(result.result).toEqual([item]);
+
+      const queryCalls = mockDynamoClient.commandCalls(QueryCommand);
+      const input = queryCalls[0]!.args[0].input;
+      expect(input.ExpressionAttributeValues).toEqual({
+        ":pk": userPk(VALID_UUID),
+        ":skPrefix": LEASE_SK_PREFIX,
+      });
+      expect(input.KeyConditionExpression).toContain("begins_with");
+    });
+
+    it("should handle pagination across two pages", async () => {
+      const page1Item = makeUserAssignment();
+      const page2Item = makeUserAssignment({
+        sk: leaseSk(VALID_UUID_2),
+        leaseId: VALID_UUID_2,
+      });
+
+      mockDynamoClient
+        .on(QueryCommand)
+        .resolvesOnce({
+          Items: [page1Item],
+          LastEvaluatedKey: {
+            pk: userPk(VALID_UUID),
+            sk: leaseSk(VALID_UUID),
+          },
+        })
+        .resolvesOnce({
+          Items: [page2Item],
+        });
+
+      const page1 = await store.getDirectAssignmentsForUser({
+        userId: VALID_UUID,
+        pageSize: 1,
+      });
+
+      expect(page1.result).toHaveLength(1);
+      expect(page1.nextPageIdentifier).not.toBeNull();
+
+      const page2 = await store.getDirectAssignmentsForUser({
+        userId: VALID_UUID,
+        pageSize: 1,
+        pageIdentifier: page1.nextPageIdentifier!,
+      });
+
+      expect(page2.result).toHaveLength(1);
+      expect(page2.nextPageIdentifier).toBeNull();
+
+      expect(mockDynamoClient.commandCalls(QueryCommand)).toHaveLength(2);
+    });
+  });
+
+  describe("getGroupMembershipCache", () => {
+    it("should get cache by userId with groupMembership sk", async () => {
+      const cache = makeGroupMembershipCache();
+      mockDynamoClient.on(GetCommand).resolves({ Item: cache });
+
+      const result = await store.getGroupMembershipCache(VALID_UUID);
+
+      expect(result.result).toEqual(cache);
+
+      const getCalls = mockDynamoClient.commandCalls(GetCommand);
+      expect(getCalls[0]!.args[0].input.Key).toEqual({
+        pk: userPk(VALID_UUID),
+        sk: GROUP_MEMBERSHIP_SK,
+      });
+    });
+
+    it("should return undefined when cache does not exist", async () => {
+      mockDynamoClient.on(GetCommand).resolves({ Item: undefined });
+
+      const result = await store.getGroupMembershipCache(VALID_UUID);
+
+      expect(result.result).toBeUndefined();
+    });
+  });
+
+  describe("putGroupMembershipCache", () => {
+    it("should put cache record to DynamoDB", async () => {
+      mockDynamoClient.on(PutCommand).resolves({});
+      const cache = makeGroupMembershipCache();
+
+      await store.putGroupMembershipCache(cache);
+
+      const putCalls = mockDynamoClient.commandCalls(PutCommand);
+      expect(putCalls).toHaveLength(1);
+      expect(putCalls[0]!.args[0].input.TableName).toBe(TABLE_NAME);
+    });
+  });
+
+  describe("deleteUserAssignment", () => {
+    it("should delete by pk and sk and return old item", async () => {
+      const item = makeUserAssignment();
+      mockDynamoClient.on(DeleteCommand).resolves({ Attributes: item });
+
+      const result = await store.deleteUserAssignment(VALID_UUID, VALID_UUID);
+
+      expect(result).toEqual(item);
+
+      const deleteCalls = mockDynamoClient.commandCalls(DeleteCommand);
+      expect(deleteCalls).toHaveLength(1);
+      expect(deleteCalls[0]!.args[0].input.Key).toEqual({
+        pk: userPk(VALID_UUID),
+        sk: leaseSk(VALID_UUID),
+      });
+      expect(deleteCalls[0]!.args[0].input.ReturnValues).toBe("ALL_OLD");
+    });
+
+    it("should return undefined when item does not exist", async () => {
+      mockDynamoClient.on(DeleteCommand).resolves({ Attributes: undefined });
+
+      const result = await store.deleteUserAssignment(VALID_UUID, VALID_UUID);
+
+      expect(result).toBeUndefined();
+    });
+  });
+
+  describe("deleteGroupAssignment", () => {
+    it("should delete group assignment with correct group# key prefix", async () => {
+      const item = makeGroupAssignment();
+      mockDynamoClient.on(DeleteCommand).resolves({ Attributes: item });
+
+      const result = await store.deleteGroupAssignment(VALID_UUID, VALID_UUID);
+
+      expect(result).toEqual(item);
+
+      const deleteCalls = mockDynamoClient.commandCalls(DeleteCommand);
+      expect(deleteCalls).toHaveLength(1);
+      expect(deleteCalls[0]!.args[0].input.Key).toEqual({
+        pk: groupPk(VALID_UUID),
+        sk: leaseSk(VALID_UUID),
+      });
+    });
+  });
+
+  describe("batchPutAssignments", () => {
+    it("should batch write assignments", async () => {
+      mockDynamoClient.on(BatchWriteCommand).resolves({});
+
+      const assignments = [makeUserAssignment(), makeGroupAssignment()];
+
+      await store.batchPutAssignments(assignments);
+
+      const batchCalls = mockDynamoClient.commandCalls(BatchWriteCommand);
+      expect(batchCalls).toHaveLength(1);
+      const requestItems = batchCalls[0]!.args[0].input.RequestItems!;
+      expect(requestItems[TABLE_NAME]).toHaveLength(2);
+    });
+
+    it("should throw when given more than 25 items", async () => {
+      const assignments = Array.from({ length: 30 }, (_, i) => {
+        const userId = `00000000-0000-0000-0000-${String(i).padStart(12, "0")}`;
+        return makeUserAssignment({
+          pk: userPk(userId),
+          userId: userId,
+          sk: leaseSk(VALID_UUID),
+          assigneeEmail: `user${i}@example.com`,
+        });
+      });
+
+      await expect(store.batchPutAssignments(assignments)).rejects.toThrow(
+        "batchPutAssignments accepts at most 25 items, received 30",
+      );
+
+      expect(mockDynamoClient.commandCalls(BatchWriteCommand)).toHaveLength(0);
+    });
+
+    it("should handle empty assignments array", async () => {
+      await store.batchPutAssignments([]);
+
+      const batchCalls = mockDynamoClient.commandCalls(BatchWriteCommand);
+      expect(batchCalls).toHaveLength(0);
+    });
+
+    it("should accept exactly 25 items", async () => {
+      mockDynamoClient.on(BatchWriteCommand).resolves({});
+
+      const assignments = Array.from({ length: 25 }, (_, i) => {
+        const userId = `00000000-0000-0000-0000-${String(i).padStart(12, "0")}`;
+        return makeUserAssignment({
+          pk: userPk(userId),
+          userId: userId,
+          sk: leaseSk(VALID_UUID),
+        });
+      });
+
+      await store.batchPutAssignments(assignments);
+
+      const batchCalls = mockDynamoClient.commandCalls(BatchWriteCommand);
+      expect(batchCalls).toHaveLength(1);
+      expect(
+        batchCalls[0]!.args[0].input.RequestItems![TABLE_NAME],
+      ).toHaveLength(25);
+    });
+
+    it("should retry unprocessed items with backoff", async () => {
+      vi.useRealTimers();
+
+      const userId = "00000000-0000-4000-8000-000000000002";
+      const unprocessedItem = {
+        PutRequest: {
+          Item: makeUserAssignment({
+            pk: userPk(userId),
+            userId: userId,
+            assigneeEmail: "user2@example.com",
+          }),
+        },
+      };
+
+      mockDynamoClient
+        .on(BatchWriteCommand)
+        .resolvesOnce({
+          UnprocessedItems: { [TABLE_NAME]: [unprocessedItem] },
+        })
+        .resolvesOnce({
+          UnprocessedItems: {},
+        });
+
+      await store.batchPutAssignments([
+        makeUserAssignment(),
+        makeUserAssignment({
+          pk: userPk(userId),
+          userId: userId,
+          assigneeEmail: "user2@example.com",
+        }),
+      ]);
+
+      const batchCalls = mockDynamoClient.commandCalls(BatchWriteCommand);
+      expect(batchCalls).toHaveLength(2);
+      expect(
+        batchCalls[1]!.args[0].input.RequestItems![TABLE_NAME],
+      ).toHaveLength(1);
+    });
+
+    it("should throw after max retries with unprocessed items", async () => {
+      vi.useRealTimers();
+
+      const unprocessedItem = {
+        PutRequest: { Item: makeUserAssignment() },
+      };
+
+      mockDynamoClient.on(BatchWriteCommand).resolves({
+        UnprocessedItems: { [TABLE_NAME]: [unprocessedItem] },
+      });
+
+      await expect(
+        store.batchPutAssignments([makeUserAssignment()]),
+      ).rejects.toThrow(BatchUnprocessedItemsError);
+
+      // 4 attempts total (numOfAttempts: 4)
+      expect(mockDynamoClient.commandCalls(BatchWriteCommand)).toHaveLength(4);
+    });
+  });
+
+  describe("getAllGroupAssignmentKeys (GroupIndex GSI scan)", () => {
+    it("should scan GroupIndex GSI and return (groupId, leaseId) tuples", async () => {
+      mockDynamoClient.on(ScanCommand).resolves({
+        Items: [
+          {
+            groupId: VALID_UUID,
+            pk: groupPk(VALID_UUID),
+            sk: leaseSk(VALID_UUID),
+          },
+          {
+            groupId: VALID_UUID_2,
+            pk: groupPk(VALID_UUID_2),
+            sk: leaseSk(VALID_UUID_2),
+          },
+        ],
+      });
+
+      const result = await store.getAllGroupAssignmentKeys();
+
+      expect(result).toHaveLength(2);
+      expect(result).toContainEqual({
+        groupId: VALID_UUID,
+        leaseId: VALID_UUID,
+      });
+      expect(result).toContainEqual({
+        groupId: VALID_UUID_2,
+        leaseId: VALID_UUID_2,
+      });
+
+      const scanCalls = mockDynamoClient.commandCalls(ScanCommand);
+      expect(scanCalls[0]!.args[0].input.IndexName).toBe("GroupIndex");
+    });
+
+    it("should preserve duplicate (groupId, leaseId) tuples for caller dedup", async () => {
+      // The same groupId can appear multiple times if it's assigned to multiple
+      // leases (different leaseIds). Same (groupId, leaseId) should not happen
+      // in practice but the scan does no dedup.
+      mockDynamoClient.on(ScanCommand).resolves({
+        Items: [
+          {
+            groupId: VALID_UUID,
+            pk: groupPk(VALID_UUID),
+            sk: leaseSk(VALID_UUID),
+          },
+          {
+            groupId: VALID_UUID,
+            pk: groupPk(VALID_UUID),
+            sk: leaseSk(VALID_UUID_2),
+          },
+        ],
+      });
+
+      const result = await store.getAllGroupAssignmentKeys();
+
+      expect(result).toHaveLength(2);
+      expect(result).toContainEqual({
+        groupId: VALID_UUID,
+        leaseId: VALID_UUID,
+      });
+      expect(result).toContainEqual({
+        groupId: VALID_UUID,
+        leaseId: VALID_UUID_2,
+      });
+    });
+
+    it("should handle paginated scan results", async () => {
+      mockDynamoClient
+        .on(ScanCommand)
+        .resolvesOnce({
+          Items: [
+            {
+              groupId: VALID_UUID,
+              pk: groupPk(VALID_UUID),
+              sk: leaseSk(VALID_UUID),
+            },
+          ],
+          LastEvaluatedKey: { groupId: VALID_UUID },
+        })
+        .resolvesOnce({
+          Items: [
+            {
+              groupId: VALID_UUID_2,
+              pk: groupPk(VALID_UUID_2),
+              sk: leaseSk(VALID_UUID_2),
+            },
+          ],
+        });
+
+      const result = await store.getAllGroupAssignmentKeys();
+
+      expect(result).toEqual([
+        { groupId: VALID_UUID, leaseId: VALID_UUID },
+        { groupId: VALID_UUID_2, leaseId: VALID_UUID_2 },
+      ]);
+      expect(mockDynamoClient.commandCalls(ScanCommand)).toHaveLength(2);
+    });
+
+    it("should return empty array when no group assignments exist", async () => {
+      mockDynamoClient.on(ScanCommand).resolves({ Items: [] });
+
+      const result = await store.getAllGroupAssignmentKeys();
+
+      expect(result).toHaveLength(0);
+    });
+
+    it("should drop records that fail GroupIndexProjectionSchema validation", async () => {
+      // Each input record fails one or more schema constraints: bad groupId
+      // format, pk pointing at the wrong principal type, and sk that isn't
+      // `lease#<UUID>`. Only the first record passes and survives.
+      mockDynamoClient.on(ScanCommand).resolves({
+        Items: [
+          {
+            groupId: VALID_UUID,
+            pk: groupPk(VALID_UUID),
+            sk: leaseSk(VALID_UUID),
+          },
+          // groupId is not a valid IDC principal ID
+          {
+            groupId: "not-an-idc-id",
+            pk: groupPk(VALID_UUID),
+            sk: leaseSk(VALID_UUID),
+          },
+          // pk is for a user, not a group
+          {
+            groupId: VALID_UUID,
+            pk: userPk(VALID_UUID),
+            sk: leaseSk(VALID_UUID),
+          },
+          // sk has lease# prefix but the UUID portion is malformed
+          {
+            groupId: VALID_UUID,
+            pk: groupPk(VALID_UUID),
+            sk: "lease#not-a-uuid",
+          },
+          // sk doesn't start with lease# at all
+          {
+            groupId: VALID_UUID,
+            pk: groupPk(VALID_UUID),
+            sk: "groupMembership",
+          },
+          // groupId is missing entirely
+          { pk: groupPk(VALID_UUID), sk: leaseSk(VALID_UUID) },
+        ],
+      });
+
+      const result = await store.getAllGroupAssignmentKeys();
+
+      expect(result).toEqual([{ groupId: VALID_UUID, leaseId: VALID_UUID }]);
+    });
+  });
+
+  describe("listAllAssignments (LeaseIndex GSI scan)", () => {
+    it("should return empty result when no items in GSI", async () => {
+      mockDynamoClient.on(ScanCommand).resolves({ Items: [] });
+
+      const result = await store.listAllAssignments({});
+
+      expect(result.result).toHaveLength(0);
+      expect(result.nextPageIdentifier).toBeNull();
+
+      const scanCalls = mockDynamoClient.commandCalls(ScanCommand);
+      expect(scanCalls).toHaveLength(1);
+      expect(scanCalls[0]!.args[0].input.IndexName).toBe("LeaseIndex");
+    });
+
+    it("should parse user and group assignments correctly from a single page", async () => {
+      const userItem = makeUserAssignment({
+        leaseId: VALID_UUID,
+        userId: VALID_UUID,
+        pk: userPk(VALID_UUID),
+        sk: leaseSk(VALID_UUID),
+      });
+      const groupItem = makeGroupAssignment({
+        leaseId: VALID_UUID_2,
+        groupId: VALID_UUID_2,
+        pk: groupPk(VALID_UUID_2),
+        sk: leaseSk(VALID_UUID_2),
+      });
+
+      mockDynamoClient.on(ScanCommand).resolves({
+        Items: [userItem, groupItem],
+      });
+
+      const result = await store.listAllAssignments({});
+
+      expect(result.result).toHaveLength(2);
+      expect(result.result[0]!.principalType).toBe("USER");
+      expect(result.result[0]!.leaseId).toBe(VALID_UUID);
+      expect(result.result[1]!.principalType).toBe("GROUP");
+      expect(result.result[1]!.leaseId).toBe(VALID_UUID_2);
+      expect(result.nextPageIdentifier).toBeNull();
+    });
+
+    it("should handle pagination via ExclusiveStartKey/LastEvaluatedKey", async () => {
+      const userItem = makeUserAssignment({
+        leaseId: VALID_UUID,
+        userId: VALID_UUID,
+        pk: userPk(VALID_UUID),
+        sk: leaseSk(VALID_UUID),
+      });
+
+      const lastEvaluatedKey = {
+        pk: userPk(VALID_UUID),
+        sk: leaseSk(VALID_UUID),
+        leaseId: VALID_UUID,
+      };
+      mockDynamoClient.on(ScanCommand).resolves({
+        Items: [userItem],
+        LastEvaluatedKey: lastEvaluatedKey,
+      });
+
+      // First call without pageIdentifier
+      const result = await store.listAllAssignments({});
+
+      expect(result.result).toHaveLength(1);
+      expect(result.nextPageIdentifier).not.toBeNull();
+
+      // Second call with the pageIdentifier from the first response
+      const secondUserItem = makeUserAssignment({
+        leaseId: VALID_UUID_2,
+        userId: VALID_UUID_2,
+        pk: userPk(VALID_UUID_2),
+        sk: leaseSk(VALID_UUID_2),
+      });
+
+      mockDynamoClient.on(ScanCommand).resolves({
+        Items: [secondUserItem],
+      });
+
+      const result2 = await store.listAllAssignments({
+        pageIdentifier: result.nextPageIdentifier!,
+      });
+
+      expect(result2.result).toHaveLength(1);
+      expect(result2.result[0]!.leaseId).toBe(VALID_UUID_2);
+      expect(result2.nextPageIdentifier).toBeNull();
+
+      // Verify ExclusiveStartKey was passed on the second call
+      const scanCalls = mockDynamoClient.commandCalls(ScanCommand);
+      expect(scanCalls[1]!.args[0].input.ExclusiveStartKey).toBeDefined();
+    });
+
+    it("should skip items that fail Zod schema validation", async () => {
+      const validUserItem = makeUserAssignment({
+        leaseId: VALID_UUID,
+        userId: VALID_UUID,
+        pk: userPk(VALID_UUID),
+        sk: leaseSk(VALID_UUID),
+      });
+
+      mockDynamoClient.on(ScanCommand).resolves({
+        Items: [
+          validUserItem,
+          // Missing required fields (e.g., no principalType discriminator)
+          { pk: "invalid", sk: "invalid", leaseId: VALID_UUID },
+          // Invalid principalType value
+          {
+            pk: userPk(VALID_UUID),
+            sk: leaseSk(VALID_UUID_2),
+            userId: VALID_UUID,
+            principalType: "INVALID",
+            leaseId: VALID_UUID_2,
+          },
+        ],
+      });
+
+      const result = await store.listAllAssignments({});
+
+      expect(result.result).toHaveLength(1);
+      expect(result.result[0]!.leaseId).toBe(VALID_UUID);
+    });
+  });
+
+  describe("batchGetGroupAssignments", () => {
+    it("should return empty array for empty input without calling DynamoDB", async () => {
+      const result = await store.batchGetGroupAssignments([]);
+
+      expect(result).toEqual([]);
+      expect(mockDynamoClient.commandCalls(BatchGetCommand)).toHaveLength(0);
+    });
+
+    it("should fetch assignments by (groupId, leaseId) using the base table", async () => {
+      const item1 = makeGroupAssignment();
+      const item2 = makeGroupAssignment({
+        sk: leaseSk(VALID_UUID_2),
+        leaseId: VALID_UUID_2,
+        groupId: VALID_UUID_2,
+        pk: groupPk(VALID_UUID_2),
+      });
+
+      mockDynamoClient.on(BatchGetCommand).resolves({
+        Responses: { [TABLE_NAME]: [item1, item2] },
+      });
+
+      const result = await store.batchGetGroupAssignments([
+        { groupId: VALID_UUID, leaseId: VALID_UUID },
+        { groupId: VALID_UUID_2, leaseId: VALID_UUID_2 },
+      ]);
+
+      expect(result).toHaveLength(2);
+      expect(result).toContainEqual(item1);
+      expect(result).toContainEqual(item2);
+
+      const calls = mockDynamoClient.commandCalls(BatchGetCommand);
+      expect(calls).toHaveLength(1);
+      const sentKeys = calls[0]!.args[0].input.RequestItems![TABLE_NAME]!.Keys!;
+      expect(sentKeys).toHaveLength(2);
+      expect(sentKeys).toContainEqual({
+        pk: groupPk(VALID_UUID),
+        sk: leaseSk(VALID_UUID),
+      });
+      expect(sentKeys).toContainEqual({
+        pk: groupPk(VALID_UUID_2),
+        sk: leaseSk(VALID_UUID_2),
+      });
+    });
+
+    it("should silently omit assignments that don't exist in the table", async () => {
+      mockDynamoClient.on(BatchGetCommand).resolves({
+        Responses: { [TABLE_NAME]: [] },
+      });
+
+      const result = await store.batchGetGroupAssignments([
+        { groupId: VALID_UUID, leaseId: VALID_UUID },
+      ]);
+
+      expect(result).toEqual([]);
+    });
+
+    it("should drop records that fail GroupAssignmentSchema validation", async () => {
+      // BatchGetItem can return records that exist physically but don't
+      // satisfy the application-level schema (e.g., legacy records, partial
+      // writes from a failed transaction, or attribute-level corruption).
+      // parseResults validates every item and drops the bad ones.
+      const validItem = makeGroupAssignment();
+      const wrongPrincipalType = makeGroupAssignment({
+        sk: leaseSk(VALID_UUID_2),
+        leaseId: VALID_UUID_2,
+        principalType: "USER", // GroupAssignmentSchema requires "GROUP"
+      });
+      // Record missing required `displayName` field.
+      const missingGroupName = {
+        ...makeGroupAssignment({
+          sk: leaseSk(VALID_UUID),
+          leaseId: VALID_UUID,
+          groupId: VALID_UUID_2,
+          pk: groupPk(VALID_UUID_2),
+        }),
+      };
+      delete (missingGroupName as Record<string, unknown>)["displayName"];
+
+      mockDynamoClient.on(BatchGetCommand).resolves({
+        Responses: {
+          [TABLE_NAME]: [validItem, wrongPrincipalType, missingGroupName],
+        },
+      });
+
+      const result = await store.batchGetGroupAssignments([
+        { groupId: VALID_UUID, leaseId: VALID_UUID },
+        { groupId: VALID_UUID, leaseId: VALID_UUID_2 },
+        { groupId: VALID_UUID_2, leaseId: VALID_UUID },
+      ]);
+
+      expect(result).toEqual([validItem]);
+    });
+
+    it("should dedupe input keys before sending to BatchGetItem", async () => {
+      const item = makeGroupAssignment();
+      mockDynamoClient.on(BatchGetCommand).resolves({
+        Responses: { [TABLE_NAME]: [item] },
+      });
+
+      await store.batchGetGroupAssignments([
+        { groupId: VALID_UUID, leaseId: VALID_UUID },
+        { groupId: VALID_UUID, leaseId: VALID_UUID },
+        { groupId: VALID_UUID, leaseId: VALID_UUID },
+      ]);
+
+      const calls = mockDynamoClient.commandCalls(BatchGetCommand);
+      expect(calls).toHaveLength(1);
+      const sentKeys = calls[0]!.args[0].input.RequestItems![TABLE_NAME]!.Keys!;
+      expect(sentKeys).toHaveLength(1);
+    });
+
+    it("should chunk inputs in batches of 100 keys", async () => {
+      mockDynamoClient.on(BatchGetCommand).resolves({
+        Responses: { [TABLE_NAME]: [] },
+      });
+
+      const keys = Array.from({ length: 250 }, (_, i) => ({
+        groupId: VALID_UUID,
+        leaseId: `00000000-0000-4000-8000-${i.toString().padStart(12, "0")}`,
+      }));
+
+      await store.batchGetGroupAssignments(keys);
+
+      const calls = mockDynamoClient.commandCalls(BatchGetCommand);
+      // 250 keys → 100 + 100 + 50 = 3 calls
+      expect(calls).toHaveLength(3);
+      const sizes = calls
+        .map((c) => c.args[0].input.RequestItems![TABLE_NAME]!.Keys!.length)
+        .sort((a, b) => a - b);
+      expect(sizes).toEqual([50, 100, 100]);
+    });
+
+    it("should retry unprocessed keys with backoff", async () => {
+      vi.useRealTimers();
+
+      const item = makeGroupAssignment();
+      mockDynamoClient
+        .on(BatchGetCommand)
+        .resolvesOnce({
+          Responses: { [TABLE_NAME]: [] },
+          UnprocessedKeys: {
+            [TABLE_NAME]: {
+              Keys: [{ pk: groupPk(VALID_UUID), sk: leaseSk(VALID_UUID) }],
+            },
+          },
+        })
+        .resolvesOnce({
+          Responses: { [TABLE_NAME]: [item] },
+        });
+
+      const result = await store.batchGetGroupAssignments([
+        { groupId: VALID_UUID, leaseId: VALID_UUID },
+      ]);
+
+      expect(result).toEqual([item]);
+      expect(mockDynamoClient.commandCalls(BatchGetCommand)).toHaveLength(2);
+    });
+
+    it("should give up after 4 retry attempts", async () => {
+      vi.useRealTimers();
+
+      mockDynamoClient.on(BatchGetCommand).resolves({
+        Responses: { [TABLE_NAME]: [] },
+        UnprocessedKeys: {
+          [TABLE_NAME]: {
+            Keys: [{ pk: groupPk(VALID_UUID), sk: leaseSk(VALID_UUID) }],
+          },
+        },
+      });
+
+      await expect(
+        store.batchGetGroupAssignments([
+          { groupId: VALID_UUID, leaseId: VALID_UUID },
+        ]),
+      ).rejects.toThrow(BatchUnprocessedItemsError);
+
+      expect(mockDynamoClient.commandCalls(BatchGetCommand)).toHaveLength(4);
+    });
+  });
+
+  function testCacheItem(index: number, overrides = {}) {
+    const id = crypto.randomUUID();
+    return {
+      pk: "principalCache" as const,
+      sk: `user#${id}`,
+      principalId: id,
+      principalType: "USER" as const,
+      displayName: `User ${index}`,
+      syncedAt: NOW,
+      ttl: Math.floor(Date.now() / 1000) + 172800,
+      ...overrides,
+    };
+  }
+
+  describe("batchPutCacheItems", () => {
+    it("should do nothing for empty array", async () => {
+      await store.batchPutCacheItems([]);
+      expect(mockDynamoClient.commandCalls(BatchWriteCommand)).toHaveLength(0);
+    });
+
+    it("should write items in chunks of 25", async () => {
+      mockDynamoClient.on(BatchWriteCommand).resolves({});
+
+      const items = Array.from({ length: 30 }, (_, i) => testCacheItem(i));
+
+      await store.batchPutCacheItems(items);
+
+      const calls = mockDynamoClient.commandCalls(BatchWriteCommand);
+      expect(calls).toHaveLength(2);
+      expect(calls[0]!.args[0].input.RequestItems![TABLE_NAME]).toHaveLength(
+        25,
+      );
+      expect(calls[1]!.args[0].input.RequestItems![TABLE_NAME]).toHaveLength(5);
+    });
+
+    it("should retry on unprocessed items", async () => {
+      vi.useRealTimers();
+      const item = testCacheItem(1);
+
+      mockDynamoClient
+        .on(BatchWriteCommand)
+        .resolvesOnce({
+          UnprocessedItems: {
+            [TABLE_NAME]: [{ PutRequest: { Item: item } }],
+          },
+        })
+        .resolvesOnce({});
+
+      await store.batchPutCacheItems([item]);
+
+      expect(mockDynamoClient.commandCalls(BatchWriteCommand)).toHaveLength(2);
+    });
+  });
+
+  describe("getCacheItems", () => {
+    it("should return items filtered by type", async () => {
+      const userItem = testCacheItem(1, { email: "u1@example.com" });
+      mockDynamoClient.on(QueryCommand).resolves({ Items: [userItem] });
+
+      const result = await store.getCacheItems({ type: "USER" });
+
+      expect(result).toHaveLength(1);
+      expect(result[0]!.principalId).toBe(userItem.principalId);
+    });
+
+    it("should paginate through multiple query pages", async () => {
+      const item1 = testCacheItem(1);
+      const item2 = testCacheItem(2);
+
+      mockDynamoClient
+        .on(QueryCommand)
+        .resolvesOnce({
+          Items: [item1],
+          LastEvaluatedKey: { pk: item1.pk, sk: item1.sk },
+        })
+        .resolvesOnce({
+          Items: [item2],
+        });
+
+      const result = await store.getCacheItems({});
+
+      expect(result).toHaveLength(2);
+    });
+
+    it("should skip items that fail schema validation", async () => {
+      mockDynamoClient.on(QueryCommand).resolves({
+        Items: [
+          testCacheItem(1, { displayName: "Valid" }),
+          { pk: "principalCache", sk: "user#bad", principalId: "" }, // invalid
+        ],
+      });
+
+      const result = await store.getCacheItems({});
+
+      expect(result).toHaveLength(1);
+    });
+  });
+
+  describe("batchDeleteCacheItemsBySk", () => {
+    it("should do nothing for empty array", async () => {
+      await store.batchDeleteCacheItemsBySk([]);
+      expect(mockDynamoClient.commandCalls(BatchWriteCommand)).toHaveLength(0);
+    });
+
+    it("should delete items in chunks of 25", async () => {
+      mockDynamoClient.on(BatchWriteCommand).resolves({});
+
+      const sks = Array.from(
+        { length: 30 },
+        () => `user#${crypto.randomUUID()}`,
+      );
+      await store.batchDeleteCacheItemsBySk(sks);
+
+      const calls = mockDynamoClient.commandCalls(BatchWriteCommand);
+      expect(calls).toHaveLength(2);
+    });
+  });
+
+  describe("batchGetCacheItems", () => {
+    it("should return empty array for empty input", async () => {
+      const result = await store.batchGetCacheItems([]);
+      expect(result).toEqual([]);
+      expect(mockDynamoClient.commandCalls(BatchGetCommand)).toHaveLength(0);
+    });
+
+    it("should retrieve cache items by principalId and type", async () => {
+      const item = testCacheItem(1);
+
+      mockDynamoClient.on(BatchGetCommand).resolves({
+        Responses: { [TABLE_NAME]: [item] },
+      });
+
+      const result = await store.batchGetCacheItems([
+        { principalId: item.principalId, principalType: "USER" },
+      ]);
+
+      expect(result).toHaveLength(1);
+      expect(result[0]!.principalId).toBe(item.principalId);
+      expect(result[0]!.displayName).toBe(item.displayName);
+
+      const calls = mockDynamoClient.commandCalls(BatchGetCommand);
+      expect(calls).toHaveLength(1);
+      expect(calls[0]!.args[0].input.RequestItems![TABLE_NAME]!.Keys).toEqual([
+        { pk: "principalCache", sk: `user#${item.principalId}` },
+      ]);
+    });
+
+    it("should construct correct sk prefix for GROUP type", async () => {
+      const groupId = crypto.randomUUID();
+      const groupItem = testCacheItem(1, {
+        sk: `group#${groupId}`,
+        principalId: groupId,
+        principalType: "GROUP",
+        displayName: "Engineering",
+      });
+
+      mockDynamoClient.on(BatchGetCommand).resolves({
+        Responses: { [TABLE_NAME]: [groupItem] },
+      });
+
+      const result = await store.batchGetCacheItems([
+        { principalId: groupId, principalType: "GROUP" },
+      ]);
+
+      expect(result).toHaveLength(1);
+      expect(result[0]!.displayName).toBe("Engineering");
+
+      const calls = mockDynamoClient.commandCalls(BatchGetCommand);
+      expect(calls[0]!.args[0].input.RequestItems![TABLE_NAME]!.Keys).toEqual([
+        { pk: "principalCache", sk: `group#${groupId}` },
+      ]);
+    });
+
+    it("should retry unprocessed keys", async () => {
+      vi.useRealTimers();
+      const item = testCacheItem(1);
+
+      mockDynamoClient
+        .on(BatchGetCommand)
+        .resolvesOnce({
+          Responses: { [TABLE_NAME]: [] },
+          UnprocessedKeys: {
+            [TABLE_NAME]: {
+              Keys: [{ pk: "principalCache", sk: item.sk }],
+            },
+          },
+        })
+        .resolvesOnce({
+          Responses: { [TABLE_NAME]: [item] },
+        });
+
+      const result = await store.batchGetCacheItems([
+        { principalId: item.principalId, principalType: "USER" },
+      ]);
+
+      expect(result).toHaveLength(1);
+      expect(result[0]!.principalId).toBe(item.principalId);
+      expect(mockDynamoClient.commandCalls(BatchGetCommand)).toHaveLength(2);
+    });
+
+    it("should return empty array when items do not exist in cache", async () => {
+      mockDynamoClient.on(BatchGetCommand).resolves({
+        Responses: { [TABLE_NAME]: [] },
+      });
+
+      const result = await store.batchGetCacheItems([
+        { principalId: crypto.randomUUID(), principalType: "USER" },
+      ]);
+
+      expect(result).toEqual([]);
+    });
+  });
+});

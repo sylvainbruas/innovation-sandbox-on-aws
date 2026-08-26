@@ -8,7 +8,7 @@ import { BrowserRouter } from "react-router-dom";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { ListBlueprints } from "@amzn/innovation-sandbox-frontend/domains/blueprints/pages/ListBlueprints";
-import { config } from "@amzn/innovation-sandbox-frontend/helpers/config";
+import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import { createBlueprintWithStackSets } from "@amzn/innovation-sandbox-frontend/mocks/factories/blueprintFactory";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
 import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
@@ -62,7 +62,7 @@ describe("ListBlueprints", () => {
 
   test("renders the header correctly", async () => {
     server.use(
-      http.get(`${config.ApiUrl}/blueprints`, () => {
+      http.get(`${getConfig().ApiUrl}/blueprints`, () => {
         return HttpResponse.json({
           status: "success",
           data: {
@@ -87,7 +87,7 @@ describe("ListBlueprints", () => {
 
   test("renders BlueprintTable component", async () => {
     server.use(
-      http.get(`${config.ApiUrl}/blueprints`, () => {
+      http.get(`${getConfig().ApiUrl}/blueprints`, () => {
         return HttpResponse.json({
           status: "success",
           data: {
@@ -109,7 +109,7 @@ describe("ListBlueprints", () => {
 
   test("displays blueprints in the table", async () => {
     server.use(
-      http.get(`${config.ApiUrl}/blueprints`, () => {
+      http.get(`${getConfig().ApiUrl}/blueprints`, () => {
         return HttpResponse.json({
           status: "success",
           data: {
@@ -134,7 +134,7 @@ describe("ListBlueprints", () => {
 
   test("displays empty state when no blueprints", async () => {
     server.use(
-      http.get(`${config.ApiUrl}/blueprints`, () => {
+      http.get(`${getConfig().ApiUrl}/blueprints`, () => {
         return HttpResponse.json({
           status: "success",
           data: {
@@ -158,7 +158,7 @@ describe("ListBlueprints", () => {
 
   test("displays loading state while fetching blueprints", async () => {
     server.use(
-      http.get(`${config.ApiUrl}/blueprints`, async () => {
+      http.get(`${getConfig().ApiUrl}/blueprints`, async () => {
         // Delay response to test loading state
         await new Promise((resolve) => setTimeout(resolve, 100));
         return HttpResponse.json({
@@ -184,7 +184,7 @@ describe("ListBlueprints", () => {
 
   test("displays info link in header", async () => {
     server.use(
-      http.get(`${config.ApiUrl}/blueprints`, () => {
+      http.get(`${getConfig().ApiUrl}/blueprints`, () => {
         return HttpResponse.json({
           status: "success",
           data: {

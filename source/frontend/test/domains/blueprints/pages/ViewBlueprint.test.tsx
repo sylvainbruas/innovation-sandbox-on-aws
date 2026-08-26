@@ -8,7 +8,7 @@ import { BrowserRouter as Router } from "react-router-dom";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { ViewBlueprint } from "@amzn/innovation-sandbox-frontend/domains/blueprints/pages/ViewBlueprint";
-import { config } from "@amzn/innovation-sandbox-frontend/helpers/config";
+import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import { mockBlueprint } from "@amzn/innovation-sandbox-frontend/mocks/handlers/blueprintHandlers";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
 import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
@@ -87,7 +87,7 @@ describe("ViewBlueprint", () => {
 
   test("displays error panel when blueprint fails to load", async () => {
     server.use(
-      http.get(`${config.ApiUrl}/blueprints/${mockBlueprintId}`, () => {
+      http.get(`${getConfig().ApiUrl}/blueprints/${mockBlueprintId}`, () => {
         return HttpResponse.json(
           { status: "error", message: "Not found" },
           { status: 404 },

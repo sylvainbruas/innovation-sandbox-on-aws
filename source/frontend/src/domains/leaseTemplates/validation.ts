@@ -30,6 +30,7 @@ export const BasicDetailsValidationSchema = z.object({
   description: FreeTextSchema.optional(),
   requiresApproval: z.boolean(),
   visibility: VisibilitySchema,
+  allowOwnerToShareLease: z.boolean(),
 });
 
 /**

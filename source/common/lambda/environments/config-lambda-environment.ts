@@ -6,12 +6,9 @@ import { BaseApiLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons
 
 export const ConfigurationLambdaEnvironmentSchema =
   BaseApiLambdaEnvironmentSchema.extend({
-    APP_CONFIG_APPLICATION_ID: z.string(),
-    APP_CONFIG_PROFILE_ID: z.string(),
-    APP_CONFIG_ENVIRONMENT_ID: z.string(),
-    REPORTING_CONFIG_PROFILE_ID: z.string(),
-    AWS_APPCONFIG_EXTENSION_PREFETCH_LIST: z.string(),
     ACCOUNT_POOL_CONFIG_PARAM_ARN: z.string(),
+    CONFIG_TABLE_NAME: z.string(),
+    AWS_ACCESS_PORTAL_URL: z.string(),
   });
 
 export type ConfigurationLambdaEnvironment = z.infer<

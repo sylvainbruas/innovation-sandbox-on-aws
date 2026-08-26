@@ -167,6 +167,17 @@ export const LeaseTemplatesTable = () => {
             cell: (item: LeaseTemplate) => <VisibilityIndicator item={item} />, // NOSONAR typescript:S6478 - the way the table component works requires defining component during render
           },
           {
+            id: "allowOwnerToShareLease",
+            header: "Sharing",
+            sortingField: "allowOwnerToShareLease",
+            cell: (item: LeaseTemplate) =>
+              item.allowOwnerToShareLease ? (
+                <StatusIndicator type="success">Enabled</StatusIndicator>
+              ) : (
+                <StatusIndicator type="stopped">Disabled</StatusIndicator>
+              ),
+          },
+          {
             id: "maxSpend",
             header: "Max Budget",
             sortingField: "maxSpend",

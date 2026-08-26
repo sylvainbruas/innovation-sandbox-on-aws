@@ -64,7 +64,7 @@ export class BlueprintService {
 
   async listStackSets(params?: {
     pageIdentifier?: string;
-    pageSize?: number;
+    maxResults?: number;
   }): Promise<StackSetListResponse> {
     let url = "/blueprints/stacksets";
 
@@ -73,8 +73,8 @@ export class BlueprintService {
       if (params.pageIdentifier) {
         queryParams.append("pageIdentifier", params.pageIdentifier);
       }
-      if (params.pageSize) {
-        queryParams.append("pageSize", params.pageSize.toString());
+      if (params.maxResults) {
+        queryParams.append("maxResults", params.maxResults.toString());
       }
       const queryString = queryParams.toString();
       if (queryString) {

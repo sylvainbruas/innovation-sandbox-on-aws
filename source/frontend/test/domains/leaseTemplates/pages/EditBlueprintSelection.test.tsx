@@ -13,7 +13,7 @@ import {
 } from "@amzn/innovation-sandbox-frontend/components/Toast";
 import { BlueprintListResponse } from "@amzn/innovation-sandbox-frontend/domains/blueprints/types";
 import { EditBlueprintSelection } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/pages/EditBlueprintSelection";
-import { config } from "@amzn/innovation-sandbox-frontend/helpers/config";
+import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import { mockBlueprint } from "@amzn/innovation-sandbox-frontend/mocks/handlers/blueprintHandlers";
 import { mockAdvancedLeaseTemplate } from "@amzn/innovation-sandbox-frontend/mocks/handlers/leaseTemplateHandlers";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
@@ -82,7 +82,7 @@ describe("EditBlueprintSelection", () => {
     const submitSpy = vi.fn();
 
     server.use(
-      http.get(`${config.ApiUrl}/leaseTemplates/${mockUuid}`, () => {
+      http.get(`${getConfig().ApiUrl}/leaseTemplates/${mockUuid}`, () => {
         return HttpResponse.json({
           status: "success",
           data: {
@@ -91,7 +91,7 @@ describe("EditBlueprintSelection", () => {
           },
         });
       }),
-      http.get(`${config.ApiUrl}/blueprints`, () => {
+      http.get(`${getConfig().ApiUrl}/blueprints`, () => {
         return HttpResponse.json({
           status: "success",
           data: {
@@ -100,7 +100,7 @@ describe("EditBlueprintSelection", () => {
         } as ApiResponse<BlueprintListResponse>);
       }),
       http.put(
-        `${config.ApiUrl}/leaseTemplates/${mockUuid}`,
+        `${getConfig().ApiUrl}/leaseTemplates/${mockUuid}`,
         async ({ request }) => {
           const data = await request.json();
           submitSpy(data);
@@ -145,7 +145,7 @@ describe("EditBlueprintSelection", () => {
     const submitSpy = vi.fn();
 
     server.use(
-      http.get(`${config.ApiUrl}/leaseTemplates/${mockUuid}`, () => {
+      http.get(`${getConfig().ApiUrl}/leaseTemplates/${mockUuid}`, () => {
         return HttpResponse.json({
           status: "success",
           data: {
@@ -154,14 +154,14 @@ describe("EditBlueprintSelection", () => {
           },
         });
       }),
-      http.get(`${config.ApiUrl}/blueprints`, () => {
+      http.get(`${getConfig().ApiUrl}/blueprints`, () => {
         return HttpResponse.json({
           status: "success",
           data: { blueprints: [mockBlueprint] },
         } as ApiResponse<BlueprintListResponse>);
       }),
       http.put(
-        `${config.ApiUrl}/leaseTemplates/${mockUuid}`,
+        `${getConfig().ApiUrl}/leaseTemplates/${mockUuid}`,
         async ({ request }) => {
           const data = await request.json();
           submitSpy(data);
@@ -206,7 +206,7 @@ describe("EditBlueprintSelection", () => {
 
   test("hides blueprint selector when toggle is off", async () => {
     server.use(
-      http.get(`${config.ApiUrl}/leaseTemplates/${mockUuid}`, () => {
+      http.get(`${getConfig().ApiUrl}/leaseTemplates/${mockUuid}`, () => {
         return HttpResponse.json({
           status: "success",
           data: {
@@ -215,7 +215,7 @@ describe("EditBlueprintSelection", () => {
           },
         });
       }),
-      http.get(`${config.ApiUrl}/blueprints`, () => {
+      http.get(`${getConfig().ApiUrl}/blueprints`, () => {
         return HttpResponse.json({
           status: "success",
           data: { blueprints: [mockBlueprint] },
@@ -237,7 +237,7 @@ describe("EditBlueprintSelection", () => {
 
   test("shows blueprint selector when toggle is on", async () => {
     server.use(
-      http.get(`${config.ApiUrl}/leaseTemplates/${mockUuid}`, () => {
+      http.get(`${getConfig().ApiUrl}/leaseTemplates/${mockUuid}`, () => {
         return HttpResponse.json({
           status: "success",
           data: {
@@ -246,7 +246,7 @@ describe("EditBlueprintSelection", () => {
           },
         });
       }),
-      http.get(`${config.ApiUrl}/blueprints`, () => {
+      http.get(`${getConfig().ApiUrl}/blueprints`, () => {
         return HttpResponse.json({
           status: "success",
           data: { blueprints: [mockBlueprint] },
@@ -270,7 +270,7 @@ describe("EditBlueprintSelection", () => {
 
   test("displays error toast on submission failure", async () => {
     server.use(
-      http.get(`${config.ApiUrl}/leaseTemplates/${mockUuid}`, () => {
+      http.get(`${getConfig().ApiUrl}/leaseTemplates/${mockUuid}`, () => {
         return HttpResponse.json({
           status: "success",
           data: {
@@ -279,14 +279,14 @@ describe("EditBlueprintSelection", () => {
           },
         });
       }),
-      http.get(`${config.ApiUrl}/blueprints`, () => {
+      http.get(`${getConfig().ApiUrl}/blueprints`, () => {
         return HttpResponse.json({
           status: "success",
           data: { blueprints: [mockBlueprint] },
         } as ApiResponse<BlueprintListResponse>);
       }),
       // Mock PUT to fail
-      http.put(`${config.ApiUrl}/leaseTemplates/${mockUuid}`, () => {
+      http.put(`${getConfig().ApiUrl}/leaseTemplates/${mockUuid}`, () => {
         return HttpResponse.json(
           {
             status: "Update Failed",
@@ -333,7 +333,7 @@ describe("EditBlueprintSelection", () => {
 
   test("disables toggle and shows message when no blueprints exist", async () => {
     server.use(
-      http.get(`${config.ApiUrl}/leaseTemplates/${mockUuid}`, () => {
+      http.get(`${getConfig().ApiUrl}/leaseTemplates/${mockUuid}`, () => {
         return HttpResponse.json({
           status: "success",
           data: {
@@ -342,7 +342,7 @@ describe("EditBlueprintSelection", () => {
           },
         });
       }),
-      http.get(`${config.ApiUrl}/blueprints`, () => {
+      http.get(`${getConfig().ApiUrl}/blueprints`, () => {
         return HttpResponse.json({
           status: "success",
           data: { blueprints: [] },

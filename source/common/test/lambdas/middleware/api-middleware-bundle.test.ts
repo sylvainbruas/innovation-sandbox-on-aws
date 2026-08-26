@@ -2,500 +2,385 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * Unit tests for API middleware bundle
- * Tests JWT secret fetching from Secrets Manager and user authentication flow.
+ * Unit tests for API middleware bundle.
+ * Covers SigV4 auth path selection, M2M role-ARN parsing, x-isb-identity
+ * verification, and hybrid-request rejection.
+ *
+ * The shared `api-test-setup.ts` (registered as `setupFiles` in
+ * `vitest.config.ts`) mocks `aws-jwt-verify` so any token built with
+ * `encodeTestToken()` is decoded back into the original claims. Use the
+ * `INVALID_TOKEN_SENTINEL` to exercise the JWKS-failure branch.
  */
 
 import {
-  GetSecretValueCommand,
-  SecretsManagerClient,
-} from "@aws-sdk/client-secrets-manager";
-import { mockClient } from "aws-sdk-client-mock";
-import jwt from "jsonwebtoken";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 
-import { BaseApiLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/base-api-lambda-environment.js";
+import { GlobalConfig } from "@amzn/innovation-sandbox-commons/data/global-config/global-config.js";
+import { ConfigurationLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/config-lambda-environment.js";
 import apiMiddlewareBundle from "@amzn/innovation-sandbox-commons/lambda/middleware/api-middleware-bundle.js";
-import { IsbClients } from "@amzn/innovation-sandbox-commons/sdk-clients/index.js";
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
-import { createAPIGatewayProxyEvent } from "@amzn/innovation-sandbox-commons/test/lambdas/fixtures.js";
-import { bulkStubEnv } from "@amzn/innovation-sandbox-commons/test/lambdas/utils.js";
-import { IsbUser } from "@amzn/innovation-sandbox-commons/types/isb-types.js";
+import { encodeTestToken } from "@amzn/innovation-sandbox-commons/test/lambdas/api-test-setup.js";
+import {
+  buildCognitoAuthProvider,
+  createAPIGatewayProxyEvent,
+  mockGlobalConfig,
+} from "@amzn/innovation-sandbox-commons/test/lambdas/fixtures.js";
+import {
+  bulkStubEnv,
+  mockAppConfigMiddleware,
+} from "@amzn/innovation-sandbox-commons/test/lambdas/utils.js";
+import {
+  COGNITO_IDC_USER_ID_CLAIM,
+  COGNITO_ISB_ROLES_CLAIM,
+  COGNITO_USERNAME_CLAIM,
+  IDENTITY_HEADER,
+  isM2MUser,
+} from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
+import { buildM2mAssumedRoleArn } from "@amzn/innovation-sandbox-commons/utils/m2m-role-arn.js";
 import { Logger } from "@aws-lambda-powertools/logger";
 import { Tracer } from "@aws-lambda-powertools/tracer";
 
-const secretsManagerMock = mockClient(SecretsManagerClient);
+const NAMESPACE = "isb";
+const testEnv = generateSchemaData(ConfigurationLambdaEnvironmentSchema, {
+  ISB_NAMESPACE: NAMESPACE,
+});
 
-const testEnv = generateSchemaData(BaseApiLambdaEnvironmentSchema);
+let mockedGlobalConfig: GlobalConfig;
 
-const testUser: IsbUser = {
-  email: "test@example.com",
-  userId: "test-user-id",
-  roles: ["Admin"],
-};
+const SUB = "abc12345-6789-4abc-9def-0123456789ab";
+const POOL_ID = "us-east-1_TEST";
+const cognitoAuthenticationProvider = buildCognitoAuthProvider(
+  POOL_ID,
+  SUB,
+  "us-east-1",
+);
 
-const jwtSecret = "test-secret-key";
+const m2mAdminArn = (clientName: string) =>
+  buildM2mAssumedRoleArn({
+    namespace: NAMESPACE,
+    roleTier: "Admin",
+    clientName,
+    accountId: "123456789012",
+  });
 
 describe("apiMiddlewareBundle", () => {
   let logger: Logger;
   let tracer: Tracer;
 
+  beforeAll(() => {
+    mockedGlobalConfig = mockGlobalConfig();
+  });
+
   beforeEach(() => {
     logger = new Logger({ serviceName: "test" });
     tracer = new Tracer({ serviceName: "test" });
     bulkStubEnv(testEnv);
+    mockAppConfigMiddleware(mockedGlobalConfig);
   });
 
-  /**
-   * Helper function to create a middleware handler with test configuration
-   */
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
   const createHandler = (
     handlerFn: (event: any, context: any) => Promise<any>,
   ) => {
     return apiMiddlewareBundle({
       logger,
       tracer,
-      environmentSchema: BaseApiLambdaEnvironmentSchema,
+      environmentSchema: ConfigurationLambdaEnvironmentSchema,
     }).handler(handlerFn);
   };
 
-  afterEach(() => {
-    secretsManagerMock.reset();
-    IsbClients.secretsProvider(testEnv).clearCache();
-    vi.clearAllMocks();
-    vi.unstubAllEnvs();
-  });
-
-  describe("Successful JWT validation", () => {
-    it("should fetch JWT secret from Secrets Manager and validate token", async () => {
-      // Mock Secrets Manager to return JWT secret
-      secretsManagerMock.on(GetSecretValueCommand).resolves({
-        SecretString: jwtSecret,
-      });
-
-      const token = jwt.sign({ user: testUser }, jwtSecret);
-      const event = createAPIGatewayProxyEvent({
-        httpMethod: "GET",
-        path: "/test",
-        headers: {
-          authorization: `Bearer ${token}`,
-        },
-      });
-
-      const handler = createHandler(async (_event, context) => {
-        // Verify user is attached to context
-        expect(context.user).toEqual(testUser);
-        return {
-          statusCode: 200,
-          body: JSON.stringify({ message: "success" }),
-        };
-      });
-
-      const response = await handler(event, {} as any);
-
-      expect(response.statusCode).toBe(200);
-      expect(secretsManagerMock.calls()).toHaveLength(1);
-      expect(secretsManagerMock.call(0).args[0].input).toMatchObject({
-        SecretId: testEnv.JWT_SECRET_NAME,
-      });
-    });
-
-    it("should handle valid token with minimal user roles", async () => {
-      secretsManagerMock.on(GetSecretValueCommand).resolves({
-        SecretString: jwtSecret,
-      });
-
-      const minimalUser: IsbUser = {
+  describe("User path (x-isb-identity header)", () => {
+    it("attaches user identity from a verified ID token", async () => {
+      const claims = {
+        sub: SUB,
         email: "user@example.com",
-        userId: "user-id",
-        roles: ["User"],
+        [COGNITO_IDC_USER_ID_CLAIM]: "user-id-1",
+        [COGNITO_ISB_ROLES_CLAIM]: JSON.stringify(["Admin"]),
       };
-
-      const token = jwt.sign({ user: minimalUser }, jwtSecret);
       const event = createAPIGatewayProxyEvent({
         httpMethod: "GET",
-        path: "/test",
-        headers: {
-          authorization: `Bearer ${token}`,
+        path: "/accounts",
+        headers: { [IDENTITY_HEADER]: encodeTestToken(claims) },
+        identity: { cognitoAuthenticationProvider },
+      });
+
+      const handler = createHandler(async (_event, context) => {
+        expect(context.user).toEqual({
+          type: "user",
+          email: "user@example.com",
+          userId: "user-id-1",
+          roles: ["Admin"],
+        });
+        return { statusCode: 200, body: "{}" };
+      });
+
+      const response = await handler(event, {} as any);
+      expect(response.statusCode).toBe(200);
+    });
+
+    it("extracts email from cognito:username when top-level email claim is absent (SAML federated)", async () => {
+      const claims = {
+        sub: SUB,
+        [COGNITO_USERNAME_CLAIM]: "IAMIdentityCenter_user@example.com",
+        [COGNITO_IDC_USER_ID_CLAIM]: "user-id-1",
+        [COGNITO_ISB_ROLES_CLAIM]: JSON.stringify(["Admin"]),
+      };
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "GET",
+        path: "/accounts",
+        headers: { [IDENTITY_HEADER]: encodeTestToken(claims) },
+        identity: { cognitoAuthenticationProvider },
+      });
+
+      const handler = createHandler(async (_event, context) => {
+        expect(context.user.email).toBe("user@example.com");
+        return { statusCode: 200, body: "{}" };
+      });
+
+      const response = await handler(event, {} as any);
+      expect(response.statusCode).toBe(200);
+    });
+
+    it("returns 401 when x-isb-identity header is absent and caller is not M2M", async () => {
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "GET",
+        path: "/accounts",
+      });
+
+      const handler = createHandler(async () => ({
+        statusCode: 200,
+        body: "{}",
+      }));
+
+      const response = await handler(event, {} as any);
+      expect(response.statusCode).toBe(401);
+    });
+
+    it("returns 401 when JWKS verification fails", async () => {
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "GET",
+        path: "/accounts",
+        headers: { [IDENTITY_HEADER]: "not-an-encoded-token" },
+        identity: { cognitoAuthenticationProvider },
+      });
+
+      const handler = createHandler(async () => ({
+        statusCode: 200,
+        body: "{}",
+      }));
+
+      const response = await handler(event, {} as any);
+      expect(response.statusCode).toBe(401);
+    });
+
+    it("returns 403 when token sub does not match the IAM principal sub", async () => {
+      const claims = {
+        sub: "different-sub",
+        email: "user@example.com",
+        [COGNITO_IDC_USER_ID_CLAIM]: "user-id-1",
+        [COGNITO_ISB_ROLES_CLAIM]: JSON.stringify(["Admin"]),
+      };
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "GET",
+        path: "/accounts",
+        headers: { [IDENTITY_HEADER]: encodeTestToken(claims) },
+        identity: { cognitoAuthenticationProvider },
+      });
+
+      const handler = createHandler(async () => ({
+        statusCode: 200,
+        body: "{}",
+      }));
+
+      const response = await handler(event, {} as any);
+      expect(response.statusCode).toBe(403);
+    });
+
+    it("returns 401 when the verified token is missing required claims", async () => {
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "GET",
+        path: "/accounts",
+        headers: { [IDENTITY_HEADER]: encodeTestToken({ sub: SUB }) },
+        identity: { cognitoAuthenticationProvider },
+      });
+
+      const handler = createHandler(async () => ({
+        statusCode: 200,
+        body: "{}",
+      }));
+
+      const response = await handler(event, {} as any);
+      expect(response.statusCode).toBe(401);
+    });
+
+    it("returns 403 when the roles claim parses to an empty array", async () => {
+      // Required claims present, but the roles JSON contains only invalid
+      // values — parseRolesClaim filters them out, leaving an empty array.
+      const claims = {
+        sub: SUB,
+        email: "user@example.com",
+        [COGNITO_IDC_USER_ID_CLAIM]: "user-id-1",
+        [COGNITO_ISB_ROLES_CLAIM]: JSON.stringify(["NotARealRole"]),
+      };
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "GET",
+        path: "/accounts",
+        headers: { [IDENTITY_HEADER]: encodeTestToken(claims) },
+        identity: { cognitoAuthenticationProvider },
+      });
+
+      const handler = createHandler(async () => ({
+        statusCode: 200,
+        body: "{}",
+      }));
+
+      const response = await handler(event, {} as any);
+      expect(response.statusCode).toBe(403);
+    });
+  });
+
+  describe("M2M path (assumed-role IAM principal)", () => {
+    it("parses a per-client admin role ARN into an M2M identity", async () => {
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "GET",
+        path: "/accounts",
+        identity: { userArn: m2mAdminArn("deploy-pipeline") },
+      });
+
+      const handler = createHandler(async (_event, context) => {
+        expect(isM2MUser(context.user)).toBe(true);
+        if (isM2MUser(context.user)) {
+          expect(context.user.clientId).toBe("deploy-pipeline");
+          expect(context.user.roles).toEqual(["Admin"]);
+        }
+        return { statusCode: 200, body: "{}" };
+      });
+
+      const response = await handler(event, {} as any);
+      expect(response.statusCode).toBe(200);
+    });
+
+    it("rejects look-alike role ARNs that do not match the namespace prefix (regex anchoring)", async () => {
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "GET",
+        path: "/accounts",
+        identity: {
+          userArn:
+            "arn:aws:sts::123456789012:assumed-role/evil-isb-m2m-admin-x/session-name",
+        },
+        // No x-isb-identity header → user-path verification fires and 401s.
+      });
+
+      const handler = createHandler(async () => ({
+        statusCode: 200,
+        body: "{}",
+      }));
+
+      const response = await handler(event, {} as any);
+      expect(response.statusCode).toBe(401);
+    });
+
+    it("returns 400 when an M2M IAM principal also sends x-isb-identity (hybrid request)", async () => {
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "GET",
+        path: "/accounts",
+        headers: { [IDENTITY_HEADER]: encodeTestToken({ sub: SUB }) },
+        identity: { userArn: m2mAdminArn("deploy-pipeline") },
+      });
+
+      const handler = createHandler(async () => ({
+        statusCode: 200,
+        body: "{}",
+      }));
+
+      const response = await handler(event, {} as any);
+      expect(response.statusCode).toBe(400);
+    });
+
+    it("matches M2M role names case-insensitively", async () => {
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "GET",
+        path: "/accounts",
+        identity: {
+          userArn: `arn:aws:sts::123456789012:assumed-role/${NAMESPACE}-isb-m2m-Admin-deploy-pipeline/session-name`,
         },
       });
 
       const handler = createHandler(async (_event, context) => {
-        expect(context.user).toEqual(minimalUser);
-        return {
-          statusCode: 200,
-          body: JSON.stringify({ message: "success" }),
-        };
+        expect(isM2MUser(context.user)).toBe(true);
+        return { statusCode: 200, body: "{}" };
       });
 
       const response = await handler(event, {} as any);
-
       expect(response.statusCode).toBe(200);
-    });
-  });
-
-  describe("Missing Authorization header", () => {
-    it("should return 400 when Authorization header is missing", async () => {
-      const event = createAPIGatewayProxyEvent({
-        httpMethod: "GET",
-        path: "/test",
-        headers: {},
-      });
-
-      const handler = createHandler(async () => {
-        return {
-          statusCode: 200,
-          body: JSON.stringify({ message: "success" }),
-        };
-      });
-
-      const response = await handler(event, {} as any);
-
-      expect(response.statusCode).toBe(400);
-      const body = JSON.parse(response.body);
-      expect(body.status).toBe("fail");
-      expect(body.data.errors[0].message).toContain(
-        "Authorization header is missing",
-      );
-    });
-  });
-
-  describe("Invalid Authorization header format", () => {
-    it("should return 400 when Authorization header is not in Bearer format", async () => {
-      const event = createAPIGatewayProxyEvent({
-        httpMethod: "GET",
-        path: "/test",
-        headers: {
-          authorization: "InvalidFormat token123",
-        },
-      });
-
-      const handler = createHandler(async () => {
-        return {
-          statusCode: 200,
-          body: JSON.stringify({ message: "success" }),
-        };
-      });
-
-      const response = await handler(event, {} as any);
-
-      expect(response.statusCode).toBe(400);
-      const body = JSON.parse(response.body);
-      expect(body.status).toBe("fail");
-      expect(body.data.errors[0].message).toContain("Bearer <token>");
-    });
-
-    it("should return 400 when Bearer token is empty", async () => {
-      const event = createAPIGatewayProxyEvent({
-        httpMethod: "GET",
-        path: "/test",
-        headers: {
-          authorization: "Bearer ",
-        },
-      });
-
-      const handler = createHandler(async () => {
-        return {
-          statusCode: 200,
-          body: JSON.stringify({ message: "success" }),
-        };
-      });
-
-      const response = await handler(event, {} as any);
-
-      expect(response.statusCode).toBe(400);
-      const body = JSON.parse(response.body);
-      expect(body.data.errors[0].message).toContain("Bearer <token>");
-    });
-  });
-
-  describe("Secrets Manager failures", () => {
-    it("should return 500 when Secrets Manager returns non-string value", async () => {
-      secretsManagerMock.on(GetSecretValueCommand).resolves({
-        SecretBinary: new Uint8Array([1, 2, 3]),
-      });
-
-      const token = jwt.sign({ user: testUser }, jwtSecret);
-      const event = createAPIGatewayProxyEvent({
-        httpMethod: "GET",
-        path: "/test",
-        headers: {
-          authorization: `Bearer ${token}`,
-        },
-      });
-
-      const handler = createHandler(async () => {
-        return {
-          statusCode: 200,
-          body: JSON.stringify({ message: "success" }),
-        };
-      });
-
-      const response = await handler(event, {} as any);
-
-      expect(response.statusCode).toBe(500);
-      const body = JSON.parse(response.body);
-      expect(body.status).toBe("error");
-      expect(body.message).toContain("An unexpected error occurred");
-    });
-
-    it("should return 500 when Secrets Manager throws error", async () => {
-      secretsManagerMock
-        .on(GetSecretValueCommand)
-        .rejects(new Error("Secrets Manager unavailable"));
-
-      const token = jwt.sign({ user: testUser }, jwtSecret);
-      const event = createAPIGatewayProxyEvent({
-        httpMethod: "GET",
-        path: "/test",
-        headers: {
-          authorization: `Bearer ${token}`,
-        },
-      });
-
-      const handler = createHandler(async () => {
-        return {
-          statusCode: 200,
-          body: JSON.stringify({ message: "success" }),
-        };
-      });
-
-      const response = await handler(event, {} as any);
-
-      expect(response.statusCode).toBe(500);
-      const body = JSON.parse(response.body);
-      expect(body.status).toBe("error");
-      expect(body.message).toContain("An unexpected error occurred");
-    });
-  });
-
-  describe("Invalid JWT tokens", () => {
-    it("should return 401 when token signature is invalid", async () => {
-      secretsManagerMock.on(GetSecretValueCommand).resolves({
-        SecretString: jwtSecret,
-      });
-
-      const token = jwt.sign({ user: testUser }, "wrong-secret");
-      const event = createAPIGatewayProxyEvent({
-        httpMethod: "GET",
-        path: "/test",
-        headers: {
-          authorization: `Bearer ${token}`,
-        },
-      });
-
-      const handler = createHandler(async () => {
-        return {
-          statusCode: 200,
-          body: JSON.stringify({ message: "success" }),
-        };
-      });
-
-      const response = await handler(event, {} as any);
-
-      expect(response.statusCode).toBe(401);
-      const body = JSON.parse(response.body);
-      expect(body.status).toBe("fail");
-      expect(body.data.errors[0].message).toContain("Invalid bearer token");
-    });
-
-    it("should return 401 when token is expired", async () => {
-      secretsManagerMock.on(GetSecretValueCommand).resolves({
-        SecretString: jwtSecret,
-      });
-
-      const token = jwt.sign({ user: testUser }, jwtSecret, {
-        expiresIn: "-1h",
-      });
-      const event = createAPIGatewayProxyEvent({
-        httpMethod: "GET",
-        path: "/test",
-        headers: {
-          authorization: `Bearer ${token}`,
-        },
-      });
-
-      const handler = createHandler(async () => {
-        return {
-          statusCode: 200,
-          body: JSON.stringify({ message: "success" }),
-        };
-      });
-
-      const response = await handler(event, {} as any);
-
-      expect(response.statusCode).toBe(401);
-      const body = JSON.parse(response.body);
-      expect(body.data.errors[0].message).toContain("Invalid bearer token");
-    });
-
-    it("should return 401 when token is malformed", async () => {
-      secretsManagerMock.on(GetSecretValueCommand).resolves({
-        SecretString: jwtSecret,
-      });
-
-      const event = createAPIGatewayProxyEvent({
-        httpMethod: "GET",
-        path: "/test",
-        headers: {
-          authorization: "Bearer not.a.valid.jwt",
-        },
-      });
-
-      const handler = createHandler(async () => {
-        return {
-          statusCode: 200,
-          body: JSON.stringify({ message: "success" }),
-        };
-      });
-
-      const response = await handler(event, {} as any);
-
-      expect(response.statusCode).toBe(401);
-      const body = JSON.parse(response.body);
-      expect(body.data.errors[0].message).toContain("Invalid bearer token");
-    });
-  });
-
-  describe("Invalid user payload", () => {
-    it("should return 400 when user email is missing", async () => {
-      secretsManagerMock.on(GetSecretValueCommand).resolves({
-        SecretString: jwtSecret,
-      });
-
-      const invalidUser = {
-        userId: "test-id",
-        roles: ["User"],
-        // email is missing
-      };
-
-      const token = jwt.sign({ user: invalidUser }, jwtSecret);
-      const event = createAPIGatewayProxyEvent({
-        httpMethod: "GET",
-        path: "/test",
-        headers: {
-          authorization: `Bearer ${token}`,
-        },
-      });
-
-      const handler = createHandler(async () => {
-        return {
-          statusCode: 200,
-          body: JSON.stringify({ message: "success" }),
-        };
-      });
-
-      const response = await handler(event, {} as any);
-
-      expect(response.statusCode).toBe(400);
-      const body = JSON.parse(response.body);
-      expect(body.status).toBe("fail");
-      expect(body.data.errors[0].message).toContain(
-        "Token payload has invalid user object.",
-      );
-    });
-
-    it("should return 400 when user object is missing entirely", async () => {
-      secretsManagerMock.on(GetSecretValueCommand).resolves({
-        SecretString: jwtSecret,
-      });
-
-      const token = jwt.sign({ someOtherData: "value" }, jwtSecret);
-      const event = createAPIGatewayProxyEvent({
-        httpMethod: "GET",
-        path: "/test",
-        headers: {
-          authorization: `Bearer ${token}`,
-        },
-      });
-
-      const handler = createHandler(async () => {
-        return {
-          statusCode: 200,
-          body: JSON.stringify({ message: "success" }),
-        };
-      });
-
-      const response = await handler(event, {} as any);
-
-      expect(response.statusCode).toBe(400);
-      const body = JSON.parse(response.body);
-      expect(body.data.errors[0].message).toContain(
-        "Token payload has invalid user object.",
-      );
-    });
-
-    it("should return 400 when user roles is not an array", async () => {
-      secretsManagerMock.on(GetSecretValueCommand).resolves({
-        SecretString: jwtSecret,
-      });
-
-      const invalidUser = {
-        email: "test@example.com",
-        userId: "test-id",
-        roles: "User", // Should be array
-      };
-
-      const token = jwt.sign({ user: invalidUser }, jwtSecret);
-      const event = createAPIGatewayProxyEvent({
-        httpMethod: "GET",
-        path: "/test",
-        headers: {
-          authorization: `Bearer ${token}`,
-        },
-      });
-
-      const handler = createHandler(async () => {
-        return {
-          statusCode: 200,
-          body: JSON.stringify({ message: "success" }),
-        };
-      });
-
-      const response = await handler(event, {} as any);
-
-      expect(response.statusCode).toBe(400);
-      const body = JSON.parse(response.body);
-      expect(body.data.errors[0].message).toContain(
-        "Token payload has invalid user object.",
-      );
     });
   });
 
   describe("Logger context enrichment", () => {
-    it("should append user and request details to logger", async () => {
-      secretsManagerMock.on(GetSecretValueCommand).resolves({
-        SecretString: jwtSecret,
-      });
-
-      const token = jwt.sign({ user: testUser }, jwtSecret);
+    it("appends user, userGroups, and authType to logger context", async () => {
+      const claims = {
+        sub: SUB,
+        email: "user@example.com",
+        [COGNITO_IDC_USER_ID_CLAIM]: "user-id-1",
+        [COGNITO_ISB_ROLES_CLAIM]: JSON.stringify(["Admin"]),
+      };
       const event = createAPIGatewayProxyEvent({
-        httpMethod: "POST",
-        path: "/api/test",
-        headers: {
-          authorization: `Bearer ${token}`,
-        },
+        httpMethod: "GET",
+        path: "/accounts",
+        headers: { [IDENTITY_HEADER]: encodeTestToken(claims) },
+        identity: { cognitoAuthenticationProvider },
       });
 
       const appendKeysSpy = vi.spyOn(logger, "appendKeys");
 
-      const handler = createHandler(async () => {
-        return {
-          statusCode: 200,
-          body: JSON.stringify({ message: "success" }),
-        };
-      });
+      const handler = createHandler(async () => ({
+        statusCode: 200,
+        body: "{}",
+      }));
 
       await handler(event, {} as any);
 
       expect(appendKeysSpy).toHaveBeenCalledWith(
         expect.objectContaining({
-          path: "/api/test",
-          httpMethod: "POST",
-          user: testUser.email,
-          userGroups: testUser.roles,
+          path: "/accounts",
+          httpMethod: "GET",
+          user: "user@example.com",
+          userGroups: ["Admin"],
+          authType: "user",
         }),
       );
     });
+  });
+});
+
+describe("BaseApiLambdaEnvironmentSchema validation", () => {
+  it("rejects ISB_NAMESPACE values containing regex-special characters", async () => {
+    const { BaseApiLambdaEnvironmentSchema } = await import(
+      "@amzn/innovation-sandbox-commons/lambda/environments/base-api-lambda-environment.js"
+    );
+    const baseInput = generateSchemaData(BaseApiLambdaEnvironmentSchema);
+    expect(
+      BaseApiLambdaEnvironmentSchema.safeParse({
+        ...baseInput,
+        ISB_NAMESPACE: "isb.*",
+      }).success,
+    ).toBe(false);
+    expect(
+      BaseApiLambdaEnvironmentSchema.safeParse({
+        ...baseInput,
+        ISB_NAMESPACE: "isb-x",
+      }).success,
+    ).toBe(false);
   });
 });

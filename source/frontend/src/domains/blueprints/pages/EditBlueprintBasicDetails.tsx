@@ -36,7 +36,7 @@ export const EditBlueprintBasicDetails = () => {
   const navigate = useNavigate();
   const setBreadcrumb = useBreadcrumb();
 
-  const query = useGetBlueprintById(blueprintId!);
+  const query = useGetBlueprintById(blueprintId);
   const { data, isLoading, isError, refetch, error } = query;
 
   const { mutateAsync: updateBlueprint, isPending: isUpdating } =

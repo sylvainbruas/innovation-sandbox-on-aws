@@ -34,23 +34,69 @@ async function eventHandler(
   context: IsbLambdaContext<LogArchivingEnvironment>,
 ) {
   const periodInDays = Number(context.env.EXPORT_PERIOD_DAYS);
-  const logGroupName = context.env.LOG_GROUP_NAME;
+  const logGroupNames = context.env.LOG_GROUP_NAMES.split(",")
+    .map((g) => g.trim())
+    .filter((g) => g.length > 0);
   const destinationPrefix = context.env.DESTINATION_PREFIX;
   const destinationBucketName = context.env.DESTINATION_BUCKET_NAME;
 
   logger.info({
     message: "Log archiving invoked",
-    logGroupName,
+    logGroupNames,
     archivingBucketName: destinationBucketName,
     periodInDays,
     destinationPrefix,
   });
 
-  const logArchivingService = IsbServices.logArchivingService(context.env, {
+  const failures: { logGroupName: string; error: unknown }[] = [];
+  // Serial loop: CloudWatch Logs allows only one active CreateExportTask per
+  // account, so we wait for each export to finish before starting the next.
+  for (const logGroupName of logGroupNames) {
+    try {
+      await archiveLogGroup({
+        env: context.env,
+        logGroupName,
+        periodInDays,
+        destinationPrefix,
+        destinationBucketName,
+      });
+    } catch (error) {
+      logger.error({
+        message: "Failed to archive log group",
+        logGroupName,
+        error,
+      });
+      failures.push({ logGroupName, error });
+    }
+  }
+
+  if (failures.length > 0) {
+    throw new Error(
+      `Log archiving failed for ${failures.length}/${logGroupNames.length} group(s): ${failures.map((f) => f.logGroupName).join(", ")}`,
+    );
+  }
+}
+
+async function archiveLogGroup(props: {
+  env: LogArchivingEnvironment;
+  logGroupName: string;
+  periodInDays: number;
+  destinationPrefix: string;
+  destinationBucketName: string;
+}): Promise<void> {
+  const {
+    env,
+    logGroupName,
+    periodInDays,
+    destinationPrefix,
+    destinationBucketName,
+  } = props;
+
+  const logArchivingService = IsbServices.logArchivingService(env, {
     logger,
     logGroupName,
     destinationPrefix,
-    destinationBucketName: destinationBucketName,
+    destinationBucketName,
   });
   const toTime = now().minus({ days: 1 }); //logs will be available for export only after 12 hours
 
@@ -65,6 +111,7 @@ async function eventHandler(
     : toTime.minus({ days: periodInDays + 1 });
   logger.info({
     message: "Log export period",
+    logGroupName,
     fromTime,
     toTime,
   });
@@ -72,15 +119,22 @@ async function eventHandler(
   if (toTime.diff(fromTime, "day").days < Math.floor(periodInDays / 2)) {
     logger.warn({
       message: `Time range is less than half the export period ${periodInDays}, skipping export`,
+      logGroupName,
     });
     return;
   }
 
-  await logArchivingService.createExportTask({
+  const taskId = await logArchivingService.createExportTask({
     fromTime,
     toTime,
     currentExportTS,
   });
+  const status = await logArchivingService.waitForExportTask(taskId);
+  if (status !== "COMPLETED") {
+    throw new Error(
+      `Export task ${taskId} for ${logGroupName} ended in non-COMPLETED state: ${status}`,
+    );
+  }
   await logArchivingService.saveLastExportedDateTime(toTime);
 }
 

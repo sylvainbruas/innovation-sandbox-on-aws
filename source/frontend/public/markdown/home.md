@@ -12,11 +12,12 @@ Admins and Managers can [assign leases directly to users](https://docs.aws.amazo
 
 Admins can [manage existing accounts](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/administrator-guide.html#manage-accounts) in the account pool, and view a list of all sandbox accounts.
 
-The solution manages the account status throughout the usage lifecycle, when it moves the account across various AWS organizational units. Refer to the [Account states](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/administrator-guide.html#account-states) section.
+The solution manages the account status throughout the usage lifecycle, when it moves the account across various AWS organizational units. Refer to the [Account states](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/administrator-guide.html#understand-states) section.
 
 ---
 
-**Users** can [request a new sandbox account](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/user-section.html#request-new-account-lease). If you cannot see your new sandbox requests, click the **Refresh** icon from the My Accounts section, or refresh your browser to view your new requests.
+**Users** can [request a new sandbox account](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/manager-guide.html#request-new-account-lease). If you cannot see your new sandbox requests, choose the **Refresh** icon from the My Accounts section, or refresh your browser to view your new requests.
+
 Your request will be reviewed and an outcome provided on the request.
 
 - _Your lease is pending approval_
@@ -31,3 +32,5 @@ Your request will be reviewed and an outcome provided on the request.
     If your request was denied, reach out to your Admin to understand the reason, and retry the request at a later time.
 
 To access your AWS account associated with your sandbox after it has been approved, choose **Login to account**. Your remaining budget and lease duration is displayed under **My Accounts**.
+
+The **Active Leases** section also includes leases that have been [shared with you](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/manager-guide.html#shared-leases) directly or via group membership.

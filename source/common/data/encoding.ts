@@ -8,7 +8,8 @@ export function base64EncodeCompositeKey(
   }
 
   const jsonStr = JSON.stringify(key);
-  return Buffer.from(jsonStr, "utf8").toString("base64");
+  // base64url so the value is safe in URL path segments and query strings.
+  return Buffer.from(jsonStr, "utf8").toString("base64url");
 }
 
 export function base64DecodeCompositeKey(
@@ -18,6 +19,6 @@ export function base64DecodeCompositeKey(
     return undefined;
   }
 
-  const jsonStr = Buffer.from(encodedKey, "base64").toString("utf8");
+  const jsonStr = Buffer.from(encodedKey, "base64url").toString("utf8");
   return JSON.parse(jsonStr);
 }

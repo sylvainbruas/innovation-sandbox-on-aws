@@ -7,10 +7,9 @@ import { http, HttpResponse } from "msw";
 import { BrowserRouter as Router } from "react-router-dom";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-import { GlobalConfigForUI } from "@amzn/innovation-sandbox-commons/data/global-config/global-config.js";
 import { showErrorToast } from "@amzn/innovation-sandbox-frontend/components/Toast";
 import { AddLeaseTemplate } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/pages/AddLeaseTemplate";
-import { config } from "@amzn/innovation-sandbox-frontend/helpers/config";
+import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import { createConfiguration } from "@amzn/innovation-sandbox-frontend/mocks/factories/configurationFactory";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
 import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
@@ -32,7 +31,7 @@ vi.mock("@amzn/innovation-sandbox-frontend/components/Toast", () => ({
 
 describe("AddLeaseTemplate", () => {
   // Mock configuration with require flags set to true
-  const mockConfig: GlobalConfigForUI = createConfiguration({
+  const mockConfig = createConfiguration({
     leases: {
       maxBudget: 10000,
       requireMaxBudget: true,
@@ -40,6 +39,11 @@ describe("AddLeaseTemplate", () => {
       requireMaxDuration: true,
       maxLeasesPerUser: 5,
       ttl: 1000,
+      leaseSharingEnabled: true,
+      allowUserLeaseTermination: true,
+      leaseRequestWindowHours: 168,
+      maxLeaseRequestsPerWindow: 10,
+      enablePrincipalSearch: true,
     },
   });
 
@@ -48,14 +52,14 @@ describe("AddLeaseTemplate", () => {
 
     // Override the configuration endpoint to return our test config
     server.use(
-      http.get(`${config.ApiUrl}/configurations`, () => {
+      http.get(`${getConfig().ApiUrl}/configurations`, () => {
         return HttpResponse.json({
           status: "success",
           data: mockConfig,
         });
       }),
       // Mock the blueprints endpoint
-      http.get(`${config.ApiUrl}/blueprints`, () => {
+      http.get(`${getConfig().ApiUrl}/blueprints`, () => {
         return HttpResponse.json({
           status: "success",
           data: {
@@ -131,6 +135,14 @@ describe("AddLeaseTemplate", () => {
     // Navigate to Cost Report step
     await user.click(screen.getByRole("button", { name: /next/i }));
 
+    // Wait for Cost Report step to mount before advancing — the step contains
+    // a Cloudscape Select whose Transition state takes a few frames to settle
+    // on slower CI hosts; clicking next before it does causes the next step
+    // to wedge, and the eventual submit-button waitFor times out at 10s.
+    await waitFor(() => {
+      expect(screen.getByText("Enable Cost Report Group")).toBeInTheDocument();
+    });
+
     // Navigate to Review step
     await user.click(screen.getByRole("button", { name: /next/i }));
   };
@@ -158,7 +170,7 @@ describe("AddLeaseTemplate", () => {
   test("submits form and navigates on successful submission", async () => {
     const submitSpy = vi.fn();
     server.use(
-      http.post(`${config.ApiUrl}/leaseTemplates`, async ({ request }) => {
+      http.post(`${getConfig().ApiUrl}/leaseTemplates`, async ({ request }) => {
         const data = await request.json();
         submitSpy(data);
         return HttpResponse.json({ status: "success", data });
@@ -197,6 +209,7 @@ describe("AddLeaseTemplate", () => {
           budgetThresholds: [],
           leaseDurationInHours: 24,
           durationThresholds: [],
+          allowOwnerToShareLease: false,
         }),
       );
     });
@@ -204,7 +217,7 @@ describe("AddLeaseTemplate", () => {
 
   test("displays error message on submission failure", async () => {
     server.use(
-      http.post(`${config.ApiUrl}/leaseTemplates`, () => {
+      http.post(`${getConfig().ApiUrl}/leaseTemplates`, () => {
         return HttpResponse.json(
           {
             status: "Creation Failed",

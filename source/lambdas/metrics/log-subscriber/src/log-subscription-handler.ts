@@ -98,13 +98,14 @@ function extractAwsMetric(
     case "LeasePublished":
       return {
         event_name: "LeasePublished",
-        context_version: 3,
+        context_version: 4,
         context: {
           maxBudget: log.maxBudget,
           maxDurationHours: log.maxDurationHours,
           autoApproved: log.autoApproved,
           creationMethod: log.creationMethod,
           hasBlueprint: log.hasBlueprint,
+          numDesiredAssignments: log.numDesiredAssignments ?? 0,
         },
       };
     case "LeaseTerminated":
@@ -138,8 +139,9 @@ function extractAwsMetric(
     case "DeploymentSummary":
       return {
         event_name: "DeploymentSummary",
-        context_version: 3,
+        context_version: 4,
         context: {
+          numM2mClients: log.numM2mClients,
           numLeaseTemplates: log.numLeaseTemplates,
           numLeaseTemplatesWithBlueprint: log.numLeaseTemplatesWithBlueprint,
           numBlueprints: log.numBlueprints,
@@ -168,6 +170,25 @@ function extractAwsMetric(
             log.config.waitBeforeRerunSuccessfulAttemptSeconds,
           isStableTaggingEnabled: log.config.isStableTaggingEnabled,
           isMultiAccountDeployment: log.config.isMultiAccountDeployment,
+          allowUserLeaseTermination: log.config.allowUserLeaseTermination,
+          leaseRequestWindowHours: log.config.leaseRequestWindowHours,
+          maxLeaseRequestsPerWindow: log.config.maxLeaseRequestsPerWindow,
+          // SCP customization metrics
+          additionalAllowedServicesList: log.additionalAllowedServicesList,
+          bedrockInferenceProfilePatternsList:
+            log.bedrockInferenceProfilePatternsList,
+          leaseSharingEnabled: log.config.leaseSharingEnabled,
+          enablePrincipalSearch: log.config.enablePrincipalSearch,
+          // Multi-user lease metrics
+          numTemplatesWithSharing: log.numTemplatesWithSharing,
+          numLeasesWithAssignments: log.numLeasesWithAssignments,
+          totalUserAssignments: log.totalUserAssignments,
+          totalGroupAssignments: log.totalGroupAssignments,
+          avgAssignmentsPerLease: log.avgAssignmentsPerLease,
+          maxAssignmentsPerLease: log.maxAssignmentsPerLease,
+          // daily API call mix
+          dailyM2mApiCalls: log.dailyApiCallsByAuthType.m2m,
+          dailyUserApiCalls: log.dailyApiCallsByAuthType.user,
         },
       };
     case "CostReporting":
@@ -182,22 +203,68 @@ function extractAwsMetric(
           numAccounts: log.numAccounts,
         },
       };
-    case "AccountCleanupSuccess":
+    case "AccountCleanupCompleted":
       return {
-        event_name: "AccountCleanupSuccess",
-        context_version: 3,
+        event_name: "AccountCleanupCompleted",
+        context_version: 1,
         context: {
+          outcome: log.outcome,
           durationMinutes: log.durationMinutes,
           reason: log.reason,
+          failedStep: log.failedStep,
+          validationMode: log.validationMode,
+          totalResourcesBefore: log.totalResourcesBefore,
+          totalResourcesIgnored: log.totalResourcesIgnored,
+          resourcesBefore: log.resourcesBefore,
+          resourcesRemaining: log.resourcesRemaining,
+          resourcesClearedDuringCooldown: log.resourcesClearedDuringCooldown,
+          cooldownConfiguredHours: log.cooldownConfiguredHours,
+          cooldownActualSeconds: log.cooldownActualSeconds,
+          cooldownSkipped: log.cooldownSkipped,
+          steps: log.steps,
+          idcAssignmentsFound: log.idcAssignmentsFound,
+          idcAssignmentsDeleted: log.idcAssignmentsDeleted,
+          principalRecordsFound: log.principalRecordsFound,
+          principalRecordsDeleted: log.principalRecordsDeleted,
         },
       };
-    case "AccountCleanupFailure":
+    case "AccountQuarantined":
       return {
-        event_name: "AccountCleanupFailure",
-        context_version: 3,
+        event_name: "AccountQuarantined",
+        context_version: 1,
         context: {
-          durationMinutes: log.durationMinutes,
+          reasonForQuarantine: log.reasonForQuarantine,
+        },
+      };
+    case "AssignmentExecutionCompleted":
+      return {
+        event_name: "AssignmentExecutionCompleted",
+        context_version: 1,
+        context: {
+          intent: log.intent,
+          principalsProcessed: log.principalsProcessed,
+          succeeded: log.succeeded,
+          failed: log.failed,
+        },
+      };
+    case "TagResourceFailed":
+      return {
+        event_name: "TagResourceFailed",
+        context_version: 1,
+        context: {
           reason: log.reason,
+          tagKeyCount: log.tagKeys.length,
+          errorName: log.errorName,
+        },
+      };
+    case "TagActivationFailed":
+      return {
+        event_name: "TagActivationFailed",
+        context_version: 1,
+        context: {
+          reason: log.reason,
+          tagsInactiveCount: log.tagsInactive.length,
+          tagsMissingCount: log.tagsMissing.length,
         },
       };
     default: {

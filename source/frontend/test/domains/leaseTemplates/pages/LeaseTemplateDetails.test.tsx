@@ -8,7 +8,7 @@ import { BrowserRouter as Router } from "react-router-dom";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { LeaseTemplateDetails } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/pages/LeaseTemplateDetails";
-import { config } from "@amzn/innovation-sandbox-frontend/helpers/config";
+import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import { mockAdvancedLeaseTemplate } from "@amzn/innovation-sandbox-frontend/mocks/handlers/leaseTemplateHandlers";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
 import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
@@ -59,7 +59,7 @@ describe("LeaseTemplateDetails", () => {
 
   test("displays error panel when lease template fails to load", async () => {
     server.use(
-      http.get(`${config.ApiUrl}/leaseTemplates/${mockUuid}`, () => {
+      http.get(`${getConfig().ApiUrl}/leaseTemplates/${mockUuid}`, () => {
         return HttpResponse.json(
           { status: "error", message: "Not found" },
           { status: 404 },

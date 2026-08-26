@@ -39,16 +39,27 @@ export class SharedJsonParamResolver extends Construct {
   //Data
   public readonly configApplicationId: string;
   public readonly configEnvironmentId: string;
-  public readonly globalConfigConfigurationProfileId: string;
+  public readonly configTableName: string;
   public readonly nukeConfigConfigurationProfileId: string;
-  public readonly reportingConfigConfigurationProfileId: string;
+  public readonly validatorExclusionConfigConfigurationProfileId: string;
   public readonly accountTable: string;
   public readonly leaseTemplateTable: string;
   public readonly leaseTable: string;
   public readonly blueprintTable: string;
+  public readonly principalTable: string;
+  public readonly cleanupReportTable: string;
   public readonly tableKmsKeyId: string;
   public readonly dataSolutionVersion: string;
   public readonly dataSupportedSchemas: string;
+  public readonly cognitoUserPoolId: string;
+  public readonly cognitoUserPoolArn: string;
+  public readonly cognitoAppClientId: string;
+  public readonly cognitoIdentityPoolId: string;
+  public readonly cognitoDomain: string;
+  public readonly awsAccessPortalUrl: string;
+  public readonly identityPoolAdminRoleName: string;
+  public readonly identityPoolManagerRoleName: string;
+  public readonly identityPoolUserRoleName: string;
 
   constructor(
     scope: Construct,
@@ -157,17 +168,15 @@ export class SharedJsonParamResolver extends Construct {
     this.configEnvironmentId = sharedJsonParamCR.customResource.getAttString(
       "configEnvironmentId",
     );
-    this.globalConfigConfigurationProfileId =
-      sharedJsonParamCR.customResource.getAttString(
-        "globalConfigConfigurationProfileId",
-      );
+    this.configTableName =
+      sharedJsonParamCR.customResource.getAttString("configTableName");
     this.nukeConfigConfigurationProfileId =
       sharedJsonParamCR.customResource.getAttString(
         "nukeConfigConfigurationProfileId",
       );
-    this.reportingConfigConfigurationProfileId =
+    this.validatorExclusionConfigConfigurationProfileId =
       sharedJsonParamCR.customResource.getAttString(
-        "reportingConfigConfigurationProfileId",
+        "validatorExclusionConfigConfigurationProfileId",
       );
     this.accountTable =
       sharedJsonParamCR.customResource.getAttString("accountTable");
@@ -177,6 +186,10 @@ export class SharedJsonParamResolver extends Construct {
       sharedJsonParamCR.customResource.getAttString("leaseTable");
     this.blueprintTable =
       sharedJsonParamCR.customResource.getAttString("blueprintTable");
+    this.principalTable =
+      sharedJsonParamCR.customResource.getAttString("principalTable");
+    this.cleanupReportTable =
+      sharedJsonParamCR.customResource.getAttString("cleanupReportTable");
     this.tableKmsKeyId =
       sharedJsonParamCR.customResource.getAttString("tableKmsKeyId");
     this.dataSolutionVersion = sharedJsonParamCR.customResource.getAttString(
@@ -185,5 +198,28 @@ export class SharedJsonParamResolver extends Construct {
     this.dataSupportedSchemas = sharedJsonParamCR.customResource.getAttString(
       "dataSupportedSchemas",
     );
+    this.cognitoUserPoolId =
+      sharedJsonParamCR.customResource.getAttString("cognitoUserPoolId");
+    this.cognitoUserPoolArn =
+      sharedJsonParamCR.customResource.getAttString("cognitoUserPoolArn");
+    this.cognitoAppClientId =
+      sharedJsonParamCR.customResource.getAttString("cognitoAppClientId");
+    this.cognitoIdentityPoolId = sharedJsonParamCR.customResource.getAttString(
+      "cognitoIdentityPoolId",
+    );
+    this.cognitoDomain =
+      sharedJsonParamCR.customResource.getAttString("cognitoDomain");
+    this.awsAccessPortalUrl =
+      sharedJsonParamCR.customResource.getAttString("awsAccessPortalUrl");
+    this.identityPoolAdminRoleName =
+      sharedJsonParamCR.customResource.getAttString(
+        "identityPoolAdminRoleName",
+      );
+    this.identityPoolManagerRoleName =
+      sharedJsonParamCR.customResource.getAttString(
+        "identityPoolManagerRoleName",
+      );
+    this.identityPoolUserRoleName =
+      sharedJsonParamCR.customResource.getAttString("identityPoolUserRoleName");
   }
 }

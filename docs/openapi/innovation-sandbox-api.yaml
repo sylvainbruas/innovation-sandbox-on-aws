@@ -2,7 +2,7 @@ openapi: 3.0.0
 info:
   title: Innovation Sandbox on AWS
   description: API documentation for the Innovation Sandbox on AWS solution.
-  version: 1.2.17
+  version: 1.3.0
   license:
     name: Apache 2.0
     url: "http://www.apache.org/licenses/LICENSE-2.0.html"
@@ -24,16 +24,39 @@ tags:
     description: AWS accounts registered as sandbox accounts within the solution
   - name: configurations
     description: Global configurations used by the solution
-  - name: auth
-    description: Authentication related operations
+  - name: principals
+    description: IAM Identity Center principal discovery for lease assignment
+# Which credentials are required depends on the caller's IAM principal, which
+# OpenAPI cannot express as a constraint. The two entries below are alternatives
+# (a logical OR), so tooling will treat x-isb-identity as optional. It is not:
+# human callers MUST send it, and M2M callers MUST omit it or be rejected with
+# 400. See the isbIdentity scheme description.
 security:
-  - bearerAuth: []
+  - sigV4: []
+    isbIdentity: [] # human callers (Identity Pool roles)
+  - sigV4: [] # M2M callers (per-client assumed roles)
 components:
   securitySchemes:
-    bearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
+    sigV4:
+      type: apiKey
+      name: Authorization
+      in: header
+      x-amazon-apigateway-authtype: awsSigv4
+      description: >-
+        AWS Signature Version 4 over the `execute-api` service. Required on
+        every request: the API uses IAM authorization
+        (`AuthorizationType.IAM`), and there is no bearer-token or Cognito
+        authorizer. The caller type is determined from the IAM principal.
+    isbIdentity:
+      type: apiKey
+      name: x-isb-identity
+      in: header
+      description: >-
+        Cognito ID token, verified via JWKS. Carries the claims used for RBAC.
+        Required for human callers (Identity Pool roles). M2M callers (per-client
+        assumed IAM roles) derive their role from the assumed-role ARN and must
+        NOT send this header; a request presenting both an M2M principal and
+        `x-isb-identity` is rejected with 400.
   schemas:
     ResponseBody:
       type: object
@@ -181,6 +204,7 @@ components:
         - Expired
         - BudgetExceeded
         - ManuallyTerminated
+        - UserTerminated
         - AccountQuarantined
         - Ejected
         - ProvisioningFailed
@@ -406,6 +430,52 @@ components:
           type: string
           format: date-time
           description: When the lease was last checked by the monitoring system
+        allowOwnerToShareLease:
+          type: boolean
+          description: Whether the lease owner can add/remove additional users. Denormalized from the lease template at creation time.
+          example: false
+        desiredAssignments:
+          type: array
+          description: Declarative list of desired principal assignments. Reflects the intended state; use GET /leases/{leaseId}/assignments for the reconciled view of this set against live IDC access.
+          items:
+            type: object
+            properties:
+              principalId:
+                type: string
+                description: IDC user ID or group ID
+              principalType:
+                type: string
+                enum: [USER, GROUP]
+              displayName:
+                type: string
+              email:
+                type: string
+                format: email
+        resourceLock:
+          type: object
+          nullable: true
+          description: >
+            Concurrency-control lock held while assignment processing runs for this lease. Clients
+            read it to gate lease actions. A lock whose `expiresAt` has passed is treated as absent.
+          properties:
+            ownerId:
+              type: string
+              description: Identifier of the operation holding the lock
+            acquiredAt:
+              type: string
+              format: date-time
+              description: When the lock was acquired
+            expiresAt:
+              type: string
+              format: date-time
+              description: When the lock expires; past this point the lock is treated as absent
+            meta:
+              type: object
+              properties:
+                intent:
+                  type: string
+                  enum: [UPDATE, PUBLISH, FREEZE, UNFREEZE, TERMINATE]
+                  description: The operation the lock was taken for
         awsAccountId:
           $ref: "#/components/schemas/AwsAccountId"
         leaseId:
@@ -459,6 +529,10 @@ components:
           type: string
           nullable: true
           description: Resolved name of the attached blueprint
+        allowOwnerToShareLease:
+          type: boolean
+          description: Whether lease owners created from this template can manage additional user assignments
+          example: false
         meta:
           $ref: "#/components/schemas/MetaData"
     StackSet:
@@ -639,108 +713,442 @@ components:
     GlobalConfiguration:
       type: object
       required:
-        - termsOfService
-        - maintenanceMode
         - leases
         - cleanup
-        - auth
+        - notification
+        - maintenance
+        - termsOfService
+        - costReporting
         - isbManagedRegions
+        - awsAccessPortalUrl
       properties:
+        leases:
+          type: object
+          description: Lease policy configuration section
+          properties:
+            requireMaxBudget:
+              type: boolean
+            maxBudget:
+              type: integer
+              minimum: 0
+            requireMaxDuration:
+              type: boolean
+            maxDurationHours:
+              type: integer
+              minimum: 0
+            maxLeasesPerUser:
+              type: integer
+              minimum: 1
+            ttl:
+              type: integer
+              minimum: 1
+              description: Number of days the solution stores expired lease records before purging them
+            allowUserLeaseTermination:
+              type: boolean
+              description: Whether users can self-terminate their own active leases
+            leaseRequestWindowHours:
+              type: integer
+              minimum: 1
+              description: Rolling window duration in hours for rate limiting lease requests
+            maxLeaseRequestsPerWindow:
+              type: integer
+              minimum: 1
+              description: Maximum number of leases a user can request within the rolling window
+            leaseSharingEnabled:
+              type: boolean
+              description: Whether the multi-user lease sharing feature is globally enabled
+            enablePrincipalSearch:
+              type: boolean
+              description: Whether the GET /principals/search typeahead API is available
+            lastSavedBy:
+              type: string
+              nullable: true
+              description: Email of the last admin who saved this section, or null if never saved (using defaults)
+            meta:
+              $ref: "#/components/schemas/MetaData"
+        cleanup:
+          type: object
+          description: Account cleanup orchestration configuration section
+          properties:
+            numberOfFailedAttemptsToCancelCleanup:
+              type: integer
+              minimum: 1
+            waitBeforeRetryFailedAttemptSeconds:
+              type: integer
+              minimum: 1
+            numberOfSuccessfulAttemptsToFinishCleanup:
+              type: integer
+              minimum: 1
+            waitBeforeRerunSuccessfulAttemptSeconds:
+              type: integer
+              minimum: 1
+            validation:
+              type: object
+              properties:
+                failureAction:
+                  type: string
+                  enum: [Quarantine, Warn, Silent]
+                  description: Action when post-cleanup Resource Explorer validation finds remaining resources
+            cooldownPeriodHours:
+              type: integer
+              minimum: 0
+              maximum: 8640
+              description: Hours to hold account in CleanUp OU after successful cleanup before returning to Available (0 = disabled, max 8640 = 360 days)
+            reportRetentionDays:
+              type: integer
+              minimum: 14
+              maximum: 3650
+              description: Days to retain cleanup report records in DynamoDB
+            lastSavedBy:
+              type: string
+              nullable: true
+            meta:
+              $ref: "#/components/schemas/MetaData"
+        notification:
+          type: object
+          description: Email notification configuration section
+          properties:
+            emailFrom:
+              type: string
+              description: From address used for notification emails. Empty string disables notifications.
+              example: "isb-noreply@example.com"
+            lastSavedBy:
+              type: string
+              nullable: true
+            meta:
+              $ref: "#/components/schemas/MetaData"
+        maintenance:
+          type: object
+          description: Maintenance mode configuration section
+          properties:
+            enabled:
+              type: boolean
+              description: When true, prevents creation of new leases. Fresh installs default to true.
+            lastSavedBy:
+              type: string
+              nullable: true
+            meta:
+              $ref: "#/components/schemas/MetaData"
         termsOfService:
-          type: string
-          description: The terms of service that must be agreed to before a lease can be requested
-        maintenanceMode:
-          type: boolean
-          description: If enabled, the system will prevent the creation of new leases
+          type: object
+          description: Terms of service configuration section
+          properties:
+            content:
+              type: string
+              maxLength: 10000
+              description: Terms of service text displayed to users before requesting a lease
+            lastSavedBy:
+              type: string
+              nullable: true
+            meta:
+              $ref: "#/components/schemas/MetaData"
+        costReporting:
+          type: object
+          description: Cost reporting configuration section
+          properties:
+            costReportGroups:
+              type: array
+              items:
+                type: string
+                maxLength: 50
+              maxItems: 100
+              description: List of valid cost report group values for lease templates
+            requireCostReportGroup:
+              type: boolean
+              description: Whether cost report group is required on lease templates
+            lastSavedBy:
+              type: string
+              nullable: true
+            meta:
+              $ref: "#/components/schemas/MetaData"
         isbManagedRegions:
           type: array
           items:
             type: string
           minItems: 1
-          description: AWS regions managed by Innovation Sandbox
+          description: AWS regions managed by Innovation Sandbox (read-only, resolved at deploy time)
           example: ["us-east-1", "us-west-2"]
-        leases:
+        awsAccessPortalUrl:
+          type: string
+          format: uri
+          description: The AWS Access Portal URL for IAM Identity Center SSO (read-only, resolved at deploy time)
+    AssignmentView:
+      type: object
+      required:
+        - principalId
+        - principalType
+        - displayName
+        - isOwner
+        - isDesired
+        - syncStatus
+      properties:
+        principalId:
+          type: string
+          description: IDC user ID (for USER assignments) or group ID (for GROUP assignments)
+          example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        principalType:
+          type: string
+          enum: [USER, GROUP]
+          description: Whether this is a direct user or group assignment
+        assigneeEmail:
+          type: string
+          format: email
+          description: Email address of the assigned user (USER assignments only)
+        displayName:
+          type: string
+          description: Display name of the principal (user's name for USER, group name for GROUP)
+        addedBy:
+          type: string
+          format: email
+          description: >
+            Email of the user who created this assignment. Comes from the access record, so it is
+            absent for a principal that is desired but not yet granted.
+        addedDate:
+          type: string
+          format: date-time
+          description: >
+            Timestamp when this assignment was created. Comes from the access record, so it is
+            absent for a principal that is desired but not yet granted.
+        isOwner:
+          type: boolean
+          description: True for the lease owner, whose access is implicit and cannot be removed.
+        isDesired:
+          type: boolean
+          description: >
+            Whether the principal is in the lease's desired set. A record lingering after a failed
+            revoke is present but NOT desired, and must be excluded when echoing this list back as
+            the new desired state via PUT.
+        syncStatus:
+          type: string
+          enum:
+            [active, granting, revoking, suspended, grantFailed, revokeFailed]
+          description: >
+            Reconciliation status of this principal. Each in-flight state pairs with the failure
+            it becomes if it never settles: granting -> grantFailed, revoking -> revokeFailed.
+            `active` — desired and assigned.
+            `granting` — desired, not yet assigned, an operation is in flight.
+            `revoking` — assigned but on its way out.
+            `suspended` — intentionally not assigned because the lease grants nobody access
+            (frozen or terminal, or a freeze/terminate in flight); expected, not a failure.
+            `grantFailed` — desired and settled, but no assignment exists.
+            `revokeFailed` — settled, but an assignment exists that should not: either the
+            principal is no longer desired, or the lease grants no access.
+    Principal:
+      type: object
+      required:
+        - principalId
+        - principalType
+        - displayName
+      properties:
+        principalId:
+          type: string
+          description: IDC user ID or group ID
+          example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+        principalType:
+          type: string
+          enum: [USER, GROUP]
+          description: Whether this is a user or group
+        displayName:
+          type: string
+          description: Display name of the user or group
+          example: "Jane Doe"
+        email:
+          type: string
+          format: email
+          description: Email address (USER principals only)
+          example: "jane@example.com"
+    CleanupStatus:
+      type: string
+      description: >
+        Current phase of the cleanup process. Known static values are listed; dynamic
+        values matching NUKE_PHASE_\d+ (e.g. NUKE_PHASE_1, NUKE_PHASE_2) are also valid.
+      pattern: "^(INITIALIZING|REVOKING_ACCESS|VALIDATING|COOLING_DOWN|COMPLETED|FAILED|NUKE_PHASE_\\d+)$"
+      example: "NUKE_PHASE_1"
+    CleanupReportStep:
+      type: object
+      required:
+        - name
+        - startedAt
+      properties:
+        name:
+          type: string
+          description: Name of the cleanup step
+          example: "nuke-phase-1"
+        startedAt:
+          type: string
+          format: date-time
+          description: Timestamp when this step started
+          example: "2026-03-25T14:30:00.000Z"
+        codeBuildExecutionArn:
+          type: string
+          description: ARN of the CodeBuild execution for Nuke phases
+          example: "arn:aws:codebuild:us-east-1:123456789012:build/isb-cleanup:abc123"
+        cooldownDurationHours:
+          type: number
+          description: Configured cooldown duration in hours (cooldown step only)
+          example: 24
+        skippedBy:
+          type: string
+          format: email
+          description: Email of the administrator who skipped the cooldown (populated only if skipped)
+          example: "admin@example.com"
+        skippedAt:
+          type: string
+          format: date-time
+          description: Timestamp when the cooldown was skipped (populated only if skipped)
+    CleanupResourceSummary:
+      type: object
+      properties:
+        validationMode:
+          type: string
+          enum: [Silent, Warn, Quarantine]
+          description: >-
+            Validation mode in effect. Quarantine enforces (a failed validation
+            quarantines the account); Warn surfaces remaining resources without
+            blocking; Silent records metrics only. Absent if validation did not run.
+          example: Quarantine
+        beforeCleanup:
           type: object
-          required:
-            - requireMaxBudget
-            - maxBudget
-            - requireMaxDuration
-            - maxDurationHours
-            - maxLeasesPerUser
-            - ttl
           properties:
-            requireMaxBudget:
-              type: boolean
-              description: Whether or not to require a max budget on lease templates
-            maxBudget:
+            totalCount:
               type: integer
-              minimum: 0
-              description: Maximum budget value (in dollars) that can be created on lease templates
-            requireMaxDuration:
-              type: boolean
-              description: Whether or not to require a max duration on lease templates
-            maxDurationHours:
+              description: Total number of resources found before cleanup
+              example: 42
+            ignoredCount:
               type: integer
-              minimum: 0
-              description: Maximum duration (in hours) that can be specified on a lease template
-            maxLeasesPerUser:
-              type: integer
-              minimum: 0
-              description: The maximum number of active leases a user can have at any one time
-            ttl:
-              type: integer
-              minimum: 0
-              description: Number of days the solution stores expired lease records before purging them
-        cleanup:
+              description: Number of resources excluded by the validator exclusion config
+              example: 5
+            byType:
+              type: object
+              additionalProperties:
+                type: integer
+              description: Resource counts grouped by AWS resource type
+              example:
+                "ec2:instance": 3
+                "s3:bucket": 2
+                "logs:log-group": 12
+        afterCleanup:
           type: object
-          required:
-            - numberOfFailedAttemptsToCancelCleanup
-            - waitBeforeRetryFailedAttemptSeconds
-            - numberOfSuccessfulAttemptsToFinishCleanup
-            - waitBeforeRerunSuccessfulAttemptSeconds
+          description: >-
+            Post-nuke, pre-cooldown resource snapshot (metrics-only). Diffed
+            against afterCooldown to detect Resource Explorer staleness:
+            resources present here but gone after cooldown are index ghosts that
+            cleared during cooldown (candidate stale resources).
           properties:
-            numberOfFailedAttemptsToCancelCleanup:
+            totalCount:
               type: integer
-              minimum: 0
-              description: The number of failed attempts to cleanup before giving up
-            waitBeforeRetryFailedAttemptSeconds:
+              description: Total number of resources found immediately after nuke
+              example: 6
+            ignoredCount:
               type: integer
-              minimum: 0
-              description: The number of seconds to wait before retrying a failed attempt to cleanup
-            numberOfSuccessfulAttemptsToFinishCleanup:
-              type: integer
-              minimum: 0
-              description: The number of successful attempts to finish cleanup
-            waitBeforeRerunSuccessfulAttemptSeconds:
-              type: integer
-              minimum: 0
-              description: The number of seconds to wait before rerunning a successful attempt
-        auth:
+              description: Number of resources excluded by the validator exclusion config
+              example: 5
+            byType:
+              type: object
+              additionalProperties:
+                type: integer
+              description: Resource counts grouped by AWS resource type
+              example:
+                "ec2:instance": 1
+        afterCooldown:
           type: object
-          required:
-            - awsAccessPortalUrl
-            - webAppUrl
+          description: >-
+            Post-cooldown resource snapshot — the enforcement/validation
+            result. Non-empty byType (after exclusions) indicates a validation
+            failure.
           properties:
-            awsAccessPortalUrl:
-              type: string
-              format: uri
-              description: The AWS Access Portal URL for IAM Identity Center SSO
-            webAppUrl:
-              type: string
-              format: uri
-              description: The URL of the Innovation Sandbox web application
-        costReportGroups:
+            totalCount:
+              type: integer
+              description: Total number of resources found after cleanup and cooldown
+              example: 0
+            ignoredCount:
+              type: integer
+              description: Number of resources excluded by the validator exclusion config
+              example: 5
+            byType:
+              type: object
+              additionalProperties:
+                type: integer
+              description: Resource counts grouped by AWS resource type
+              example: {}
+        deletedTypes:
           type: array
           items:
             type: string
-            maxLength: 50
-          maxItems: 100
-          description: List of valid cost report groups that can be used in lease templates
-          example: ["Engineering", "DataScience", "Marketing"]
-        requireCostReportGroup:
-          type: boolean
-          description: Whether cost report group is required when creating/updating lease templates
-          example: false
+          description: Resource types that were successfully deleted
+          example: ["ec2:instance", "s3:bucket", "logs:log-group"]
+        remainingTypes:
+          type: array
+          items:
+            type: string
+          description: Resource types that remain after cleanup (non-empty indicates validation failure)
+          example: []
+    CleanupReport:
+      type: object
+      required:
+        - accountId
+        - status
+        - cleanupStatus
+        - startedAt
+        - reasonForCleanup
+        - steps
+        - meta
+      properties:
+        accountId:
+          $ref: "#/components/schemas/AwsAccountId"
+        durableExecutionArn:
+          type: string
+          description: ARN of the Lambda durable execution orchestrating this cleanup
+          example: "arn:aws:lambda:us-east-1:123456789012:function:ISB-DurableOrchestration:1/durable-execution/abc123"
+        status:
+          type: string
+          enum: [IN_PROGRESS, COMPLETED, FAILED]
+          description: Overall status of the cleanup report
+          example: "COMPLETED"
+        cleanupStatus:
+          $ref: "#/components/schemas/CleanupStatus"
+        startedAt:
+          type: string
+          format: date-time
+          description: Timestamp when the cleanup started
+          example: "2026-03-25T14:30:00.000Z"
+        completedAt:
+          type: string
+          format: date-time
+          description: Timestamp when the cleanup completed (absent if still in progress)
+          example: "2026-03-25T15:45:00.000Z"
+        reasonForCleanup:
+          type: string
+          enum:
+            - LEASE_TERMINATION
+            - ACCOUNT_REGISTRATION
+            - RETRY_FAILED_CLEANUP
+            - LEASE_RESET
+          description: What triggered this cleanup
+          example: "LEASE_TERMINATION"
+        resourceSummary:
+          $ref: "#/components/schemas/CleanupResourceSummary"
+        steps:
+          type: array
+          items:
+            $ref: "#/components/schemas/CleanupReportStep"
+          description: >
+            Append-only list of steps in the cleanup flow. The end time of each step
+            is inferred as the startedAt of the next step. The last entry represents
+            the currently-in-progress step for active cleanups.
+        error:
+          type: object
+          properties:
+            step:
+              type: string
+              description: Name of the step that failed
+              example: "validate-spoke-role"
+            message:
+              type: string
+              description: Error message
+              example: "Cleanup spoke role not found"
+        meta:
+          $ref: "#/components/schemas/MetaData"
   parameters:
     PageIdentifier:
       name: pageIdentifier
@@ -749,13 +1157,16 @@ components:
       schema:
         type: string
       description: Base64 encoded token for pagination
-    PageSize:
-      name: pageSize
+    MaxResults:
+      name: maxResults
       in: query
       required: false
       schema:
         type: integer
-      description: Number of items to return per page
+      description: >-
+        Maximum number of items to return per page. The legacy `pageSize`
+        parameter is unsupported: most endpoints ignore it and apply their
+        default, while `/leases/shared` rejects it as an unknown parameter.
     UserEmail:
       name: userEmail
       description: Filter leases by user email
@@ -771,9 +1182,12 @@ components:
       required: true
       schema:
         $ref: "#/components/schemas/LeaseId"
-    LeaseTemplateId:
-      name: leaseTemplateId
-      description: UUID for lease template
+    LeaseTemplateIdPathParam:
+      name: leaseTemplateName
+      description: >-
+        Lease template UUID. The path segment is named `leaseTemplateName` in the
+        API Gateway definition, but the value is the template's UUID, not its
+        display name.
       in: path
       required: true
       schema:
@@ -803,6 +1217,23 @@ components:
             status: fail
             data:
               errors: [{ "message": "example error message" }]
+    UnauthenticatedResponse:
+      description: >-
+        Unauthenticated. The `x-isb-identity` ID token is missing, expired,
+        invalid, or lacks required claims.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/FailResponseBody"
+          example:
+            status: fail
+            data:
+              errors:
+                [
+                  {
+                    "message": "Token is missing required claims. Please re-authenticate.",
+                  },
+                ]
     UnauthorizedResponse:
       description: Unauthorized
       content:
@@ -849,7 +1280,7 @@ paths:
       summary: Get paginated list of all leases
       parameters:
         - $ref: "#/components/parameters/PageIdentifier"
-        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/MaxResults"
         - $ref: "#/components/parameters/UserEmail"
       responses:
         "200":
@@ -873,6 +1304,8 @@ paths:
                                     - $ref: "#/components/schemas/Lease"
         "400":
           $ref: "#/components/responses/BadRequestResponse"
+        "401":
+          $ref: "#/components/responses/UnauthenticatedResponse"
         "403":
           $ref: "#/components/responses/UnauthorizedResponse"
         "500":
@@ -898,6 +1331,25 @@ paths:
                 userEmail:
                   $ref: "#/components/schemas/UserEmail"
                   description: "Optional email of the user to create the lease for. Only Admin/Manager roles can create leases for other users. If not provided, the lease will be created for the authenticated user."
+                assignments:
+                  type: array
+                  maxItems: 19
+                  description: >
+                    Optional initial principal assignments (in addition to the lease owner).
+                    Requires leaseSharingEnabled globally and allowOwnerToShareLease on the template (for non-Admin/Manager callers).
+                    Max 19 entries (owner occupies 1 of the 20 total slots).
+                  items:
+                    type: object
+                    required:
+                      - principalId
+                      - principalType
+                    properties:
+                      principalId:
+                        type: string
+                        description: IDC user ID or group ID
+                      principalType:
+                        type: string
+                        enum: [USER, GROUP]
       responses:
         "201":
           description: Success
@@ -913,10 +1365,41 @@ paths:
                           - $ref: "#/components/schemas/Lease"
         "400":
           $ref: "#/components/responses/BadRequestResponse"
+        "401":
+          $ref: "#/components/responses/UnauthenticatedResponse"
         "403":
           $ref: "#/components/responses/UnauthorizedResponse"
         "409":
           $ref: "#/components/responses/ConflictResponse"
+        "429":
+          description: Too Many Requests — lease request rate limit exceeded
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/FailResponseBody"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          errors:
+                            type: array
+                            items:
+                              type: object
+                              properties:
+                                message:
+                                  type: string
+                          retryAt:
+                            type: string
+                            format: date-time
+                            description: ISO 8601 timestamp indicating when the user may next request a lease
+              example:
+                status: fail
+                data:
+                  errors:
+                    - message: "You have reached the maximum number of lease requests allowed within the rolling window."
+                  retryAt: "2026-04-27T15:42:00Z"
         "500":
           $ref: "#/components/responses/ErrorResponse"
   /leases/{leaseId}:
@@ -942,6 +1425,8 @@ paths:
                           - $ref: "#/components/schemas/Lease"
         "400":
           $ref: "#/components/responses/BadRequestResponse"
+        "401":
+          $ref: "#/components/responses/UnauthenticatedResponse"
         "403":
           $ref: "#/components/responses/UnauthorizedResponse"
         "404":
@@ -969,6 +1454,11 @@ paths:
                   $ref: "#/components/schemas/DurationThresholds"
                 costReportGroup:
                   $ref: "#/components/schemas/CostReportGroup"
+                allowOwnerToShareLease:
+                  type: boolean
+                  description: >
+                    Admin/Manager only. Enable or disable owner-managed user sharing for this lease.
+                    Rejected with 400 when leaseSharingEnabled is globally false.
       responses:
         "200":
           description: Success
@@ -985,6 +1475,8 @@ paths:
 
         "400":
           $ref: "#/components/responses/BadRequestResponse"
+        "401":
+          $ref: "#/components/responses/UnauthenticatedResponse"
         "403":
           $ref: "#/components/responses/UnauthorizedResponse"
         "404":
@@ -1022,6 +1514,8 @@ paths:
                   - $ref: "#/components/schemas/SuccessResponseBody"
         "400":
           $ref: "#/components/responses/BadRequestResponse"
+        "401":
+          $ref: "#/components/responses/UnauthenticatedResponse"
         "403":
           $ref: "#/components/responses/UnauthorizedResponse"
         "404":
@@ -1047,12 +1541,20 @@ paths:
                   - $ref: "#/components/schemas/SuccessResponseBody"
         "400":
           $ref: "#/components/responses/BadRequestResponse"
+        "401":
+          $ref: "#/components/responses/UnauthenticatedResponse"
         "403":
           $ref: "#/components/responses/UnauthorizedResponse"
         "404":
           $ref: "#/components/responses/ResourceNotFoundResponse"
         "409":
-          $ref: "#/components/responses/ConflictResponse"
+          description: >
+            Lease is not in a monitored status, or a lock conflict. Freeze is blocked by an
+            in-flight TERMINATE or FREEZE; it preempts an in-flight UPDATE, PUBLISH, or UNFREEZE.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailResponseBody"
         "500":
           $ref: "#/components/responses/ErrorResponse"
   /leases/{leaseId}/terminate:
@@ -1072,12 +1574,20 @@ paths:
                   - $ref: "#/components/schemas/SuccessResponseBody"
         "400":
           $ref: "#/components/responses/BadRequestResponse"
+        "401":
+          $ref: "#/components/responses/UnauthenticatedResponse"
         "403":
           $ref: "#/components/responses/UnauthorizedResponse"
         "404":
           $ref: "#/components/responses/ResourceNotFoundResponse"
         "409":
-          $ref: "#/components/responses/ConflictResponse"
+          description: >
+            Lease is not in a monitored status, or a lock conflict. Terminate is blocked only by
+            an in-flight TERMINATE; it preempts every other intent, including FREEZE.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailResponseBody"
         "500":
           $ref: "#/components/responses/ErrorResponse"
   /leases/{leaseId}/unfreeze:
@@ -1102,12 +1612,20 @@ paths:
                           - $ref: "#/components/schemas/Lease"
         "400":
           $ref: "#/components/responses/BadRequestResponse"
+        "401":
+          $ref: "#/components/responses/UnauthenticatedResponse"
         "403":
           $ref: "#/components/responses/UnauthorizedResponse"
         "404":
           $ref: "#/components/responses/ResourceNotFoundResponse"
         "409":
-          $ref: "#/components/responses/ConflictResponse"
+          description: >
+            Lease is not in a Frozen status, or a lock conflict. Unfreeze is non-critical, so any
+            live lock blocks it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailResponseBody"
         "500":
           $ref: "#/components/responses/ErrorResponse"
 
@@ -1120,7 +1638,7 @@ paths:
       description: Returns all lease templates visible to the current user. Users with Admin or Manager roles can see all templates (PUBLIC and PRIVATE), while regular users can only see PUBLIC templates.
       parameters:
         - $ref: "#/components/parameters/PageIdentifier"
-        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/MaxResults"
       responses:
         "200":
           description: Success
@@ -1142,6 +1660,8 @@ paths:
                                   $ref: "#/components/schemas/LeaseTemplate"
         "400":
           $ref: "#/components/responses/BadRequestResponse"
+        "401":
+          $ref: "#/components/responses/UnauthenticatedResponse"
         "403":
           $ref: "#/components/responses/UnauthorizedResponse"
         "500":
@@ -1185,6 +1705,10 @@ paths:
                     - $ref: "#/components/schemas/BlueprintUuid"
                     - nullable: true
                       description: Optional blueprint to attach to this lease template
+                allowOwnerToShareLease:
+                  type: boolean
+                  description: Whether owners of leases created from this template can manage additional user assignments
+                  example: false
       responses:
         "201":
           description: Success
@@ -1201,13 +1725,15 @@ paths:
 
         "400":
           $ref: "#/components/responses/BadRequestResponse"
+        "401":
+          $ref: "#/components/responses/UnauthenticatedResponse"
         "403":
           $ref: "#/components/responses/UnauthorizedResponse"
         "500":
           $ref: "#/components/responses/ErrorResponse"
-  /leaseTemplates/{leaseTemplateId}:
+  /leaseTemplates/{leaseTemplateName}:
     parameters:
-      - $ref: "#/components/parameters/LeaseTemplateId"
+      - $ref: "#/components/parameters/LeaseTemplateIdPathParam"
     get:
       tags:
         - leaseTemplates
@@ -1228,6 +1754,8 @@ paths:
                           - $ref: "#/components/schemas/LeaseTemplate"
         "400":
           $ref: "#/components/responses/BadRequestResponse"
+        "401":
+          $ref: "#/components/responses/UnauthenticatedResponse"
         "403":
           $ref: "#/components/responses/UnauthorizedResponse"
         "404":
@@ -1247,7 +1775,6 @@ paths:
               required:
                 - name
                 - requiresApproval
-                - createdBy
               properties:
                 name:
                   type: string
@@ -1265,8 +1792,6 @@ paths:
                   $ref: "#/components/schemas/BudgetThresholds"
                 durationThresholds:
                   $ref: "#/components/schemas/DurationThresholds"
-                createdBy:
-                  $ref: "#/components/schemas/CreatedBy"
                 costReportGroup:
                   $ref: "#/components/schemas/CostReportGroup"
                 blueprintId:
@@ -1274,6 +1799,10 @@ paths:
                     - $ref: "#/components/schemas/BlueprintUuid"
                     - nullable: true
                       description: Optional blueprint to attach to this lease template
+                allowOwnerToShareLease:
+                  type: boolean
+                  description: Whether owners of leases created from this template can manage additional user assignments
+                  example: false
       responses:
         "200":
           description: Success
@@ -1290,6 +1819,8 @@ paths:
 
         "400":
           $ref: "#/components/responses/BadRequestResponse"
+        "401":
+          $ref: "#/components/responses/UnauthenticatedResponse"
         "403":
           $ref: "#/components/responses/UnauthorizedResponse"
         "404":
@@ -1310,8 +1841,214 @@ paths:
                   - $ref: "#/components/schemas/SuccessResponseBody"
         "400":
           $ref: "#/components/responses/BadRequestResponse"
+        "401":
+          $ref: "#/components/responses/UnauthenticatedResponse"
         "403":
           $ref: "#/components/responses/UnauthorizedResponse"
+        "500":
+          $ref: "#/components/responses/ErrorResponse"
+
+  /leases/shared:
+    get:
+      tags:
+        - leases
+      summary: List leases shared with a user
+      description: >
+        Returns leases the specified user has access to via direct user assignment or
+        group-inherited access. The required `accessType` parameter selects between the
+        two modes, which have different pagination strategies. Issue both in parallel
+        and merge client-side for a complete picture.
+
+        Authorization: Admin/Manager may specify any userId. Other callers must specify
+        their own userId. M2M callers without Admin/Manager role are rejected with 403.
+      parameters:
+        - name: userId
+          in: query
+          required: true
+          schema:
+            type: string
+          description: IDC user ID to retrieve shared leases for
+        - name: accessType
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [direct, group]
+          description: >
+            `direct` — leases the user is assigned to individually (native DynamoDB pagination).
+            `group` — leases assigned to IDC groups the user belongs to (bounded by group-assignment scan + BatchGetItem).
+        - $ref: "#/components/parameters/PageIdentifier"
+        - name: maxResults
+          in: query
+          required: false
+          schema:
+            type: integer
+            maximum: 100
+          description: >-
+            Maximum number of leases per page (max 100). The legacy `pageSize`
+            parameter is rejected as an unknown parameter on this endpoint.
+      responses:
+        "200":
+          description: Paginated list of shared leases for the requested access type
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponseBody"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          result:
+                            type: array
+                            items:
+                              allOf:
+                                - $ref: "#/components/schemas/Lease"
+                                - type: object
+                                  required:
+                                    - accessType
+                                  properties:
+                                    accessType:
+                                      type: string
+                                      enum: [direct, group]
+                                      description: How the user has access to this lease — directly assigned or via group membership
+                                    sourceGroupName:
+                                      type: string
+                                      description: Display name of the IDC group granting access (present only when accessType is "group")
+                          nextPageIdentifier:
+                            type: string
+                            nullable: true
+        "400":
+          $ref: "#/components/responses/BadRequestResponse"
+        "401":
+          $ref: "#/components/responses/UnauthenticatedResponse"
+        "403":
+          $ref: "#/components/responses/UnauthorizedResponse"
+        "500":
+          $ref: "#/components/responses/ErrorResponse"
+
+  /leases/{leaseId}/assignments:
+    parameters:
+      - $ref: "#/components/parameters/LeaseId"
+    get:
+      tags:
+        - leases
+      summary: Get the reconciled principal assignment view for a lease
+      description: >
+        Returns the reconciled assignment view, computed server-side: the union of the lease's
+        desired set and the live IDC access assignments, each annotated with a `syncStatus`.
+        Both halves of the comparison are read in a single request, though not transactionally,
+        so the comparison rule is applied in one place rather than by the client.
+
+        Authorization: Admin/Manager can view any lease. Lease owner can view their own lease.
+        Other users are rejected with 403.
+      responses:
+        "200":
+          description: Reconciled assignment view
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponseBody"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          assignments:
+                            type: array
+                            items:
+                              $ref: "#/components/schemas/AssignmentView"
+                          operationInProgress:
+                            type: string
+                            enum: [UPDATE, PUBLISH, FREEZE, UNFREEZE, TERMINATE]
+                            description: >
+                              Set while the Assignment Processor is reconciling this lease. Clients
+                              use it to report progress and to decide whether to poll. Absent when
+                              no live lock is held (an expired lock counts as none).
+        "401":
+          $ref: "#/components/responses/UnauthenticatedResponse"
+        "403":
+          $ref: "#/components/responses/UnauthorizedResponse"
+        "404":
+          $ref: "#/components/responses/ResourceNotFoundResponse"
+        "500":
+          $ref: "#/components/responses/ErrorResponse"
+    put:
+      tags:
+        - leases
+      summary: Set desired principal assignments for a lease (full replacement)
+      description: >
+        Accepts the complete desired list of additional principals (excluding the owner).
+        The backend auto-injects the lease owner into `desiredAssignments`, persists
+        the full list atomically on the lease record, and publishes an AssignmentRequested
+        event for async IDC processing. Principals absent from the list are removed.
+
+        Returns 202 Accepted — IDC operations are processed asynchronously. Max 19
+        additional principals (owner occupies 1 of the 20 total slots implicitly).
+
+        Authorization: Admin/Manager always allowed. Lease owner requires
+        `allowOwnerToShareLease: true` on the lease AND `leaseSharingEnabled: true` globally.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - assignments
+              properties:
+                assignments:
+                  type: array
+                  maxItems: 19
+                  description: Desired list of additional principals (excluding the owner, who is implicit). Max 19 items.
+                  items:
+                    type: object
+                    required:
+                      - principalId
+                      - principalType
+                    properties:
+                      principalId:
+                        type: string
+                        description: IDC user ID or group ID
+                      principalType:
+                        type: string
+                        enum: [USER, GROUP]
+      responses:
+        "202":
+          description: Desired state accepted and persisted. IDC operations are processed asynchronously.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponseBody"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          desiredCount:
+                            type: integer
+                            description: Total number of desired assignments persisted (including auto-injected owner)
+        "400":
+          $ref: "#/components/responses/BadRequestResponse"
+        "401":
+          $ref: "#/components/responses/UnauthenticatedResponse"
+        "403":
+          description: Unauthorized, leaseSharingEnabled is false, or allowOwnerToShareLease is false
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailResponseBody"
+        "404":
+          $ref: "#/components/responses/ResourceNotFoundResponse"
+        "409":
+          description: Lease is not in an Active status, or another assignment operation is in progress
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailResponseBody"
         "500":
           $ref: "#/components/responses/ErrorResponse"
 
@@ -1323,7 +2060,7 @@ paths:
       summary: Get paginated list of all accounts
       parameters:
         - $ref: "#/components/parameters/PageIdentifier"
-        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/MaxResults"
       responses:
         "200":
           description: Success
@@ -1345,6 +2082,8 @@ paths:
                                   $ref: "#/components/schemas/Account"
         "400":
           $ref: "#/components/responses/BadRequestResponse"
+        "401":
+          $ref: "#/components/responses/UnauthenticatedResponse"
         "403":
           $ref: "#/components/responses/UnauthorizedResponse"
         "500":
@@ -1378,6 +2117,8 @@ paths:
                           - $ref: "#/components/schemas/Account"
         "400":
           $ref: "#/components/responses/BadRequestResponse"
+        "401":
+          $ref: "#/components/responses/UnauthenticatedResponse"
         "403":
           $ref: "#/components/responses/UnauthorizedResponse"
         "500":
@@ -1404,6 +2145,8 @@ paths:
                           - $ref: "#/components/schemas/Account"
         "400":
           $ref: "#/components/responses/BadRequestResponse"
+        "401":
+          $ref: "#/components/responses/UnauthenticatedResponse"
         "403":
           $ref: "#/components/responses/UnauthorizedResponse"
         "404":
@@ -1427,6 +2170,8 @@ paths:
                   - $ref: "#/components/schemas/SuccessResponseBody"
         "400":
           $ref: "#/components/responses/BadRequestResponse"
+        "401":
+          $ref: "#/components/responses/UnauthenticatedResponse"
         "403":
           $ref: "#/components/responses/UnauthorizedResponse"
         "404":
@@ -1452,12 +2197,160 @@ paths:
                   - $ref: "#/components/schemas/SuccessResponseBody"
         "400":
           $ref: "#/components/responses/BadRequestResponse"
+        "401":
+          $ref: "#/components/responses/UnauthenticatedResponse"
         "403":
           $ref: "#/components/responses/UnauthorizedResponse"
         "404":
           $ref: "#/components/responses/ResourceNotFoundResponse"
         "409":
           $ref: "#/components/responses/ConflictResponse"
+        "500":
+          $ref: "#/components/responses/ErrorResponse"
+  /accounts/{awsAccountId}/quarantine:
+    parameters:
+      - $ref: "#/components/parameters/AwsAccountId"
+    post:
+      tags:
+        - accounts
+      summary: Manually quarantine an account
+      description: >
+        Terminates any active lease, revokes leaseholder SSO access, and moves the account
+        to the Quarantine OU. Eligibility: Available, Active, or Frozen accounts.
+        Returns 409 if the account is already quarantined or has an active cleanup in progress.
+        Admin role only.
+      responses:
+        "200":
+          description: Account successfully quarantined
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponseBody"
+        "400":
+          $ref: "#/components/responses/BadRequestResponse"
+        "401":
+          $ref: "#/components/responses/UnauthenticatedResponse"
+        "403":
+          $ref: "#/components/responses/UnauthorizedResponse"
+        "404":
+          $ref: "#/components/responses/ResourceNotFoundResponse"
+        "409":
+          description: Account is already quarantined or cleanup is in progress
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailResponseBody"
+              examples:
+                alreadyQuarantined:
+                  value:
+                    status: fail
+                    data:
+                      errors:
+                        - message: "Account is already quarantined."
+                cleanupInProgress:
+                  value:
+                    status: fail
+                    data:
+                      errors:
+                        - message: "Account cannot be quarantined while cleanup is in progress."
+        "500":
+          $ref: "#/components/responses/ErrorResponse"
+  /accounts/{awsAccountId}/cleanup-reports:
+    parameters:
+      - $ref: "#/components/parameters/AwsAccountId"
+    get:
+      tags:
+        - accounts
+      summary: List cleanup reports for an account
+      description: Returns recent cleanup reports for the specified account, newest first. Defaults to the last 5 reports. Admin role only.
+      parameters:
+        - $ref: "#/components/parameters/PageIdentifier"
+        - name: maxResults
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 5
+          description: >-
+            Number of reports to return (default 5). The legacy `pageSize`
+            parameter is ignored and the default is applied.
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponseBody"
+                  - type: object
+                    properties:
+                      data:
+                        allOf:
+                          - $ref: "#/components/schemas/PaginatedResults"
+                          - type: object
+                            properties:
+                              result:
+                                type: array
+                                items:
+                                  $ref: "#/components/schemas/CleanupReport"
+        "400":
+          $ref: "#/components/responses/BadRequestResponse"
+        "401":
+          $ref: "#/components/responses/UnauthenticatedResponse"
+        "403":
+          $ref: "#/components/responses/UnauthorizedResponse"
+        "404":
+          $ref: "#/components/responses/ResourceNotFoundResponse"
+        "500":
+          $ref: "#/components/responses/ErrorResponse"
+  /accounts/{awsAccountId}/skipCooldown:
+    parameters:
+      - $ref: "#/components/parameters/AwsAccountId"
+    post:
+      tags:
+        - accounts
+      summary: Skip the post-cleanup cooldown for an account
+      description: >
+        Immediately resumes the cleanup durable execution, skipping the remaining
+        post-cleanup cooldown period and returning the account to the Available pool.
+        The skipCooldownCallbackId is resolved server-side from the latest cleanup
+        report and is never exposed to the client. Admin role only.
+      responses:
+        "200":
+          description: Cooldown skipped successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponseBody"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          message:
+                            type: string
+                            example: "Cooldown skipped successfully."
+        "400":
+          $ref: "#/components/responses/BadRequestResponse"
+        "401":
+          $ref: "#/components/responses/UnauthenticatedResponse"
+        "403":
+          $ref: "#/components/responses/UnauthorizedResponse"
+        "404":
+          $ref: "#/components/responses/ResourceNotFoundResponse"
+        "409":
+          description: Account is not currently in cooldown, or cooldown has already completed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailResponseBody"
+              example:
+                status: fail
+                data:
+                  errors:
+                    - message: "Account is not in an active cooldown."
         "500":
           $ref: "#/components/responses/ErrorResponse"
   /accounts/unregistered:
@@ -1467,7 +2360,7 @@ paths:
       summary: Get list of unregistered accounts in Entry OU
       parameters:
         - $ref: "#/components/parameters/PageIdentifier"
-        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/MaxResults"
       responses:
         "200":
           description: Success
@@ -1489,6 +2382,8 @@ paths:
                                   $ref: "#/components/schemas/UnregisteredAccount"
         "400":
           $ref: "#/components/responses/BadRequestResponse"
+        "401":
+          $ref: "#/components/responses/UnauthenticatedResponse"
         "403":
           $ref: "#/components/responses/UnauthorizedResponse"
         "500":
@@ -1499,7 +2394,12 @@ paths:
     get:
       tags:
         - configurations
-      summary: Get global configurations
+      summary: Get all configuration sections
+      description: >
+        Returns all configuration sections merged with code defaults, plus read-only
+        deploy-time fields (isbManagedRegions, awsAccessPortalUrl).
+        Sections never saved to DynamoDB are returned with code defaults and lastSavedBy: null.
+        Accessible by Admin, Manager, and User roles.
       responses:
         "200":
           description: Success
@@ -1515,8 +2415,261 @@ paths:
                           - $ref: "#/components/schemas/GlobalConfiguration"
         "400":
           $ref: "#/components/responses/BadRequestResponse"
+        "401":
+          $ref: "#/components/responses/UnauthenticatedResponse"
         "403":
           $ref: "#/components/responses/UnauthorizedResponse"
+        "500":
+          $ref: "#/components/responses/ErrorResponse"
+
+  /configurations/{section}:
+    parameters:
+      - name: section
+        in: path
+        required: true
+        schema:
+          type: string
+          enum:
+            [
+              leases,
+              cleanup,
+              notification,
+              maintenance,
+              termsOfService,
+              costReporting,
+            ]
+        description: Configuration section name. Returns 404 for unknown values.
+    get:
+      tags:
+        - configurations
+      summary: Get a single configuration section
+      description: >
+        Returns one configuration section with its current values (or code defaults if
+        never saved) and lastSavedBy audit field.
+        Returns 404 if the section name is not recognised.
+        Returns 500 if the stored record fails schema validation (fails fast, unlike GET /configurations which skips invalid sections).
+        Accessible by Admin, Manager, and User roles.
+      responses:
+        "200":
+          description: Success
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponseBody"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        description: Section fields plus lastSavedBy and meta
+                        properties:
+                          lastSavedBy:
+                            type: string
+                            nullable: true
+                            description: Email of the last admin who saved this section, or null if never saved
+                          meta:
+                            $ref: "#/components/schemas/MetaData"
+        "400":
+          $ref: "#/components/responses/BadRequestResponse"
+        "401":
+          $ref: "#/components/responses/UnauthenticatedResponse"
+        "403":
+          $ref: "#/components/responses/UnauthorizedResponse"
+        "404":
+          $ref: "#/components/responses/ResourceNotFoundResponse"
+        "500":
+          $ref: "#/components/responses/ErrorResponse"
+    put:
+      tags:
+        - configurations
+      summary: Save a configuration section (full replacement)
+      description: >
+        Replaces an entire configuration section. All section fields are required.
+        Uses optimistic concurrency: provide meta.lastEditTime from a prior GET to
+        detect concurrent edits (returns 409 on conflict). Omit meta.lastEditTime on
+        the first save for a section (uses attribute_not_exists condition).
+
+        M2M callers are rejected with 403 — audit trail requires a human email identity.
+        Admin role only.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: >
+                All fields for the section (required, no defaults applied server-side).
+                Plus optional audit envelope for optimistic concurrency.
+              properties:
+                meta:
+                  type: object
+                  description: Optional optimistic concurrency envelope
+                  properties:
+                    lastEditTime:
+                      type: string
+                      format: date-time
+                      description: Value from the prior GET response. Omit on first save.
+              additionalProperties: true
+              example:
+                requireMaxBudget: true
+                maxBudget: 100
+                requireMaxDuration: true
+                maxDurationHours: 168
+                maxLeasesPerUser: 3
+                ttl: 30
+                allowUserLeaseTermination: true
+                leaseRequestWindowHours: 168
+                maxLeaseRequestsPerWindow: 10
+                leaseSharingEnabled: false
+                enablePrincipalSearch: true
+                meta:
+                  lastEditTime: "2026-04-04T12:30:00.000Z"
+      responses:
+        "200":
+          description: Section saved successfully. Returns updated section with new lastEditTime and lastSavedBy.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponseBody"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        description: Updated section fields plus lastSavedBy and updated meta
+                        properties:
+                          lastSavedBy:
+                            type: string
+                            description: Email of the admin who saved this section
+                          meta:
+                            $ref: "#/components/schemas/MetaData"
+        "400":
+          $ref: "#/components/responses/BadRequestResponse"
+        "401":
+          $ref: "#/components/responses/UnauthenticatedResponse"
+        "403":
+          $ref: "#/components/responses/UnauthorizedResponse"
+        "404":
+          description: Section not found (unknown section name)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailResponseBody"
+        "409":
+          description: Optimistic concurrency conflict — section was modified by another admin. Reload and retry.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailResponseBody"
+              example:
+                status: fail
+                data:
+                  errors:
+                    - message: "Configuration was modified by another administrator. Reload to see the latest values."
+        "500":
+          $ref: "#/components/responses/ErrorResponse"
+
+  # Principals endpoints
+  /principals/search:
+    get:
+      tags:
+        - principals
+      summary: Search IAM Identity Center principals (typeahead)
+      description: >
+        Returns principals matching the search query from the DynamoDB cache.
+        The cache is populated hourly by the Principal Cache Sync Lambda and contains
+        only ISB group members (Users, Managers, Admins).
+        Server-side case-insensitive contains match on displayName and email.
+
+        Requires enablePrincipalSearch: true in global config (leases section).
+        When disabled, all callers receive 403 — except exact=true lookups, which
+        bypass the gate and perform JIT IDC resolution on cache miss.
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+            maxLength: 200
+          description: Search query (case-insensitive contains on displayName/email). Min 2 chars recommended. Omit to list all cached principals up to limit.
+        - name: type
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [users, groups, all]
+            default: all
+          description: Filter by principal type
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 20
+            minimum: 1
+            maximum: 100
+          description: Maximum number of results to return
+        - name: exact
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: ["true", "false"]
+            default: "false"
+          description: >
+            When "true", performs exact match lookup with JIT IDC fallback on cache miss.
+            Requires type=users|groups (not "all") and a non-empty q.
+            Bypasses the enablePrincipalSearch gate.
+            Returns 404 if the principal is not found in either cache or IDC.
+      responses:
+        "200":
+          description: Matching principals from cache (or exact JIT result)
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/SuccessResponseBody"
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        required:
+                          - principals
+                          - totalMatches
+                        properties:
+                          principals:
+                            type: array
+                            items:
+                              $ref: "#/components/schemas/Principal"
+                          totalMatches:
+                            type: integer
+                            description: Total matches before the limit was applied
+                            example: 47
+        "400":
+          description: Bad request — invalid type parameter, or exact=true with type=all or empty q
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailResponseBody"
+        "401":
+          $ref: "#/components/responses/UnauthenticatedResponse"
+        "403":
+          description: Unauthorized, or enablePrincipalSearch is disabled (non-exact queries only)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailResponseBody"
+        "404":
+          description: Principal not found (exact=true only)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FailResponseBody"
+              example:
+                status: fail
+                data:
+                  errors:
+                    - message: "Principal not found in the identity store."
         "500":
           $ref: "#/components/responses/ErrorResponse"
 
@@ -1526,10 +2679,10 @@ paths:
       tags:
         - blueprints
       summary: Discover available CloudFormation StackSets
-      description: Lists SELF_MANAGED StackSets available in the ISB hub account that can be registered as blueprints
+      description: Lists active CloudFormation StackSets available in the ISB hub account that can be registered as blueprints
       parameters:
         - $ref: "#/components/parameters/PageIdentifier"
-        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/MaxResults"
       responses:
         "200":
           description: Success
@@ -1551,6 +2704,8 @@ paths:
                             type: string
         "400":
           $ref: "#/components/responses/BadRequestResponse"
+        "401":
+          $ref: "#/components/responses/UnauthenticatedResponse"
         "403":
           $ref: "#/components/responses/UnauthorizedResponse"
         "500":
@@ -1563,7 +2718,7 @@ paths:
       description: Returns all registered blueprints with their metadata and health metrics. Supports pagination for large result sets.
       parameters:
         - $ref: "#/components/parameters/PageIdentifier"
-        - $ref: "#/components/parameters/PageSize"
+        - $ref: "#/components/parameters/MaxResults"
       responses:
         "200":
           description: Success
@@ -1585,6 +2740,8 @@ paths:
                             type: string
         "400":
           $ref: "#/components/responses/BadRequestResponse"
+        "401":
+          $ref: "#/components/responses/UnauthenticatedResponse"
         "403":
           $ref: "#/components/responses/UnauthorizedResponse"
         "500":
@@ -1657,6 +2814,8 @@ paths:
                         $ref: "#/components/schemas/Blueprint"
         "400":
           $ref: "#/components/responses/BadRequestResponse"
+        "401":
+          $ref: "#/components/responses/UnauthenticatedResponse"
         "403":
           $ref: "#/components/responses/UnauthorizedResponse"
         "404":
@@ -1698,6 +2857,8 @@ paths:
                         $ref: "#/components/schemas/BlueprintWithStackSets"
         "400":
           $ref: "#/components/responses/BadRequestResponse"
+        "401":
+          $ref: "#/components/responses/UnauthenticatedResponse"
         "403":
           $ref: "#/components/responses/UnauthorizedResponse"
         "404":
@@ -1757,6 +2918,8 @@ paths:
                         $ref: "#/components/schemas/BlueprintWithStackSets"
         "400":
           $ref: "#/components/responses/BadRequestResponse"
+        "401":
+          $ref: "#/components/responses/UnauthenticatedResponse"
         "403":
           $ref: "#/components/responses/UnauthorizedResponse"
         "404":
@@ -1788,6 +2951,8 @@ paths:
                             $ref: "#/components/schemas/BlueprintUuid"
         "400":
           $ref: "#/components/responses/BadRequestResponse"
+        "401":
+          $ref: "#/components/responses/UnauthenticatedResponse"
         "403":
           $ref: "#/components/responses/UnauthorizedResponse"
         "404":
@@ -1809,61 +2974,3 @@ paths:
                     ]
         "500":
           $ref: "#/components/responses/ErrorResponse"
-
-  # Auth endpoints
-  /auth/login:
-    get:
-      tags:
-        - auth
-      summary: Redirect to login page
-      responses:
-        "200":
-          description: Success
-        "302":
-          description: Redirect to login
-        "500":
-          description: Error
-  /auth/login/status:
-    get:
-      tags:
-        - auth
-      summary: Get login status
-      responses:
-        "200":
-          description: Success
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  authenticated:
-                    type: boolean
-                    description: Whether the user is authenticated or not
-                  session:
-                    type: object
-                    description: Session information
-                  message:
-                    type: string
-                    description: Message
-        "500":
-          description: Error
-  /auth/login/callback:
-    post:
-      tags:
-        - auth
-      summary: Callback from login page
-      responses:
-        "302":
-          description: Redirect to web app with token
-        "500":
-          description: Error
-  /auth/logout:
-    get:
-      tags:
-        - auth
-      summary: Logout
-      responses:
-        "302":
-          description: Redirect to logout
-        "500":
-          description: Error

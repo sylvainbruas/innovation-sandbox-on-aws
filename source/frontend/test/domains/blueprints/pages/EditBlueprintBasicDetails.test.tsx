@@ -9,7 +9,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { showSuccessToast } from "@amzn/innovation-sandbox-frontend/components/Toast";
 import { EditBlueprintBasicDetails } from "@amzn/innovation-sandbox-frontend/domains/blueprints/pages/EditBlueprintBasicDetails";
-import { config } from "@amzn/innovation-sandbox-frontend/helpers/config";
+import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import { mockBlueprint } from "@amzn/innovation-sandbox-frontend/mocks/handlers/blueprintHandlers";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
 import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
@@ -75,7 +75,7 @@ describe("EditBlueprintBasicDetails", () => {
     const submitSpy = vi.fn();
     server.use(
       http.put(
-        `${config.ApiUrl}/blueprints/${mockBlueprintId}`,
+        `${getConfig().ApiUrl}/blueprints/${mockBlueprintId}`,
         async ({ request }) => {
           const data = await request.json();
           submitSpy(data);
@@ -144,7 +144,7 @@ describe("EditBlueprintBasicDetails", () => {
 
   test("displays error panel when blueprint fails to load", async () => {
     server.use(
-      http.get(`${config.ApiUrl}/blueprints/${mockBlueprintId}`, () => {
+      http.get(`${getConfig().ApiUrl}/blueprints/${mockBlueprintId}`, () => {
         return HttpResponse.json(
           { status: "error", message: "Not found" },
           { status: 404 },

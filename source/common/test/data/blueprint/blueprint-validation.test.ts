@@ -33,7 +33,7 @@ describe("Blueprint Validation", () => {
 
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.errors[0]?.message).toContain(
+        expect(result.error.issues[0]?.message).toContain(
           "must start with a letter",
         );
       }
@@ -46,7 +46,7 @@ describe("Blueprint Validation", () => {
 
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.errors[0]?.message).toContain(
+        expect(result.error.issues[0]?.message).toContain(
           "letters, numbers, and hyphens",
         );
       }
@@ -59,7 +59,7 @@ describe("Blueprint Validation", () => {
 
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.errors[0]?.message).toContain("required");
+        expect(result.error.issues[0]?.message).toContain("required");
       }
     });
 
@@ -70,7 +70,7 @@ describe("Blueprint Validation", () => {
 
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.errors[0]?.message).toContain(
+        expect(result.error.issues[0]?.message).toContain(
           "50 characters or less",
         );
       }
@@ -101,7 +101,7 @@ describe("Blueprint Validation", () => {
 
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.errors[0]?.message).toContain("Duplicate regions");
+        expect(result.error.issues[0]?.message).toContain("Duplicate regions");
       }
     });
 
@@ -112,7 +112,7 @@ describe("Blueprint Validation", () => {
 
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.errors[0]?.message).toContain(
+        expect(result.error.issues[0]?.message).toContain(
           "At least one region",
         );
       }

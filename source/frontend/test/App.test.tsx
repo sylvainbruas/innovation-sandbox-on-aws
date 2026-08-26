@@ -20,6 +20,19 @@ vi.mock("@amzn/innovation-sandbox-frontend/components/AppLayout", () => ({
   ),
 }));
 
+// Mock the useUser hook to provide an Admin user for route protection
+vi.mock("@amzn/innovation-sandbox-frontend/hooks/useUser", () => ({
+  useUser: () => ({
+    user: { email: "test@example.com", roles: ["Admin"] },
+    roles: ["Admin"],
+    isAdmin: true,
+    isManager: false,
+    isUser: false,
+    isLoading: false,
+    error: null,
+  }),
+}));
+
 describe("App", () => {
   it("renders without crashing", () => {
     render(<App />);
@@ -46,5 +59,15 @@ describe("App", () => {
     // Verify all providers are present by checking their rendered output
     expect(screen.getByTestId("authenticator")).toBeInTheDocument();
     expect(screen.getByTestId("app-layout")).toBeInTheDocument();
+  });
+
+  it("renders not found page for unknown routes", () => {
+    window.history.pushState({}, "Unknown", "/some-random-page");
+    render(<App />);
+    expect(screen.getByText("Page not found")).toBeInTheDocument();
+    expect(
+      screen.getByText("The page you are looking for does not exist."),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Go to homepage")).toBeInTheDocument();
   });
 });

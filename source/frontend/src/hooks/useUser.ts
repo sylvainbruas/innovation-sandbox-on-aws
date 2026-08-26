@@ -3,31 +3,32 @@
 
 import { useQuery } from "@tanstack/react-query";
 
-import { AuthService } from "@amzn/innovation-sandbox-frontend/helpers/AuthService";
+import { CognitoAuthService } from "@amzn/innovation-sandbox-frontend/helpers/CognitoAuthService";
 
 /**
- * Hook to get current user information and role-based flags
+ * Hook to get current user information and role-based flags.
  */
 export const useUser = () => {
   const {
-    data: user,
+    data: authResult,
     isLoading,
     error,
   } = useQuery({
     queryKey: ["currentUser"],
-    queryFn: async () => {
-      const user = await AuthService.getCurrentUser();
-      // React Query requires non-undefined return values
-      return user ?? null;
-    },
+    queryFn: () => CognitoAuthService.getCurrentUser(),
     staleTime: 5 * 60 * 1000, // 5 minutes
     retry: 1,
   });
 
+  const user =
+    authResult?.status === "authenticated" ? authResult.user : undefined;
+  const authError =
+    authResult?.status === "incomplete_claims" ? authResult.message : undefined;
   const roles = user?.roles || [];
 
   return {
-    user: user || undefined, // Convert null back to undefined for API consistency
+    user,
+    authError,
     roles,
     isLoading,
     error,

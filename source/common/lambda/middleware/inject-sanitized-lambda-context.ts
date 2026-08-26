@@ -3,10 +3,17 @@
 
 import { BaseApiLambdaEnvironment } from "@amzn/innovation-sandbox-commons/lambda/environments/base-api-lambda-environment.js";
 import { IsbApiContext } from "@amzn/innovation-sandbox-commons/lambda/middleware/api-middleware-bundle.js";
+import { IDENTITY_HEADER } from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
 import { MiddlewareFn } from "@aws-lambda-powertools/commons/types";
 import { injectLambdaContext } from "@aws-lambda-powertools/logger/middleware";
 import { MiddlewareObj } from "@middy/core";
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from "aws-lambda";
+
+const SENSITIVE_HEADERS = new Set([
+  "authorization",
+  "x-amz-security-token",
+  IDENTITY_HEADER,
+]);
 
 /**
  * Combined middleware that sanitizes API Gateway events before logging and injects Lambda context.
@@ -86,7 +93,7 @@ function sanitizeHeaders(
   const REDACTED_TEXT = "[REDACTED]";
 
   for (const [key, value] of Object.entries(sanitized)) {
-    if (key.toLowerCase() === "authorization") {
+    if (SENSITIVE_HEADERS.has(key.toLowerCase())) {
       if (Array.isArray(value)) {
         // Handle array of strings (multiValueHeaders)
         sanitized[key] = value.map(() => REDACTED_TEXT);

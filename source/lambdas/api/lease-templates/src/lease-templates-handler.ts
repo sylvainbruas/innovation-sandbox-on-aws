@@ -28,21 +28,21 @@ import {
 } from "@amzn/innovation-sandbox-commons/lambda/middleware/http-error-handler.js";
 import { httpJsonBodyParser } from "@amzn/innovation-sandbox-commons/lambda/middleware/http-json-body-parser.js";
 import {
-  ContextWithGlobalAndReportingConfig,
+  ContextWithConfig,
   isbConfigMiddleware,
-  isbReportingConfigMiddleware,
 } from "@amzn/innovation-sandbox-commons/lambda/middleware/isb-config-middleware.js";
 import { createPaginationQueryStringParametersSchema } from "@amzn/innovation-sandbox-commons/lambda/schemas.js";
 import {
   addCorrelationContext,
-  AppInsightsLogPatterns,
+  LogPatterns,
   searchableLeaseTemplateProperties,
   summarizeUpdate,
 } from "@amzn/innovation-sandbox-commons/observability/logging.js";
 import {
-  IsbRole,
-  IsbUser,
-} from "@amzn/innovation-sandbox-commons/types/isb-types.js";
+  type IsbRole,
+  type IsbUser,
+  getUserEmail,
+} from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
 import { randomUUID } from "crypto";
 
 const tracer = new Tracer();
@@ -52,8 +52,7 @@ const middyFactory = middy<
   IsbApiEvent,
   any,
   Error,
-  ContextWithGlobalAndReportingConfig &
-    IsbApiContext<LeaseTemplateLambdaEnvironment>
+  ContextWithConfig & IsbApiContext<LeaseTemplateLambdaEnvironment>
 >;
 
 const routes: Route<IsbApiEvent, APIGatewayProxyResult>[] = [
@@ -94,13 +93,11 @@ export const handler = apiMiddlewareBundle({
   environmentSchema: LeaseTemplateLambdaEnvironmentSchema,
 })
   .use(isbConfigMiddleware())
-  .use(isbReportingConfigMiddleware())
   .handler(httpRouterHandler(routes));
 
 async function getLeaseTemplatesHandler(
   event: IsbApiEvent,
-  context: ContextWithGlobalAndReportingConfig &
-    IsbApiContext<LeaseTemplateLambdaEnvironment>,
+  context: ContextWithConfig & IsbApiContext<LeaseTemplateLambdaEnvironment>,
 ): Promise<APIGatewayProxyResult> {
   const leaseTemplateStore = IsbServices.leaseTemplateStore(context.env);
 
@@ -115,23 +112,21 @@ async function getLeaseTemplatesHandler(
     );
   }
 
-  const { pageIdentifier, pageSize } = parsedPaginationParametersResult.data;
+  const { pageIdentifier, maxResults } = parsedPaginationParametersResult.data;
 
-  const queryResult = await leaseTemplateStore.findAll({
-    pageIdentifier,
-    pageSize,
-  });
+  // Filter PRIVATE templates out at the query layer for non-elevated users so
+  // that neither the result set nor the pagination token can disclose a PRIVATE
+  // template's UUID.
+  const { result, nextPageIdentifier, error } =
+    await leaseTemplateStore.findAllVisible({
+      pageIdentifier,
+      pageSize: maxResults,
+      includePrivate: authorizedToGetPrivateLeaseTemplates(context.user),
+    });
 
-  if (queryResult.error) {
+  if (error) {
     logger.warn(
-      `${AppInsightsLogPatterns.DataValidationWarning.pattern}: Error while fetching lease templates - ${queryResult.error}`,
-    );
-  }
-
-  // Filter out private templates for users without elevated permissions
-  if (!authorizedToGetPrivateLeaseTemplates(context.user)) {
-    queryResult.result = queryResult.result.filter(
-      (template) => template.visibility !== "PRIVATE",
+      `${LogPatterns.DataValidationWarning.pattern}: Error while fetching lease templates - ${error}`,
     );
   }
 
@@ -139,7 +134,7 @@ async function getLeaseTemplatesHandler(
     statusCode: 200,
     body: JSON.stringify({
       status: "success",
-      data: queryResult,
+      data: { result, nextPageIdentifier },
     }),
     headers: {
       "Content-Type": "application/json",
@@ -149,8 +144,7 @@ async function getLeaseTemplatesHandler(
 
 async function postLeaseTemplatesHandler(
   event: IsbApiEvent,
-  context: ContextWithGlobalAndReportingConfig &
-    IsbApiContext<LeaseTemplateLambdaEnvironment>,
+  context: ContextWithConfig & IsbApiContext<LeaseTemplateLambdaEnvironment>,
 ): Promise<APIGatewayProxyResult> {
   const leaseTemplateStore = IsbServices.leaseTemplateStore(context.env);
 
@@ -158,6 +152,7 @@ async function postLeaseTemplatesHandler(
     uuid: true,
     createdBy: true,
     blueprintName: true,
+    meta: true,
   }).safeParse(event.body);
 
   if (!parsedBodyResult.success) {
@@ -171,7 +166,7 @@ async function postLeaseTemplatesHandler(
     );
     validateCostReportGroup(
       parsedBodyResult.data.costReportGroup,
-      context.reportingConfig,
+      context.globalConfig.costReporting,
     );
   } catch (error) {
     if (error instanceof ValidationException) {
@@ -197,7 +192,7 @@ async function postLeaseTemplatesHandler(
 
   const newLeaseTemplate = await leaseTemplateStore.create({
     uuid: randomUUID(),
-    createdBy: context.user.email,
+    createdBy: getUserEmail(context.user),
     ...parsedBodyResult.data,
     blueprintName,
   });
@@ -229,8 +224,7 @@ async function postLeaseTemplatesHandler(
 
 async function getLeaseTemplateByIdHandler(
   event: IsbApiEvent,
-  context: ContextWithGlobalAndReportingConfig &
-    IsbApiContext<LeaseTemplateLambdaEnvironment>,
+  context: ContextWithConfig & IsbApiContext<LeaseTemplateLambdaEnvironment>,
 ): Promise<APIGatewayProxyResult> {
   const leaseTemplateStore = IsbServices.leaseTemplateStore(context.env);
 
@@ -249,7 +243,7 @@ async function getLeaseTemplateByIdHandler(
   const leaseTemplate = leaseTemplateResponse.result;
   if (leaseTemplateResponse.error) {
     logger.warn(
-      `${AppInsightsLogPatterns.DataValidationWarning.pattern}: Error retrieving lease template ${event.pathParameters.leaseTemplateId}: ${leaseTemplateResponse.error}`,
+      `${LogPatterns.DataValidationWarning.pattern}: Error retrieving lease template ${event.pathParameters.leaseTemplateId}: ${leaseTemplateResponse.error}`,
     );
   }
 
@@ -284,8 +278,7 @@ async function getLeaseTemplateByIdHandler(
 
 async function putLeaseTemplateByIdHandler(
   event: IsbApiEvent,
-  context: ContextWithGlobalAndReportingConfig &
-    IsbApiContext<LeaseTemplateLambdaEnvironment>,
+  context: ContextWithConfig & IsbApiContext<LeaseTemplateLambdaEnvironment>,
 ): Promise<APIGatewayProxyResult> {
   const leaseTemplateStore = IsbServices.leaseTemplateStore(context.env);
 
@@ -300,6 +293,7 @@ async function putLeaseTemplateByIdHandler(
 
   const parsedBodyResult = LeaseTemplateSchema.omit({
     uuid: true,
+    createdBy: true,
     blueprintName: true,
   }).safeParse(event.body);
 
@@ -307,14 +301,38 @@ async function putLeaseTemplateByIdHandler(
     throw createHttpJSendValidationError(parsedBodyResult.error);
   }
 
+  // Fetch the existing template so config-compliance validation is
+  // change-aware: a required-but-missing field (cost report group, max budget,
+  // duration) shouldn't block edits to unrelated fields on a template that
+  // predates the requirement.
+  const existingTemplateResponse = await leaseTemplateStore.get(
+    event.pathParameters.leaseTemplateId,
+  );
+  const existingTemplate = existingTemplateResponse.result;
+
+  if (!existingTemplate) {
+    throw createHttpJSendError({
+      statusCode: 404,
+      data: {
+        errors: [
+          {
+            message: `Lease Template not found.`,
+          },
+        ],
+      },
+    });
+  }
+
   try {
     validateLeaseTemplateCompliesWithGlobalConfig(
       parsedBodyResult.data,
       context.globalConfig,
+      { previous: existingTemplate },
     );
     validateCostReportGroup(
       parsedBodyResult.data.costReportGroup,
-      context.reportingConfig,
+      context.globalConfig.costReporting,
+      { previousCostReportGroup: existingTemplate.costReportGroup },
     );
   } catch (error) {
     if (error instanceof ValidationException) {
@@ -338,9 +356,12 @@ async function putLeaseTemplateByIdHandler(
     context.env,
   );
 
+  // createdBy is server-owned: stripped from the request body above and
+  // restored here from the persisted record.
   const leaseTemplate = {
     uuid: event.pathParameters.leaseTemplateId,
     ...parsedBodyResult.data,
+    createdBy: existingTemplate.createdBy,
     blueprintName: resolvedBlueprintName,
   };
 
@@ -382,8 +403,7 @@ async function putLeaseTemplateByIdHandler(
 
 async function deleteLeaseTemplateByIdHandler(
   event: IsbApiEvent,
-  context: ContextWithGlobalAndReportingConfig &
-    IsbApiContext<LeaseTemplateLambdaEnvironment>,
+  context: ContextWithConfig & IsbApiContext<LeaseTemplateLambdaEnvironment>,
 ): Promise<APIGatewayProxyResult> {
   const leaseTemplateStore = IsbServices.leaseTemplateStore(context.env);
 
@@ -422,10 +442,8 @@ async function deleteLeaseTemplateByIdHandler(
 }
 
 function authorizedToGetPrivateLeaseTemplates(user: IsbUser) {
-  return (
-    user.roles?.some(
-      (role: IsbRole) => role === "Admin" || role === "Manager",
-    ) ?? false
+  return user.roles.some(
+    (role: IsbRole) => role === "Admin" || role === "Manager",
   );
 }
 

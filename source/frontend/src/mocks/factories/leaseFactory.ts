@@ -14,7 +14,10 @@ import {
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data";
 
 export function createLease(overrides?: Partial<Lease>): Lease {
-  return generateSchemaData(LeaseSchema, overrides);
+  return generateSchemaData(LeaseSchema, {
+    resourceLock: undefined,
+    ...overrides,
+  });
 }
 
 export function createActiveLease(
@@ -22,6 +25,7 @@ export function createActiveLease(
 ): MonitoredLease {
   return generateSchemaData(MonitoredLeaseSchema, {
     status: "Active",
+    resourceLock: undefined,
     ...overrides,
   });
 }
@@ -31,6 +35,7 @@ export function createPendingLease(
 ): PendingLease {
   return generateSchemaData(PendingLeaseSchema, {
     status: "PendingApproval",
+    resourceLock: undefined,
     ...overrides,
   });
 }
@@ -40,6 +45,7 @@ export function createExpiredLease(
 ): ExpiredLease {
   return generateSchemaData(ExpiredLeaseSchema, {
     status: "Expired",
+    resourceLock: undefined,
     ...overrides,
   });
 }

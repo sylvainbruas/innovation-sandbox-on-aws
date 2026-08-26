@@ -6,6 +6,12 @@ import {
 } from "@amzn/innovation-sandbox-commons/data/account-pool-stack-config/ssm-account-pool-stack-config-store.js";
 import { BlueprintStore } from "@amzn/innovation-sandbox-commons/data/blueprint/blueprint-store.js";
 import { DynamoBlueprintStore } from "@amzn/innovation-sandbox-commons/data/blueprint/dynamo-blueprint-store.js";
+import { CleanupReportStore } from "@amzn/innovation-sandbox-commons/data/cleanup-report/cleanup-report-store.js";
+import { DynamoCleanupReportStore } from "@amzn/innovation-sandbox-commons/data/cleanup-report/dynamo-cleanup-report-store.js";
+import {
+  ConfigStore,
+  DynamoConfigStore,
+} from "@amzn/innovation-sandbox-commons/data/config/index.js";
 import {
   DataStackConfigStore,
   SsmDataStackConfigStore,
@@ -18,8 +24,11 @@ import { DynamoLeaseTemplateStore } from "@amzn/innovation-sandbox-commons/data/
 import { LeaseTemplateStore } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template-store.js";
 import { DynamoLeaseStore } from "@amzn/innovation-sandbox-commons/data/lease/dynamo-lease-store.js";
 import { LeaseStore } from "@amzn/innovation-sandbox-commons/data/lease/lease-store.js";
+import { DynamoPrincipalStore } from "@amzn/innovation-sandbox-commons/data/principal/dynamo-principal-store.js";
+import { PrincipalStore } from "@amzn/innovation-sandbox-commons/data/principal/principal-store.js";
 import { DynamoSandboxAccountStore } from "@amzn/innovation-sandbox-commons/data/sandbox-account/dynamo-sandbox-account-store.js";
 import { SandboxAccountStore } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account-store.js";
+import { AuthService } from "@amzn/innovation-sandbox-commons/isb-services/auth-service.js";
 import { BlueprintDeploymentService } from "@amzn/innovation-sandbox-commons/isb-services/blueprint-deployment-service.js";
 import { CostExplorerService } from "@amzn/innovation-sandbox-commons/isb-services/cost-explorer-service.js";
 import { IdcService } from "@amzn/innovation-sandbox-commons/isb-services/idc-service.js";
@@ -31,6 +40,12 @@ import {
   EmailService,
   EmailServiceProps,
 } from "@amzn/innovation-sandbox-commons/isb-services/notification/email-service.js";
+import { OrganizationsTaggingService } from "@amzn/innovation-sandbox-commons/isb-services/organizations-tagging-service.js";
+import {
+  ExclusionConfig,
+  ResourceExclusionFilter,
+} from "@amzn/innovation-sandbox-commons/isb-services/resource-exclusion-filter.js";
+import { ResourceExplorerService } from "@amzn/innovation-sandbox-commons/isb-services/resource-explorer-service.js";
 import { SandboxOuService } from "@amzn/innovation-sandbox-commons/isb-services/sandbox-ou-service.js";
 import { IsbEventBridgeClient } from "@amzn/innovation-sandbox-commons/sdk-clients/event-bridge-client.js";
 import { IsbClients } from "@amzn/innovation-sandbox-commons/sdk-clients/index.js";
@@ -57,6 +72,21 @@ export namespace ServiceEnv {
 
   export type blueprintStore = {
     BLUEPRINT_TABLE_NAME: string;
+    USER_AGENT_EXTRA: string;
+  };
+
+  export type principalStore = {
+    PRINCIPAL_TABLE_NAME: string;
+    USER_AGENT_EXTRA: string;
+  };
+
+  export type cleanupReportStore = {
+    CLEANUP_REPORT_TABLE_NAME: string;
+    USER_AGENT_EXTRA: string;
+  };
+
+  export type configStore = {
+    CONFIG_TABLE_NAME: string;
     USER_AGENT_EXTRA: string;
   };
 
@@ -93,6 +123,7 @@ export namespace ServiceEnv {
   };
 
   export type costExplorer = {
+    ISB_NAMESPACE: string;
     USER_AGENT_EXTRA: string;
   };
 
@@ -112,6 +143,21 @@ export namespace ServiceEnv {
     SANDBOX_ACCOUNT_ROLE_NAME: string;
     ORG_MGT_ACCOUNT_ID: string;
     HUB_ACCOUNT_ID: string;
+    USER_AGENT_EXTRA: string;
+  };
+
+  export type authService = {
+    USER_AGENT_EXTRA: string;
+  };
+
+  export type organizationsTaggingService = {
+    ISB_NAMESPACE: string;
+    USER_AGENT_EXTRA: string;
+  };
+
+  export type resourceExplorer = {
+    INTERMEDIATE_ROLE_ARN: string;
+    CLEANUP_SPOKE_ROLE_NAME: string;
     USER_AGENT_EXTRA: string;
   };
 }
@@ -153,6 +199,29 @@ export class IsbServices {
     return new DynamoBlueprintStore({
       client: IsbClients.dynamo(env),
       blueprintTableName: env.BLUEPRINT_TABLE_NAME,
+    });
+  }
+
+  public static principalStore(env: ServiceEnv.principalStore): PrincipalStore {
+    return new DynamoPrincipalStore({
+      client: IsbClients.dynamo(env),
+      principalTableName: env.PRINCIPAL_TABLE_NAME,
+    });
+  }
+
+  public static cleanupReportStore(
+    env: ServiceEnv.cleanupReportStore,
+  ): CleanupReportStore {
+    return new DynamoCleanupReportStore({
+      client: IsbClients.dynamo(env),
+      cleanupReportTableName: env.CLEANUP_REPORT_TABLE_NAME,
+    });
+  }
+
+  public static configStore(env: ServiceEnv.configStore): ConfigStore {
+    return new DynamoConfigStore({
+      client: IsbClients.dynamo(env),
+      tableName: env.CONFIG_TABLE_NAME,
     });
   }
 
@@ -222,6 +291,7 @@ export class IsbServices {
   ) {
     return new CostExplorerService({
       costExplorerClient: IsbClients.costExplorer(env, credentials),
+      namespace: env.ISB_NAMESPACE,
     });
   }
 
@@ -247,6 +317,38 @@ export class IsbServices {
       SANDBOX_ACCOUNT_ROLE_NAME: env.SANDBOX_ACCOUNT_ROLE_NAME,
       ORG_MGT_ACCOUNT_ID: env.ORG_MGT_ACCOUNT_ID,
       HUB_ACCOUNT_ID: env.HUB_ACCOUNT_ID,
+    });
+  }
+
+  public static authService(env: ServiceEnv.authService): AuthService {
+    return new AuthService({
+      cognitoIdpClient: IsbClients.cognitoIdp(env),
+    });
+  }
+
+  public static organizationsTaggingService(
+    env: ServiceEnv.organizationsTaggingService,
+    credentials?: AwsCredentialIdentity | AwsCredentialIdentityProvider,
+  ): OrganizationsTaggingService {
+    return new OrganizationsTaggingService({
+      orgsClient: IsbClients.orgs(env, credentials),
+      namespace: env.ISB_NAMESPACE,
+    });
+  }
+
+  public static resourceExplorer(
+    env: ServiceEnv.resourceExplorer,
+    props: {
+      managedRegions: string[];
+      exclusionConfig: ExclusionConfig;
+    },
+  ): ResourceExplorerService {
+    return new ResourceExplorerService({
+      intermediateRoleArn: env.INTERMEDIATE_ROLE_ARN,
+      spokeRoleName: env.CLEANUP_SPOKE_ROLE_NAME,
+      customUserAgent: env.USER_AGENT_EXTRA,
+      managedRegions: props.managedRegions,
+      exclusionFilter: new ResourceExclusionFilter(props.exclusionConfig),
     });
   }
 }

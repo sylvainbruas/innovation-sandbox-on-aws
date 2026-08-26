@@ -81,6 +81,21 @@ export class DynamoLeaseTemplateStore extends LeaseTemplateStore {
     leaseTemplate: LeaseTemplate,
     expected?: LeaseTemplate,
   ): Promise<PutResult<LeaseTemplate>> {
+    // createdBy and createdTime are server-owned: preserve them from the
+    // persisted record so a caller cannot forge them on update. (@withMetadata
+    // only carries forward whatever meta was passed in, which may be forged.)
+    const persisted = await this.get(leaseTemplate.uuid);
+    if (!persisted.result) {
+      throw new UnknownItem("Unknown LeaseTemplate.");
+    }
+    leaseTemplate = {
+      ...leaseTemplate,
+      createdBy: persisted.result.createdBy,
+      meta: leaseTemplate.meta
+        ? { ...leaseTemplate.meta, createdTime: persisted.result.meta?.createdTime }
+        : leaseTemplate.meta,
+    };
+
     if (expected) {
       try {
         const result = await this.ddbClient.send(
@@ -165,6 +180,87 @@ export class DynamoLeaseTemplateStore extends LeaseTemplateStore {
     return {
       ...parseResults(result.Items, LeaseTemplateSchema),
       nextPageIdentifier: base64EncodeCompositeKey(result.LastEvaluatedKey),
+    };
+  }
+
+  public async findAllVisible(props: {
+    pageIdentifier?: string;
+    pageSize?: number;
+    includePrivate: boolean;
+  }): Promise<PaginatedQueryResult<LeaseTemplate>> {
+    const { pageSize, pageIdentifier, includePrivate } = props;
+
+    // Elevated callers see everything; the plain scan is sufficient.
+    if (includePrivate) {
+      return this.findAll({ pageIdentifier, pageSize });
+    }
+
+    // For non-elevated callers, filter to PUBLIC server-side AND derive the
+    // pagination token from a PUBLIC item we actually return. DynamoDB applies
+    // Limit before FilterExpression, so LastEvaluatedKey can point at a PRIVATE
+    // item that was filtered out — using it directly would leak that item's
+    // UUID. Instead we scan until we have enough PUBLIC items (or the table is
+    // exhausted) and encode the last returned item's key as the token.
+    const collected: LeaseTemplate[] = [];
+    let exclusiveStartKey = base64DecodeCompositeKey(pageIdentifier);
+    let errorMessage: string | undefined;
+
+    do {
+      const result = await this.ddbClient.send(
+        new ScanCommand({
+          TableName: this.tableName,
+          ExclusiveStartKey: exclusiveStartKey,
+          Limit: pageSize,
+          // "not PRIVATE" rather than "= PUBLIC": legacy items written before
+          // the visibility attribute existed have no visibility field, and the
+          // schema defaults those to PUBLIC on read. attribute_not_exists keeps
+          // them visible, matching the prior application-layer filter.
+          FilterExpression:
+            "attribute_not_exists(#visibility) OR #visibility <> :private",
+          ExpressionAttributeNames: {
+            "#visibility": "visibility",
+          },
+          ExpressionAttributeValues: {
+            ":private": "PRIVATE",
+          },
+        }),
+      );
+
+      const parsed = parseResults(result.Items, LeaseTemplateSchema);
+      if (parsed.error) {
+        errorMessage = errorMessage
+          ? `${errorMessage}${parsed.error}`
+          : parsed.error;
+      }
+      collected.push(...parsed.result);
+      exclusiveStartKey = result.LastEvaluatedKey;
+    } while (
+      exclusiveStartKey !== undefined &&
+      (pageSize === undefined || collected.length < pageSize)
+    );
+
+    const page =
+      pageSize === undefined ? collected : collected.slice(0, pageSize);
+    const lastReturned = page.at(-1);
+
+    // More items may remain either because the table isn't exhausted, or
+    // because we over-collected past pageSize in the final scan (the overflow
+    // is dropped from this page and must be re-fetched on the next one). Emit a
+    // token in both cases, anchored to the last RETURNED item so the next page
+    // resumes exactly after it — this encodes a PUBLIC item's key, never a
+    // PRIVATE one, and never strands the overflow.
+    const hasOverflow =
+      pageSize !== undefined && collected.length > pageSize;
+    const nextPageIdentifier =
+      (exclusiveStartKey !== undefined || hasOverflow) &&
+      lastReturned !== undefined
+        ? base64EncodeCompositeKey({ uuid: lastReturned.uuid })
+        : null;
+
+    return {
+      result: page,
+      nextPageIdentifier,
+      error: errorMessage,
     };
   }
 

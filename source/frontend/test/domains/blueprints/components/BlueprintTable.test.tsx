@@ -11,7 +11,7 @@ import { BrowserRouter } from "react-router-dom";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { BlueprintTable } from "@amzn/innovation-sandbox-frontend/domains/blueprints/components/BlueprintTable";
-import { config } from "@amzn/innovation-sandbox-frontend/helpers/config";
+import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import { ModalProvider } from "@amzn/innovation-sandbox-frontend/hooks/useModal";
 import {
   createBlueprint,
@@ -74,7 +74,7 @@ describe("BlueprintTable", () => {
 
   test("renders the table header correctly", async () => {
     server.use(
-      http.get(`${config.ApiUrl}/blueprints`, () => {
+      http.get(`${getConfig().ApiUrl}/blueprints`, () => {
         return HttpResponse.json({
           status: "success",
           data: {
@@ -97,7 +97,7 @@ describe("BlueprintTable", () => {
 
   test("displays blueprints in table", async () => {
     server.use(
-      http.get(`${config.ApiUrl}/blueprints`, () => {
+      http.get(`${getConfig().ApiUrl}/blueprints`, () => {
         return HttpResponse.json({
           status: "success",
           data: {
@@ -119,7 +119,7 @@ describe("BlueprintTable", () => {
 
   test("displays 'No blueprints found' when no blueprints", async () => {
     server.use(
-      http.get(`${config.ApiUrl}/blueprints`, () => {
+      http.get(`${getConfig().ApiUrl}/blueprints`, () => {
         return HttpResponse.json({
           status: "success",
           data: {
@@ -143,7 +143,7 @@ describe("BlueprintTable", () => {
 
   test("displays health metrics correctly", async () => {
     server.use(
-      http.get(`${config.ApiUrl}/blueprints`, () => {
+      http.get(`${getConfig().ApiUrl}/blueprints`, () => {
         return HttpResponse.json({
           status: "success",
           data: {
@@ -172,7 +172,7 @@ describe("BlueprintTable", () => {
     });
 
     server.use(
-      http.get(`${config.ApiUrl}/blueprints`, () => {
+      http.get(`${getConfig().ApiUrl}/blueprints`, () => {
         return HttpResponse.json({
           status: "success",
           data: {
@@ -190,6 +190,44 @@ describe("BlueprintTable", () => {
     });
   });
 
+  test("indicates aged-out history for a blueprint with deployment totals but no retained records", async () => {
+    // Non-zero counts with no retained records must not render an empty column.
+    const agedOutBlueprint = createBlueprintWithStackSets({
+      blueprint: createBlueprint({
+        name: "Aged-Out-Blueprint",
+        totalHealthMetrics: {
+          totalDeploymentCount: 3,
+          totalSuccessfulCount: 3,
+          lastDeploymentAt: "2026-02-25T18:51:18.206Z",
+        },
+      }),
+      recentDeployments: [],
+    });
+
+    server.use(
+      http.get(`${getConfig().ApiUrl}/blueprints`, () => {
+        return HttpResponse.json({
+          status: "success",
+          data: {
+            blueprints: [agedOutBlueprint],
+            nextPageIdentifier: null,
+          },
+        });
+      }),
+    );
+
+    renderComponent();
+
+    await waitFor(() => {
+      expect(screen.getByText("Aged-Out-Blueprint")).toBeInTheDocument();
+    });
+
+    // Success count still renders...
+    expect(screen.getByText("3 / 3")).toBeInTheDocument();
+    // ...and the history column explains the absence rather than showing a bare dash.
+    expect(screen.getByText("No recent deployments")).toBeInTheDocument();
+  });
+
   test("displays multiple blueprints with multi-selection enabled", async () => {
     const blueprint1 = createBlueprintWithStackSets({
       blueprint: createBlueprint({
@@ -205,7 +243,7 @@ describe("BlueprintTable", () => {
     });
 
     server.use(
-      http.get(`${config.ApiUrl}/blueprints`, () => {
+      http.get(`${getConfig().ApiUrl}/blueprints`, () => {
         return HttpResponse.json({
           status: "success",
           data: {
@@ -231,7 +269,7 @@ describe("BlueprintTable", () => {
   test("refreshes blueprint data when refresh button is clicked", async () => {
     let requestCount = 0;
     server.use(
-      http.get(`${config.ApiUrl}/blueprints`, () => {
+      http.get(`${getConfig().ApiUrl}/blueprints`, () => {
         requestCount++;
         return HttpResponse.json({
           status: "success",
@@ -286,7 +324,7 @@ describe("BlueprintTable", () => {
     }));
 
     server.use(
-      http.get(`${config.ApiUrl}/blueprints`, () => {
+      http.get(`${getConfig().ApiUrl}/blueprints`, () => {
         return HttpResponse.json({
           status: "success",
           data: {
@@ -315,7 +353,7 @@ describe("BlueprintTable", () => {
     });
 
     server.use(
-      http.get(`${config.ApiUrl}/blueprints`, () => {
+      http.get(`${getConfig().ApiUrl}/blueprints`, () => {
         return HttpResponse.json({
           status: "success",
           data: {

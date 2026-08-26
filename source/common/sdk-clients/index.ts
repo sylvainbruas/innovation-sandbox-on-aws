@@ -1,16 +1,21 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
-import { SecretsProvider } from "@aws-lambda-powertools/parameters/secrets";
 import { SSMProvider } from "@aws-lambda-powertools/parameters/ssm";
 import { Tracer } from "@aws-lambda-powertools/tracer";
+import { AccessAnalyzerClient } from "@aws-sdk/client-accessanalyzer";
 import { AppConfigClient } from "@aws-sdk/client-appconfig";
 import { AppConfigDataClient } from "@aws-sdk/client-appconfigdata";
 import { CloudFormationClient } from "@aws-sdk/client-cloudformation";
+import { CloudWatchClient } from "@aws-sdk/client-cloudwatch";
 import { CloudWatchLogsClient } from "@aws-sdk/client-cloudwatch-logs";
+import { CodeBuildClient } from "@aws-sdk/client-codebuild";
+import { CognitoIdentityProviderClient } from "@aws-sdk/client-cognito-identity-provider";
 import { CostExplorerClient } from "@aws-sdk/client-cost-explorer";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { EC2Client } from "@aws-sdk/client-ec2";
+import { IAMClient } from "@aws-sdk/client-iam";
 import { IdentitystoreClient } from "@aws-sdk/client-identitystore";
+import { LambdaClient } from "@aws-sdk/client-lambda";
 import { OrganizationsClient } from "@aws-sdk/client-organizations";
 import { S3Client } from "@aws-sdk/client-s3";
 import { SESClient } from "@aws-sdk/client-ses";
@@ -25,6 +30,7 @@ import {
 import { IsbEventBridgeClient } from "./event-bridge-client.js";
 import { IsbSecretsManagerClient } from "./secrets-manager-client.js";
 
+let cachedAccessAnalyzerClient: AccessAnalyzerClient | null = null;
 let cachedDynamoClient: DynamoDBDocumentClient | null = null;
 let cachedSecretsManagerClient: IsbSecretsManagerClient | null = null;
 let cachedStepFunctionsClient: SFNClient | null = null;
@@ -33,21 +39,38 @@ let cachedSTSClient: STSClient | null = null;
 let cachedAppConfigClient: AppConfigClient | null = null;
 let cachedAppConfigDataClient: AppConfigDataClient | null = null;
 let cachedOrgsClient: OrganizationsClient | null = null;
+let cachedIamClient: IAMClient | null = null;
 let cachedIdentitystoreClient: IdentitystoreClient | null = null;
 let cachedSSOAdminClient: SSOAdminClient | null = null;
 let cachedCostExplorerClient: CostExplorerClient | null = null;
 let cachedSESClient: SESClient | null = null;
 let cachedS3Client: S3Client | null = null;
 let cachedCWLogsClient: CloudWatchLogsClient | null = null;
+let cachedCloudWatchClient: CloudWatchClient | null = null;
 let cachedCloudFormationClient: CloudFormationClient | null = null;
+let cachedCodeBuildClient: CodeBuildClient | null = null;
+let cachedCognitoIdpClient: CognitoIdentityProviderClient | null = null;
+let cachedLambdaClient: LambdaClient | null = null;
 let cachedSSMProvider: SSMProvider | null = null;
-let cachedSecretsProvider: SecretsProvider | null = null;
 
 const tracer = new Tracer();
 
 export class IsbClients {
   private constructor() {
     //static class. Shouldn't be constructable
+  }
+
+  public static accessAnalyzer(env: {
+    USER_AGENT_EXTRA: string;
+  }): AccessAnalyzerClient {
+    if (cachedAccessAnalyzerClient == null) {
+      cachedAccessAnalyzerClient = tracer.captureAWSv3Client(
+        new AccessAnalyzerClient({
+          customUserAgent: env.USER_AGENT_EXTRA,
+        }),
+      );
+    }
+    return cachedAccessAnalyzerClient;
   }
 
   public static dynamo(env: {
@@ -170,6 +193,21 @@ export class IsbClients {
     return cachedOrgsClient;
   }
 
+  public static iam(
+    env: { USER_AGENT_EXTRA: string },
+    credentials?: AwsCredentialIdentity | AwsCredentialIdentityProvider,
+  ): IAMClient {
+    if (cachedIamClient == null) {
+      cachedIamClient = tracer.captureAWSv3Client(
+        new IAMClient({
+          customUserAgent: env.USER_AGENT_EXTRA,
+          credentials,
+        }),
+      );
+    }
+    return cachedIamClient;
+  }
+
   public static identityStore(
     env: {
       USER_AGENT_EXTRA: string;
@@ -254,6 +292,19 @@ export class IsbClients {
     return cachedCWLogsClient;
   }
 
+  public static cloudWatch(env: {
+    USER_AGENT_EXTRA: string;
+  }): CloudWatchClient {
+    if (cachedCloudWatchClient == null) {
+      cachedCloudWatchClient = tracer.captureAWSv3Client(
+        new CloudWatchClient({
+          customUserAgent: env.USER_AGENT_EXTRA,
+        }),
+      );
+    }
+    return cachedCloudWatchClient;
+  }
+
   public static cloudFormation(env: {
     USER_AGENT_EXTRA: string;
   }): CloudFormationClient {
@@ -267,6 +318,19 @@ export class IsbClients {
     return cachedCloudFormationClient;
   }
 
+  public static cognitoIdp(env: {
+    USER_AGENT_EXTRA: string;
+  }): CognitoIdentityProviderClient {
+    if (cachedCognitoIdpClient == null) {
+      cachedCognitoIdpClient = tracer.captureAWSv3Client(
+        new CognitoIdentityProviderClient({
+          customUserAgent: env.USER_AGENT_EXTRA,
+        }),
+      );
+    }
+    return cachedCognitoIdpClient;
+  }
+
   public static ssmProvider(env: { USER_AGENT_EXTRA: string }): SSMProvider {
     if (cachedSSMProvider == null) {
       cachedSSMProvider = new SSMProvider({
@@ -278,16 +342,25 @@ export class IsbClients {
     return cachedSSMProvider;
   }
 
-  public static secretsProvider(env: {
-    USER_AGENT_EXTRA: string;
-  }): SecretsProvider {
-    if (cachedSecretsProvider == null) {
-      cachedSecretsProvider = new SecretsProvider({
-        clientConfig: {
+  public static codeBuild(env: { USER_AGENT_EXTRA: string }): CodeBuildClient {
+    if (cachedCodeBuildClient == null) {
+      cachedCodeBuildClient = tracer.captureAWSv3Client(
+        new CodeBuildClient({
           customUserAgent: env.USER_AGENT_EXTRA,
-        },
-      });
+        }),
+      );
     }
-    return cachedSecretsProvider;
+    return cachedCodeBuildClient;
+  }
+
+  public static lambda(env: { USER_AGENT_EXTRA: string }): LambdaClient {
+    if (cachedLambdaClient == null) {
+      cachedLambdaClient = tracer.captureAWSv3Client(
+        new LambdaClient({
+          customUserAgent: env.USER_AGENT_EXTRA,
+        }),
+      );
+    }
+    return cachedLambdaClient;
   }
 }

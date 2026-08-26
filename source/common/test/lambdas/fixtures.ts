@@ -2,28 +2,43 @@
 // SPDX-License-Identifier: Apache-2.0
 import { Event as NormalizedEvent } from "@middy/http-event-normalizer";
 import { Event as NormalizedHeaderEvent } from "@middy/http-header-normalizer";
-import jwt from "jsonwebtoken";
 
 import {
-  GlobalConfig,
-  GlobalConfigSchema,
-} from "@amzn/innovation-sandbox-commons/data/global-config/global-config.js";
-import {
-  ReportingConfig,
-  ReportingConfigSchema,
-} from "@amzn/innovation-sandbox-commons/data/reporting-config/reporting-config.js";
+  ConfigSchemas,
+  ConfigSection,
+} from "@amzn/innovation-sandbox-commons/data/config/config.js";
+import { GlobalConfig } from "@amzn/innovation-sandbox-commons/data/global-config/global-config.js";
 import { BaseApiLambdaEnvironment } from "@amzn/innovation-sandbox-commons/lambda/environments/base-api-lambda-environment.js";
 import { IsbApiContext } from "@amzn/innovation-sandbox-commons/lambda/middleware/api-middleware-bundle.js";
 import { ValidatedEnvironment } from "@amzn/innovation-sandbox-commons/lambda/middleware/environment-validator.js";
+import { ContextWithConfig } from "@amzn/innovation-sandbox-commons/lambda/middleware/isb-config-middleware.js";
+import { JSendErrorObject } from "@amzn/innovation-sandbox-commons/types/isb-types.js";
+import { encodeTestToken } from "@amzn/innovation-sandbox-commons/test/lambdas/api-test-setup.js";
 import {
-  ContextWithConfig,
-  ContextWithGlobalAndReportingConfig,
-} from "@amzn/innovation-sandbox-commons/lambda/middleware/isb-config-middleware.js";
-import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
-import {
-  IsbUser,
-  JSendErrorObject,
-} from "@amzn/innovation-sandbox-commons/types/isb-types.js";
+  type IsbUser,
+  COGNITO_IDC_USER_ID_CLAIM,
+  COGNITO_ISB_ROLES_CLAIM,
+  COGNITO_USERNAME_CLAIM,
+  IDENTITY_HEADER,
+  isIdcUser,
+  isM2MUser,
+} from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
+import { buildM2mAssumedRoleArn } from "@amzn/innovation-sandbox-commons/utils/m2m-role-arn.js";
+
+/**
+ * Builds the value API Gateway puts in
+ * `event.requestContext.identity.cognitoAuthenticationProvider` for a
+ * Cognito-authenticated request. Format documented at:
+ * https://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-mapping-template-reference.html#context-variable-reference
+ */
+export function buildCognitoAuthProvider(
+  poolId: string,
+  sub: string,
+  region: string,
+): string {
+  const issuer = `cognito-idp.${region}.amazonaws.com/${poolId}`;
+  return `${issuer},${issuer}:CognitoSignIn:${sub}`;
+}
 import { nowAsIsoDatetimeString } from "@amzn/innovation-sandbox-commons/utils/time-utils.js";
 import {
   APIGatewayEventIdentity,
@@ -39,14 +54,75 @@ interface CreateAPIGatewayProxyEventProps {
   pathParameters?: { [key: string]: string };
   queryStringParameters?: { [key: string]: string };
   headers?: { [key: string]: string };
+  identity?: Partial<APIGatewayEventIdentity>;
+  /**
+   * Convenience: when set, populates the SigV4 fields the new
+   * `captureIsbUser` middleware reads — `x-isb-identity` header +
+   * `cognitoAuthenticationProvider` for IDC users, `userArn` for M2M
+   * — and registers matching mock claims with the shared
+   * `aws-jwt-verify` mock from `api-test-setup.ts`.
+   */
+  isbUser?: IsbUser;
+}
+
+const FIXTURE_COGNITO_SUB = "abc12345-6789-4abc-9def-0123456789ab";
+
+function userPropsToEventOverrides(user: IsbUser): {
+  headers?: Record<string, string>;
+  identity?: Partial<APIGatewayEventIdentity>;
+} {
+  if (isM2MUser(user)) {
+    const namespace = process.env.ISB_NAMESPACE ?? "myisb";
+    return {
+      identity: {
+        userArn: buildM2mAssumedRoleArn({
+          namespace,
+          roleTier: user.roles[0] ?? "User",
+          clientName: user.clientId,
+          accountId: "123456789012",
+        }),
+      },
+    };
+  }
+  const claims = { sub: FIXTURE_COGNITO_SUB, ...buildCognitoClaims(user) };
+  return {
+    headers: { [IDENTITY_HEADER]: encodeTestToken(claims) },
+    identity: {
+      cognitoAuthenticationProvider: buildCognitoAuthProvider(
+        "us-east-1_TEST",
+        FIXTURE_COGNITO_SUB,
+        "us-east-1",
+      ),
+    },
+  };
+}
+
+export function buildCognitoClaims(user: IsbUser): Record<string, string> {
+  if (isIdcUser(user)) {
+    return {
+      email: user.email,
+      [COGNITO_ISB_ROLES_CLAIM]: JSON.stringify(user.roles),
+      [COGNITO_USERNAME_CLAIM]: user.userName ?? user.email,
+      [COGNITO_IDC_USER_ID_CLAIM]: user.userId,
+    };
+  }
+  return {
+    client_id: user.clientId,
+    [COGNITO_ISB_ROLES_CLAIM]: JSON.stringify(user.roles),
+  };
 }
 
 export const createAPIGatewayProxyEvent = (
   props: CreateAPIGatewayProxyEventProps,
 ): NormalizedEvent & NormalizedHeaderEvent => {
+  const { identity, isbUser, headers, ...eventProps } = props;
+
+  const userOverrides = isbUser ? userPropsToEventOverrides(isbUser) : {};
+  const mergedHeaders = { ...headers, ...userOverrides.headers };
+  const mergedIdentity = { ...identity, ...userOverrides.identity };
+
   return {
     body: null,
-    headers: {},
     rawHeaders: {},
     multiValueHeaders: {},
     pathParameters: {},
@@ -55,6 +131,7 @@ export const createAPIGatewayProxyEvent = (
     queryStringParameters: {},
     multiValueQueryStringParameters: {},
     resource: "resource",
+    headers: mergedHeaders,
     requestContext: {
       accountId: "000000000000",
       apiId: "apiId",
@@ -76,6 +153,7 @@ export const createAPIGatewayProxyEvent = (
         clientCert: null,
         apiKey: null,
         apiKeyId: null,
+        ...mergedIdentity,
       },
       protocol: "protocol",
       path: "path",
@@ -86,7 +164,7 @@ export const createAPIGatewayProxyEvent = (
       resourceId: "resourceId",
       resourcePath: "resourcePath",
     },
-    ...props,
+    ...eventProps,
   };
 };
 
@@ -102,6 +180,7 @@ export const responseHeaders = {
 };
 
 const isbUser: IsbUser = {
+  type: "user",
   email: "test@example.com",
   userId: "testUserId",
   roles: ["Admin", "Manager", "User"],
@@ -109,10 +188,11 @@ const isbUser: IsbUser = {
 
 export const isbAuthorizedUser = {
   user: isbUser,
-  token: jwt.sign({ user: isbUser }, "testSecret"),
+  claims: buildCognitoClaims(isbUser),
 };
 
 const isbUserUserRoleOnly: IsbUser = {
+  type: "user",
   email: "test@example.com",
   userId: "testUserId",
   roles: ["User"],
@@ -120,7 +200,36 @@ const isbUserUserRoleOnly: IsbUser = {
 
 export const isbAuthorizedUserUserRoleOnly = {
   user: isbUserUserRoleOnly,
-  token: jwt.sign({ user: isbUserUserRoleOnly }, "testSecret"),
+  claims: buildCognitoClaims(isbUserUserRoleOnly),
+};
+
+export function mockGlobalConfig(): GlobalConfig {
+  const config = {} as GlobalConfig;
+  for (const section of Object.keys(ConfigSchemas) as ConfigSection[]) {
+    (config as Record<ConfigSection, unknown>)[section] = ConfigSchemas[
+      section
+    ].parse({});
+  }
+  // Baseline represents a normally-operating, configured system. The schema
+  // default for `maintenance.enabled` is fresh-install behavior; tests that
+  // need maintenance mode opt into it explicitly.
+  config.maintenance.enabled = false;
+  return config;
+}
+
+// M2M callers authenticate via an assumed IAM role (no Cognito claims), so these
+// are bare IsbUser objects — pass directly as `createAPIGatewayProxyEvent`'s
+// `isbUser`, which renders them as a `userArn`.
+export const m2mAdminUser: IsbUser = {
+  type: "m2m",
+  clientId: "automation-client",
+  roles: ["Admin"],
+};
+
+export const m2mUserRoleOnlyUser: IsbUser = {
+  type: "m2m",
+  clientId: "some-client",
+  roles: ["User"],
 };
 
 export function mockContext<T>(
@@ -129,7 +238,7 @@ export function mockContext<T>(
 ): ContextWithConfig & ValidatedEnvironment<T> {
   return {
     env,
-    globalConfig: globalConfig ?? generateSchemaData(GlobalConfigSchema),
+    globalConfig: globalConfig ?? mockGlobalConfig(),
     functionName: "testFunc",
     awsRequestId: "",
     callbackWaitsForEmptyEventLoop: false,
@@ -150,13 +259,10 @@ export function mockContext<T>(
 export function mockAuthorizedContext<T extends BaseApiLambdaEnvironment>(
   env: T,
   globalConfig?: GlobalConfig,
-  reportingConfig?: ReportingConfig,
-): IsbApiContext<T> & ContextWithGlobalAndReportingConfig {
+): IsbApiContext<T> & ContextWithConfig {
   return {
     ...mockContext(env, globalConfig),
     ...isbAuthorizedUser,
-    reportingConfig:
-      reportingConfig ?? generateSchemaData(ReportingConfigSchema),
     accountId: "000000000000",
     apiId: "test-api-id",
     protocol: "HTTP/1.1",

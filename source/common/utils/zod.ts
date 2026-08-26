@@ -16,15 +16,13 @@ export const AwsAccountIdSchema = z.string().regex(/^\d{12}$/, {
  *
  * @example
  * const ActionSchema = z.enum(["Approve", "Deny"], {
- *   errorMap: enumErrorMap
+ *   error: enumErrorMap
  * });
- * // Error message: "Invalid enum value. Expected one of the following values: Approve, Deny"
+ * // Error message: "Invalid value. Expected one of the following: Approve, Deny"
  */
-export const enumErrorMap: z.ZodErrorMap = (issue, ctx) => {
-  if (issue.code === "invalid_enum_value") {
-    return {
-      message: `Invalid value. Expected one of the following: ${issue.options.join(", ")}`,
-    };
+export const enumErrorMap: z.core.$ZodErrorMap = (issue) => {
+  if (issue.code === "invalid_value" && "values" in issue) {
+    return `Invalid value. Expected one of the following: ${(issue.values as string[]).join(", ")}`;
   }
-  return { message: ctx.defaultError };
+  return undefined;
 };

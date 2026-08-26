@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { Logger } from "@aws-lambda-powertools/logger";
 import { Tracer } from "@aws-lambda-powertools/tracer";
+import { SendDurableExecutionCallbackSuccessCommand } from "@aws-sdk/client-lambda";
 import middy from "@middy/core";
 import httpRouterHandler, { Route } from "@middy/http-router";
 import {
@@ -9,6 +10,10 @@ import {
   APIGatewayProxyResult,
 } from "aws-lambda";
 
+import {
+  CleanupReport,
+  CleanupReportKey,
+} from "@amzn/innovation-sandbox-commons/data/cleanup-report/cleanup-report.js";
 import { SandboxAccountSchema } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
 import {
   AccountInCleanUpError,
@@ -34,7 +39,9 @@ import {
   isbConfigMiddleware,
 } from "@amzn/innovation-sandbox-commons/lambda/middleware/isb-config-middleware.js";
 import { createPaginationQueryStringParametersSchema } from "@amzn/innovation-sandbox-commons/lambda/schemas.js";
-import { AppInsightsLogPatterns } from "@amzn/innovation-sandbox-commons/observability/logging.js";
+import { LogPatterns } from "@amzn/innovation-sandbox-commons/observability/logging.js";
+import { IsbClients } from "@amzn/innovation-sandbox-commons/sdk-clients/index.js";
+import { getUserEmail } from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
 import {
   fromTemporaryIsbIdcCredentials,
   fromTemporaryIsbOrgManagementCredentials,
@@ -74,9 +81,24 @@ const routes: Route<IsbApiEvent, APIGatewayProxyResult>[] = [
     handler: middyFactory().handler(ejectAccountHandler),
   },
   {
+    path: "/accounts/{awsAccountId}/quarantine",
+    method: "POST",
+    handler: middyFactory().handler(quarantineAccountHandler),
+  },
+  {
     path: "/accounts/unregistered",
     method: "GET",
     handler: middyFactory().handler(findUnregisteredAccountsHandler),
+  },
+  {
+    path: "/accounts/{awsAccountId}/cleanup-reports",
+    method: "GET",
+    handler: middyFactory().handler(listCleanupReportsHandler),
+  },
+  {
+    path: "/accounts/{awsAccountId}/skipCooldown",
+    method: "POST",
+    handler: middyFactory().handler(skipCooldownHandler),
   },
 ];
 
@@ -108,12 +130,15 @@ async function findAccountsHandler(
     );
   }
 
-  const { pageIdentifier, pageSize } = parsedPaginationParametersResult.data;
+  const { pageIdentifier, maxResults } = parsedPaginationParametersResult.data;
 
-  const queryResult = await accountStore.findAll({ pageIdentifier, pageSize });
+  const queryResult = await accountStore.findAll({
+    pageIdentifier,
+    pageSize: maxResults,
+  });
   if (queryResult.error) {
     logger.warn(
-      `${AppInsightsLogPatterns.DataValidationWarning.pattern}: Error while fetching accounts: ${queryResult.error}`,
+      `${LogPatterns.DataValidationWarning.pattern}: Error while fetching accounts: ${queryResult.error}`,
     );
   }
   return {
@@ -170,6 +195,10 @@ async function postAccountHandler(
       context.env,
       fromTemporaryIsbOrgManagementCredentials(context.env),
     ),
+    organizationsTaggingService: IsbServices.organizationsTaggingService(
+      context.env,
+      fromTemporaryIsbOrgManagementCredentials(context.env),
+    ),
     idcService: IsbServices.idcService(
       context.env,
       fromTemporaryIsbIdcCredentials(context.env),
@@ -205,7 +234,7 @@ async function getAccountHandler(
   const account = accountResponse.result;
   if (accountResponse.error) {
     logger.warn(
-      `${AppInsightsLogPatterns.DataValidationWarning.pattern}: Error in retrieving account ${awsAccountId}: ${accountResponse.error}`,
+      `${LogPatterns.DataValidationWarning.pattern}: Error in retrieving account ${awsAccountId}: ${accountResponse.error}`,
     );
   }
   if (!account) {
@@ -245,7 +274,7 @@ async function ejectAccountHandler(
   const account = accountResponse.result;
   if (accountResponse.error) {
     logger.warn(
-      `${AppInsightsLogPatterns.DataValidationWarning.pattern}: Error in retrieving account ${awsAccountId}: ${accountResponse.error}`,
+      `${LogPatterns.DataValidationWarning.pattern}: Error in retrieving account ${awsAccountId}: ${accountResponse.error}`,
     );
   }
 
@@ -273,6 +302,10 @@ async function ejectAccountHandler(
         sandboxAccountStore: IsbServices.sandboxAccountStore(context.env),
         leaseStore: IsbServices.leaseStore(context.env),
         orgsService: IsbServices.orgsService(
+          context.env,
+          fromTemporaryIsbOrgManagementCredentials(context.env),
+        ),
+        organizationsTaggingService: IsbServices.organizationsTaggingService(
           context.env,
           fromTemporaryIsbOrgManagementCredentials(context.env),
         ),
@@ -310,6 +343,106 @@ async function ejectAccountHandler(
   };
 }
 
+async function quarantineAccountHandler(
+  event: IsbApiEvent,
+  context: AccountsApiContext,
+): Promise<APIGatewayProxyResult> {
+  const awsAccountId = parseAwsAccountIdFromPathParameters(
+    event.pathParameters,
+  );
+
+  const accountStore = IsbServices.sandboxAccountStore(context.env);
+  const accountResponse = await accountStore.get(awsAccountId);
+  const account = accountResponse.result;
+  if (accountResponse.error) {
+    logger.warn(
+      `${LogPatterns.DataValidationWarning.pattern}: Error in retrieving account ${awsAccountId}: ${accountResponse.error}`,
+    );
+  }
+
+  if (!account) {
+    throw createHttpJSendError({
+      statusCode: 404,
+      data: {
+        errors: [
+          {
+            message: `Account not found.`,
+          },
+        ],
+      },
+    });
+  }
+
+  if (account.status === "Quarantine") {
+    throw createHttpJSendError({
+      statusCode: 409,
+      data: {
+        errors: [
+          {
+            message: `Account is already quarantined.`,
+          },
+        ],
+      },
+    });
+  }
+
+  if (account.status === "CleanUp") {
+    throw createHttpJSendError({
+      statusCode: 409,
+      data: {
+        errors: [
+          {
+            message: `Account cannot be quarantined while cleanup is in progress.`,
+          },
+        ],
+      },
+    });
+  }
+
+  await InnovationSandbox.quarantineAccount(
+    {
+      accountId: awsAccountId,
+      currentOu: account.status,
+      reason: "Manually quarantined by administrator",
+      reasonForQuarantine: "MANUAL",
+    },
+    {
+      logger,
+      tracer,
+      sandboxAccountStore: accountStore,
+      leaseStore: IsbServices.leaseStore(context.env),
+      orgsService: IsbServices.orgsService(
+        context.env,
+        fromTemporaryIsbOrgManagementCredentials(context.env),
+      ),
+      organizationsTaggingService: IsbServices.organizationsTaggingService(
+        context.env,
+        fromTemporaryIsbOrgManagementCredentials(context.env),
+      ),
+      idcService: IsbServices.idcService(
+        context.env,
+        fromTemporaryIsbIdcCredentials(context.env),
+      ),
+      eventBridgeClient: IsbServices.isbEventBridge(context.env),
+      globalConfig: context.globalConfig,
+      blueprintStore: IsbServices.blueprintStore(context.env),
+      blueprintDeploymentService: IsbServices.blueprintDeploymentService(
+        context.env,
+      ),
+    },
+  );
+
+  return {
+    statusCode: 200,
+    body: JSON.stringify({
+      status: "success",
+    }),
+    headers: {
+      "Content-Type": "application/json",
+    },
+  };
+}
+
 async function retryCleanupHandler(
   event: IsbApiEvent,
   context: AccountsApiContext,
@@ -323,7 +456,7 @@ async function retryCleanupHandler(
   const account = accountResponse.result;
   if (accountResponse.error) {
     logger.warn(
-      `${AppInsightsLogPatterns.DataValidationWarning.pattern}: Error retrieving account ${awsAccountId}: ${accountResponse.error}`,
+      `${LogPatterns.DataValidationWarning.pattern}: Error retrieving account ${awsAccountId}: ${accountResponse.error}`,
     );
   }
 
@@ -344,6 +477,7 @@ async function retryCleanupHandler(
     await InnovationSandbox.retryCleanup(
       {
         sandboxAccount: account,
+        initiatedBy: getUserEmail(context.user),
       },
       {
         logger,
@@ -353,11 +487,18 @@ async function retryCleanupHandler(
           context.env,
           fromTemporaryIsbOrgManagementCredentials(context.env),
         ),
+        organizationsTaggingService: IsbServices.organizationsTaggingService(
+          context.env,
+          fromTemporaryIsbOrgManagementCredentials(context.env),
+        ),
         sandboxAccountStore: accountStore,
       },
     );
   } catch (error) {
-    if (error instanceof AccountNotInQuarantineError) {
+    if (
+      error instanceof AccountNotInQuarantineError ||
+      error instanceof AccountInCleanUpError
+    ) {
       throw createHttpJSendError({
         statusCode: 409,
         data: { errors: [{ message: error.message }] },
@@ -393,7 +534,7 @@ async function findUnregisteredAccountsHandler(
     );
   }
 
-  const { pageIdentifier, pageSize } = parsedPaginationParametersResult.data;
+  const { pageIdentifier, maxResults } = parsedPaginationParametersResult.data;
 
   const orgService = IsbServices.orgsService(
     context.env,
@@ -403,7 +544,7 @@ async function findUnregisteredAccountsHandler(
   const unregisteredAccounts = await orgService.listAccountsInOU({
     ouName: "Entry",
     pageIdentifier,
-    pageSize,
+    pageSize: maxResults,
   });
 
   return {
@@ -438,4 +579,144 @@ function parseAwsAccountIdFromPathParameters(
     throw createHttpJSendValidationError(parsedPathParametersResponse.error);
   }
   return parsedPathParametersResponse.data.awsAccountId;
+}
+
+/**
+ * Projects a CleanupReport to its public API shape, including only fields
+ * that are meaningful to API consumers. Internal fields (pk, sk, ttl, meta,
+ * skipCooldownCallbackId) are excluded by default.
+ */
+function toApiResponse(report: CleanupReport) {
+  return {
+    accountId: report.accountId,
+    durableExecutionArn: report.durableExecutionArn,
+    status: report.status,
+    cleanupStatus: report.cleanupStatus,
+    startedAt: report.startedAt,
+    completedAt: report.completedAt,
+    reasonForCleanup: report.reasonForCleanup,
+    initiatedBy: report.initiatedBy,
+    resourceSummary: report.resourceSummary,
+    steps: report.steps,
+    error: report.error,
+    cooldownSkippedBy: report.cooldownSkippedBy,
+  };
+}
+
+async function listCleanupReportsHandler(
+  event: IsbApiEvent,
+  context: AccountsApiContext,
+): Promise<APIGatewayProxyResult> {
+  const awsAccountId = parseAwsAccountIdFromPathParameters(
+    event.pathParameters,
+  );
+
+  const parsedQueryParams = createPaginationQueryStringParametersSchema({
+    maxPageSize: 10,
+    defaultPageSize: 5,
+  }).safeParse(event.queryStringParameters);
+
+  if (!parsedQueryParams.success) {
+    throw createHttpJSendValidationError(parsedQueryParams.error);
+  }
+
+  const { maxResults, pageIdentifier } = parsedQueryParams.data;
+
+  const cleanupReportStore = IsbServices.cleanupReportStore(context.env);
+  const queryResult = await cleanupReportStore.listRecentReports({
+    accountId: awsAccountId,
+    limit: maxResults,
+    pageIdentifier: pageIdentifier ?? undefined,
+  });
+
+  return {
+    statusCode: 200,
+    body: JSON.stringify({
+      status: "success",
+      data: {
+        result: queryResult.result.map(toApiResponse),
+        nextPageIdentifier: queryResult.nextPageIdentifier,
+      },
+    }),
+    headers: {
+      "Content-Type": "application/json",
+    },
+  };
+}
+
+async function skipCooldownHandler(
+  event: IsbApiEvent,
+  context: AccountsApiContext,
+): Promise<APIGatewayProxyResult> {
+  const awsAccountId = parseAwsAccountIdFromPathParameters(
+    event.pathParameters,
+  );
+
+  const cleanupReportStore = IsbServices.cleanupReportStore(context.env);
+  const latestReport = await cleanupReportStore.getLatestReport(awsAccountId);
+
+  if (
+    !latestReport.result ||
+    latestReport.result.status !== "IN_PROGRESS" ||
+    latestReport.result.cleanupStatus !== "COOLING_DOWN"
+  ) {
+    throw createHttpJSendError({
+      statusCode: 409,
+      data: {
+        errors: [{ message: "Account is not in an active cooldown." }],
+      },
+    });
+  }
+
+  const report = latestReport.result;
+
+  if (!report.skipCooldownCallbackId) {
+    throw createHttpJSendError({
+      statusCode: 409,
+      data: {
+        errors: [
+          {
+            message:
+              "No skip cooldown callback ID found. The cooldown may have already completed.",
+          },
+        ],
+      },
+    });
+  }
+
+  const userEmail = getUserEmail(context.user);
+
+  // Persist who skipped the cooldown BEFORE resuming execution — the durable
+  // function reads cooldownSkippedBy from the report when building the metric log.
+  const reportKey = new CleanupReportKey(awsAccountId, report.startedAt);
+  await cleanupReportStore.updateReport({
+    key: reportKey,
+    cooldownSkippedBy: userEmail,
+  });
+
+  // Now resume the durable execution
+  const lambdaClient = IsbClients.lambda(context.env);
+  await lambdaClient.send(
+    new SendDurableExecutionCallbackSuccessCommand({
+      CallbackId: report.skipCooldownCallbackId,
+    }),
+  );
+
+  logger.info("CooldownSkipped", {
+    logDetailType: "CooldownSkipped",
+    accountId: awsAccountId,
+    skippedBy: userEmail,
+    durableExecutionArn: report.durableExecutionArn,
+  });
+
+  return {
+    statusCode: 200,
+    body: JSON.stringify({
+      status: "success",
+      data: { message: "Cooldown skipped successfully." },
+    }),
+    headers: {
+      "Content-Type": "application/json",
+    },
+  };
 }

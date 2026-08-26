@@ -59,12 +59,12 @@ export const TermsOfServiceForm = ({
             Before continuing, please review the terms of service below.
           </Box>
           <Container>
-            {config?.termsOfService ? (
+            {config?.termsOfService?.content ? (
               <Box
                 variant="pre"
                 nativeAttributes={{ style: { textWrap: "auto" } }}
               >
-                {config.termsOfService}
+                {config.termsOfService.content}
               </Box>
             ) : (
               <Alert

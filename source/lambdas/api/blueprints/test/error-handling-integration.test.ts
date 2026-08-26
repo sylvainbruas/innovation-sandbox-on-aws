@@ -13,32 +13,25 @@ import {
   vi,
 } from "vitest";
 
-import { GlobalConfigSchema } from "@amzn/innovation-sandbox-commons/data/global-config/global-config.js";
 import { BlueprintLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/blueprint-lambda-environment.js";
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
 import {
   createAPIGatewayProxyEvent,
   isbAuthorizedUser,
   mockAuthorizedContext,
+  mockGlobalConfig,
 } from "@amzn/innovation-sandbox-commons/test/lambdas/fixtures.js";
 import {
   bulkStubEnv,
   mockAppConfigMiddleware,
 } from "@amzn/innovation-sandbox-commons/test/lambdas/utils.js";
-import {
-  GetSecretValueCommand,
-  SecretsManagerClient,
-} from "@aws-sdk/client-secrets-manager";
-
 const mockDynamoDBClient = mockClient(DynamoDBClient);
-const secretsManagerMock = mockClient(SecretsManagerClient);
-
 const testEnv = generateSchemaData(BlueprintLambdaEnvironmentSchema, {
   BLUEPRINT_TABLE_NAME: "test-blueprint-table",
   LEASE_TEMPLATE_TABLE_NAME: "test-lease-template-table",
 });
 
-const mockedGlobalConfig = generateSchemaData(GlobalConfigSchema);
+const mockedGlobalConfig = mockGlobalConfig();
 
 let handler: typeof import("../src/blueprints-handler.js").handler;
 
@@ -53,17 +46,11 @@ describe("Error Handling", () => {
     mockDynamoDBClient.reset();
     bulkStubEnv(testEnv);
     mockAppConfigMiddleware(mockedGlobalConfig);
-
-    // Mock Secrets Manager to return JWT secret
-    secretsManagerMock.on(GetSecretValueCommand).resolves({
-      SecretString: "testSecret",
-    });
   });
 
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.restoreAllMocks();
-    secretsManagerMock.reset();
   });
 
   describe("Invalid UUID in path parameter", () => {
@@ -72,9 +59,7 @@ describe("Error Handling", () => {
         httpMethod: "GET",
         path: "/blueprints/not-a-uuid",
         pathParameters: { blueprintId: "not-a-uuid" },
-        headers: {
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
-        },
+        isbUser: isbAuthorizedUser.user,
       });
 
       const response = await handler(event, mockAuthorizedContext(testEnv));
@@ -84,7 +69,7 @@ describe("Error Handling", () => {
       expect(body.status).toBe("fail");
       expect(body.data.errors[0]).toMatchObject({
         field: "blueprintId",
-        message: "Invalid uuid",
+        message: "Invalid UUID",
       });
     });
   });
@@ -96,8 +81,8 @@ describe("Error Handling", () => {
         path: "/blueprints",
         headers: {
           "content-type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
         body: '{"name": "test"',
       });
 
@@ -117,8 +102,8 @@ describe("Error Handling", () => {
         path: "/blueprints",
         headers: {
           "content-type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
         body: JSON.stringify({
           name: "Test-Blueprint",
           stackSetId: "test-stackset:12345",
@@ -133,7 +118,7 @@ describe("Error Handling", () => {
       const body = JSON.parse(response.body);
       expect(body.data.errors[0]).toMatchObject({
         field: "deploymentTimeoutMinutes",
-        message: "Expected number, received string",
+        message: "Invalid input: expected number, received string",
       });
     });
   });
@@ -145,8 +130,8 @@ describe("Error Handling", () => {
         path: "/blueprints",
         headers: {
           "content-type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
         body: JSON.stringify({
           name: "Test-Blueprint",
           stackSetId: "test-stackset:12345",

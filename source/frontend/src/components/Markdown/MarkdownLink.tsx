@@ -18,12 +18,18 @@ export const MarkdownLink = ({ href, children }: MarkdownLinkProps) => {
 
   const isInternal = href.startsWith("/") || href.startsWith("#");
 
+  // fontSize="inherit" so a link inside a markdown heading keeps the heading's
+  // size instead of dropping to the Link default body size.
   if (isInternal) {
-    return <TextLink to={href}>{children}</TextLink>;
+    return (
+      <TextLink to={href} fontSize="inherit">
+        {children}
+      </TextLink>
+    );
   }
 
   return (
-    <Link external variant="primary" href={href}>
+    <Link external variant="primary" fontSize="inherit" href={href}>
       {children}
     </Link>
   );

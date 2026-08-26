@@ -10,6 +10,7 @@ import type {
   CloudFormationCustomResourceUpdateEvent,
   Context,
 } from "aws-lambda";
+import { backOff } from "exponential-backoff";
 import pThrottle from "p-throttle";
 
 import { IdcConfig } from "@amzn/innovation-sandbox-commons/data/idc-stack-config/idc-stack-config.js";
@@ -307,7 +308,6 @@ async function listAllPermissionSets(
 
   return permissionSetsPromise;
 }
-
 async function createOrGetPermissionSet(
   client: SSOAdminClient,
   params: {
@@ -318,55 +318,92 @@ async function createOrGetPermissionSet(
 ) {
   const truncatedName = params.name.slice(0, PERMISSION_SET_NAME_MAX_LENGTH);
 
+  const response = await backOff(
+    async () => {
+      try {
+        const createPermissionSetResponse = await ssoAdminGlobalThrottle(() =>
+          client.send(
+            new CreatePermissionSetCommand({
+              Name: truncatedName,
+              Description: params.description,
+              InstanceArn: params.ssoInstanceArn,
+            }),
+          ),
+        )();
+
+        logger.info("Successfully created permission set", {
+          name: truncatedName,
+          permissionSetArn:
+            createPermissionSetResponse.PermissionSet?.PermissionSetArn,
+        });
+
+        return createPermissionSetResponse;
+      } catch (error: any) {
+        if (error instanceof SSOAdminConflictException) {
+          // Check if the permission set already exists (name conflict)
+          const permissionSets = await listAllPermissionSets(
+            client,
+            params.ssoInstanceArn,
+          );
+          const existingPermissionSet = permissionSets.find(
+            (ps) => ps.Name === truncatedName,
+          );
+
+          if (existingPermissionSet) {
+            logger.info("Found existing permission set", {
+              name: truncatedName,
+              permissionSetArn: existingPermissionSet.PermissionSetArn,
+            });
+            return { PermissionSet: existingPermissionSet };
+          }
+
+          // Clear the cached permission sets promise so we get fresh data on retry
+          permissionSetsPromise = undefined;
+        }
+        throw error;
+      }
+    },
+    {
+      numOfAttempts: 4,
+      startingDelay: 500,
+      jitter: "full",
+      retry(error: Error) {
+        if (error instanceof SSOAdminConflictException) {
+          logger.warn(
+            "SSO Admin ConflictException during permission set creation, retrying with backoff",
+            {
+              error: error.message,
+              permissionSetName: truncatedName,
+            },
+          );
+          return true;
+        }
+        return false;
+      },
+    },
+  );
+
   try {
-    const createPermissionSetResponse = await ssoAdminGlobalThrottle(() =>
-      client.send(
-        new CreatePermissionSetCommand({
-          Name: truncatedName,
-          Description: params.description,
-          InstanceArn: params.ssoInstanceArn,
-        }),
-      ),
-    )();
-
-    logger.info("Successfully created permission set", {
-      name: truncatedName,
-      permissionSetArn:
-        createPermissionSetResponse.PermissionSet?.PermissionSetArn,
-    });
-
     await ssoAdminGlobalThrottle(() =>
       client.send(
         new AttachManagedPolicyToPermissionSetCommand({
           InstanceArn: params.ssoInstanceArn,
-          PermissionSetArn:
-            createPermissionSetResponse.PermissionSet!.PermissionSetArn!,
+          PermissionSetArn: response.PermissionSet!.PermissionSetArn!,
           ManagedPolicyArn: "arn:aws:iam::aws:policy/AdministratorAccess",
         }),
       ),
     )();
     logger.info("Successfully attached admin policy");
-
-    return createPermissionSetResponse;
   } catch (error: any) {
     if (error instanceof SSOAdminConflictException) {
-      // If creation fails, get all permission sets and look for a match
-      const permissionSets = await listAllPermissionSets(
-        client,
-        params.ssoInstanceArn,
-      );
-      const existingPermissionSet = permissionSets.find(
-        (ps) => ps.Name === truncatedName,
-      );
-
-      if (existingPermissionSet) {
-        logger.info("Found existing permission set", {
-          name: truncatedName,
-          permissionSetArn: existingPermissionSet.PermissionSetArn,
-        });
-        return { PermissionSet: existingPermissionSet };
-      }
+      logger.info("Admin policy already attached to permission set", {
+        name: truncatedName,
+        permissionSetArn: response.PermissionSet!.PermissionSetArn,
+      });
+    } else {
+      throw error;
     }
-    throw error;
   }
+
+  return response;
 }

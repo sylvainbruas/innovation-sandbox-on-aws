@@ -35,6 +35,7 @@ vi.mock("p-throttle", () => ({
 }));
 
 beforeEach(async () => {
+  vi.useFakeTimers();
   handler = (
     await vi.importActual<
       typeof import("@amzn/innovation-sandbox-idc-configurer/idc-configurer-handler.js")
@@ -48,6 +49,7 @@ beforeEach(async () => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllEnvs();
 });
 
@@ -593,6 +595,94 @@ describe("IDC Configurer Handler", () => {
       });
 
       describe("Error Handling", () => {
+        it("should retry with exponential backoff on transient ConflictException and succeed", async () => {
+          identityStoreMock.on(GetGroupIdCommand).rejects(
+            new IdentitystoreResourceNotFoundException({
+              message: "Group not found",
+              $metadata: {},
+            }),
+          );
+          identityStoreMock.on(CreateGroupCommand).resolves({
+            GroupId: "new-group-id",
+          });
+
+          ssoAdminMock
+            .on(CreatePermissionSetCommand)
+            .rejectsOnce(
+              new SSOAdminConflictException({
+                message: "Found conflicting requests to create tenant keys",
+                $metadata: { httpStatusCode: 400 },
+              }),
+            )
+            .resolves({
+              PermissionSet: {
+                PermissionSetArn: "test-arn",
+              },
+            });
+          ssoAdminMock
+            .on(AttachManagedPolicyToPermissionSetCommand)
+            .resolves({});
+
+          ssoAdminMock.on(ListPermissionSetsCommand).resolves({
+            PermissionSets: [],
+          });
+
+          const promise = handler(event, mockContext(testEnv));
+
+          await vi.advanceTimersByTimeAsync(10000);
+
+          const response = await promise;
+
+          expect(response.Data).toMatchObject({
+            adminPermissionSetArn: "test-arn",
+            managerPermissionSetArn: "test-arn",
+            userPermissionSetArn: "test-arn",
+          });
+
+          // Verify that CreatePermissionSet was called more than 3 times
+          // (first call fails, retry succeeds, then 2 more for manager and user)
+          const createPSCalls = ssoAdminMock.commandCalls(
+            CreatePermissionSetCommand,
+          );
+          expect(createPSCalls.length).toBeGreaterThan(3);
+        });
+
+        it("should throw after exhausting all retry attempts on persistent ConflictException", async () => {
+          identityStoreMock.on(GetGroupIdCommand).rejects(
+            new IdentitystoreResourceNotFoundException({
+              message: "Group not found",
+              $metadata: {},
+            }),
+          );
+          identityStoreMock.on(CreateGroupCommand).resolves({
+            GroupId: "new-group-id",
+          });
+
+          // All CreatePermissionSet calls fail with the persistent conflict
+          ssoAdminMock.on(CreatePermissionSetCommand).rejects(
+            new SSOAdminConflictException({
+              message: "Found conflicting requests to create tenant keys",
+              $metadata: { httpStatusCode: 400 },
+            }),
+          );
+
+          // The fallback lists permission sets but finds NONE matching
+          ssoAdminMock.on(ListPermissionSetsCommand).resolves({
+            PermissionSets: [],
+          });
+
+          const promise = handler(event, mockContext(testEnv));
+          promise.catch(() => {});
+
+          await vi.advanceTimersByTimeAsync(10000);
+
+          await expect(promise).rejects.toThrow(SSOAdminConflictException);
+
+          expect(
+            ssoAdminMock.commandCalls(CreatePermissionSetCommand).length,
+          ).toBeGreaterThan(3);
+        });
+
         it("should handle errors thrown while creating resources", async () => {
           identityStoreMock.on(GetGroupIdCommand).rejects(
             new IdentitystoreResourceNotFoundException({

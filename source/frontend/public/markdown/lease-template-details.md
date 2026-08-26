@@ -6,9 +6,9 @@ View and edit all settings for this lease template.
 
 ---
 
-## Template Sections
+## Template sections
 
-**Basic Details**: Name, description, visibility, and approval requirements
+**Basic Details**: Name, description, visibility, approval requirements, and sharing settings
 
 **Blueprint Details**: Associated blueprint for automatic infrastructure deployment
 
@@ -22,4 +22,4 @@ View and edit all settings for this lease template.
 
 Choose **Edit** on any section to modify settings. Changes only affect new leases.
 
-For more information, see [Creating and managing lease templates](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/manager-guide.html#creating-managing-lease-templates) in the implementation guide.
+For more information, see [Creating and managing lease templates](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/manager-guide.html#creating-lease-templates) in the implementation guide.

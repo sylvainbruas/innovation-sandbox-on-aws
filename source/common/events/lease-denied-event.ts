@@ -7,8 +7,8 @@ import { IsbEvent } from "@amzn/innovation-sandbox-commons/sdk-clients/event-bri
 
 export const LeaseDeniedEventSchema = z.object({
   leaseId: z.string(),
-  deniedBy: z.string().email(),
-  userEmail: z.string().email(),
+  deniedBy: z.email(),
+  userEmail: z.email(),
 });
 
 export class LeaseDeniedEvent implements IsbEvent {

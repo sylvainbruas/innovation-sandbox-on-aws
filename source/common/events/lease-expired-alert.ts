@@ -10,7 +10,7 @@ import { AwsAccountIdSchema } from "@amzn/innovation-sandbox-commons/utils/zod.j
 export const LeaseExpiredEventSchema = z.object({
   leaseId: LeaseKeySchema,
   accountId: AwsAccountIdSchema,
-  leaseExpirationDate: z.string().datetime(),
+  leaseExpirationDate: z.iso.datetime(),
 });
 
 export class LeaseExpiredAlert implements IsbEvent {

@@ -4,6 +4,7 @@ import { Aws, Duration, RemovalPolicy } from "aws-cdk-lib";
 import { Policy, Role, ServicePrincipal } from "aws-cdk-lib/aws-iam";
 import { Key } from "aws-cdk-lib/aws-kms";
 import {
+  ApplicationLogLevel,
   Architecture,
   ILayerVersion,
   LoggingFormat,
@@ -19,21 +20,16 @@ import { LogGroup } from "aws-cdk-lib/aws-logs";
 import { Construct } from "constructs";
 import { z } from "zod";
 
-import {
-  BaseLambdaEnvironment,
-  LogLevelSchema,
-} from "@amzn/innovation-sandbox-commons/lambda/environments/base-lambda-environment";
+import { BaseLambdaEnvironment } from "@amzn/innovation-sandbox-commons/lambda/environments/base-lambda-environment";
 import { getAppConfigExtensionConfig } from "@amzn/innovation-sandbox-infrastructure/components/config/app-config-lambda-extension";
 import { IsbKmsKeys } from "@amzn/innovation-sandbox-infrastructure/components/kms";
 import { LambdaLayers } from "@amzn/innovation-sandbox-infrastructure/components/lambda-layers";
-import { getContextFromMapping } from "@amzn/innovation-sandbox-infrastructure/helpers/cdk-context";
 import { addCfnGuardSuppression } from "@amzn/innovation-sandbox-infrastructure/helpers/cfn-guard";
 import { isDevMode } from "@amzn/innovation-sandbox-infrastructure/helpers/deployment-mode";
 import { getCustomUserAgent } from "@amzn/innovation-sandbox-infrastructure/helpers/manifest-reader";
 
-export interface IsbLambdaFunctionProps<
-  T extends z.ZodSchema<any>,
-> extends Omit<NodejsFunctionProps, "role" | "runtime"> {
+export interface IsbLambdaFunctionProps<T extends z.ZodSchema<any>>
+  extends Omit<NodejsFunctionProps, "role" | "runtime"> {
   kmsKey?: Key;
   layers?: ILayerVersion[];
   logGroup?: LogGroup;
@@ -56,15 +52,9 @@ export class IsbLambdaFunction<T extends z.ZodSchema<any>> extends Construct {
       }),
     });
 
-    // prettier-ignore
     const baseEnvironment: BaseLambdaEnvironment = {
       NODE_OPTIONS: "--enable-source-maps",
       USER_AGENT_EXTRA: getCustomUserAgent(),
-      POWERTOOLS_LOG_LEVEL: isDevMode(scope)
-        ? "DEBUG"
-        : (getContextFromMapping(scope, "logLevel") as z.infer< // NOSONAR typescript:S4325 - type assertion is necessary for TypeScript type checking
-            typeof LogLevelSchema
-          >),
       POWERTOOLS_SERVICE_NAME: "innovation-sandbox",
       AWS_XRAY_CONTEXT_MISSING: "IGNORE_ERROR",
     };
@@ -83,12 +73,15 @@ export class IsbLambdaFunction<T extends z.ZodSchema<any>> extends Construct {
     this.lambdaFunction = new NodejsFunction(this, "Function", {
       functionName: `ISB-${id}-${props.namespace}`,
       role: functionRole,
-      runtime: Runtime.NODEJS_22_X,
+      runtime: Runtime.NODEJS_24_X,
       architecture: Architecture.ARM_64,
       tracing: Tracing.ACTIVE,
       timeout: Duration.minutes(1),
       memorySize: 1024,
       loggingFormat: LoggingFormat.JSON,
+      applicationLogLevelV2: isDevMode(scope)
+        ? ApplicationLogLevel.DEBUG
+        : ApplicationLogLevel.INFO,
       systemLogLevelV2: SystemLogLevel.INFO,
       ...props,
       bundling: {
@@ -111,7 +104,9 @@ export class IsbLambdaFunction<T extends z.ZodSchema<any>> extends Construct {
       const functionLogGroup = new LogGroup(this, "FunctionLogGroup", {
         logGroupName: `/aws/lambda/${this.lambdaFunction.functionName}`,
         encryptionKey: this.kmsKey,
-        removalPolicy: RemovalPolicy.RETAIN,
+        removalPolicy: isDevMode(scope)
+          ? RemovalPolicy.DESTROY
+          : RemovalPolicy.RETAIN,
       });
       const functionPolicy = new Policy(this, "FunctionPolicy", {
         roles: [functionRole],

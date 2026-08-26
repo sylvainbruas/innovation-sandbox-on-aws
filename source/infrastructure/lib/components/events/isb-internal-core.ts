@@ -8,6 +8,7 @@ import {
 } from "aws-cdk-lib/aws-events";
 import { Effect, PolicyStatement, ServicePrincipal } from "aws-cdk-lib/aws-iam";
 import { Key } from "aws-cdk-lib/aws-kms";
+import { CfnResourcePolicy } from "aws-cdk-lib/aws-logs";
 import { Queue, QueueEncryption } from "aws-cdk-lib/aws-sqs";
 import { Construct } from "constructs";
 
@@ -22,6 +23,7 @@ export type IsbEventBackplaneProps = {
   kmsKey: Key;
   readonly orgMgtAccountId: string;
   readonly idcAccountId: string;
+  readonly webAppUrl: string;
 };
 
 /**
@@ -36,12 +38,14 @@ export class IsbInternalCore {
 
   constructor(scope: Construct, props: IsbEventBackplaneProps) {
     this.eventBus = new EventBus(scope, "ISBEventBus", {
+      eventBusName: `${props.namespace}-ISBEventBus`,
       description: "core event bus for all ISB activity",
       kmsKey: props.kmsKey,
       deadLetterQueue: new Queue(scope, "ISBEventBusDLQ", {
         queueName: `ISB-${props.namespace}-ISBEventBus-DLQ`,
         encryption: QueueEncryption.KMS,
         encryptionMasterKey: props.kmsKey,
+        enforceSSL: true,
       }),
     });
 
@@ -57,9 +61,17 @@ export class IsbInternalCore {
       }),
     );
 
+    // Namespace the log group's auto-named (construct-id-derived) resource policy so
+    // multiple ISB instances in one account/region don't collide on the policy name.
+    const globalLogGroupPolicy = IsbComputeResources.globalLogGroup.node.findChild(
+      "Policy",
+    ).node.defaultChild as CfnResourcePolicy;
+    globalLogGroupPolicy.policyName = `${props.namespace}-ISBLogGroupPolicy`;
+
     const dlq = new Queue(scope, "DLQ", {
       encryption: QueueEncryption.KMS,
       encryptionMasterKey: props.kmsKey,
+      enforceSSL: true,
     });
 
     new Rule(scope, "ISBEventBusLogging", {
@@ -122,6 +134,7 @@ export class IsbInternalCore {
       isbEventBus: this.eventBus,
       namespace: props.namespace,
       idcAccountId: props.idcAccountId,
+      webAppUrl: props.webAppUrl,
     });
   }
 }

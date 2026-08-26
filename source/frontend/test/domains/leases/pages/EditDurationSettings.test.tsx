@@ -9,7 +9,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { EditDurationSettings } from "@amzn/innovation-sandbox-frontend/domains/leases/pages/EditDurationSettings";
 import { MonitoredLeaseWithLeaseId } from "@amzn/innovation-sandbox-frontend/domains/leases/types";
-import { config } from "@amzn/innovation-sandbox-frontend/helpers/config";
+import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
 import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
 import { ApiResponse } from "@amzn/innovation-sandbox-frontend/types";
@@ -79,14 +79,14 @@ describe("EditDurationSettings", () => {
 
     // Setup default MSW handlers
     server.use(
-      http.get(`${config.ApiUrl}/leases/lease-123`, () => {
+      http.get(`${getConfig().ApiUrl}/leases/lease-123`, () => {
         const response: ApiResponse<MonitoredLeaseWithLeaseId> = {
           status: "success",
           data: mockLease,
         };
         return HttpResponse.json(response);
       }),
-      http.get(`${config.ApiUrl}/configurations`, () => {
+      http.get(`${getConfig().ApiUrl}/configurations`, () => {
         const response: ApiResponse<typeof mockConfig> = {
           status: "success",
           data: mockConfig,
@@ -98,7 +98,7 @@ describe("EditDurationSettings", () => {
 
   it("shows loading state while fetching lease data", () => {
     server.use(
-      http.get(`${config.ApiUrl}/leases/lease-123`, () => {
+      http.get(`${getConfig().ApiUrl}/leases/lease-123`, () => {
         // Simulate loading by delaying indefinitely
         return new Promise(() => {});
       }),
@@ -111,7 +111,7 @@ describe("EditDurationSettings", () => {
 
   it("shows loading state while fetching config data", () => {
     server.use(
-      http.get(`${config.ApiUrl}/configurations`, () => {
+      http.get(`${getConfig().ApiUrl}/configurations`, () => {
         // Simulate loading by delaying indefinitely
         return new Promise(() => {});
       }),
@@ -124,7 +124,7 @@ describe("EditDurationSettings", () => {
 
   it("shows error state when lease fails to load", async () => {
     server.use(
-      http.get(`${config.ApiUrl}/leases/lease-123`, () => {
+      http.get(`${getConfig().ApiUrl}/leases/lease-123`, () => {
         return HttpResponse.json(
           { status: "error", message: "Failed to load lease" },
           { status: 500 },
@@ -146,7 +146,7 @@ describe("EditDurationSettings", () => {
 
     // Test retry functionality
     server.use(
-      http.get(`${config.ApiUrl}/leases/lease-123`, () => {
+      http.get(`${getConfig().ApiUrl}/leases/lease-123`, () => {
         const response: ApiResponse<MonitoredLeaseWithLeaseId> = {
           status: "success",
           data: mockLease,
@@ -164,7 +164,7 @@ describe("EditDurationSettings", () => {
 
   it("shows error state when config fails to load", async () => {
     server.use(
-      http.get(`${config.ApiUrl}/configurations`, () => {
+      http.get(`${getConfig().ApiUrl}/configurations`, () => {
         return HttpResponse.json(
           { status: "error", message: "Failed to load config" },
           { status: 500 },
@@ -186,7 +186,7 @@ describe("EditDurationSettings", () => {
 
     // Test retry functionality
     server.use(
-      http.get(`${config.ApiUrl}/configurations`, () => {
+      http.get(`${getConfig().ApiUrl}/configurations`, () => {
         const response: ApiResponse<typeof mockConfig> = {
           status: "success",
           data: mockConfig,
@@ -291,7 +291,7 @@ describe("EditDurationSettings", () => {
     };
 
     server.use(
-      http.get(`${config.ApiUrl}/leases/lease-123`, () => {
+      http.get(`${getConfig().ApiUrl}/leases/lease-123`, () => {
         const response: ApiResponse<MonitoredLeaseWithLeaseId> = {
           status: "success",
           data: leaseWithNoDuration,
@@ -338,7 +338,7 @@ describe("EditDurationSettings", () => {
     };
 
     server.use(
-      http.get(`${config.ApiUrl}/leases/lease-123`, () => {
+      http.get(`${getConfig().ApiUrl}/leases/lease-123`, () => {
         const response: ApiResponse<MonitoredLeaseWithLeaseId> = {
           status: "success",
           data: leaseWithoutStartDate as any,

@@ -2,25 +2,16 @@
 title: Accounts
 ---
 
-The **Accounts** page displays all the accounts currently in the Account Pool, regardless of their status.
+The **Accounts** page displays all accounts in the account pool, regardless of status. Choose an account ID to view its details and cleanup history.
 
 ---
 
-**Managing accounts**
+## Managing accounts
 
-If the account clean-up workflow is unsuccessful, the solution will move the account to a **Quarantine** state. Accounts in the Quarantine status may have active AWS resources that still incur cost. We recommend that you investigate these accounts as soon as possible, and manually troubleshoot any issues, before attempting to retrying the clean-up process. Refer to the [Investigating accounts in Quarantine state](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/troubleshooting.html#investigating-accounts) section.
+Accounts in **Quarantine** might have active resources that incur costs. Investigate and troubleshoot before retrying cleanup.
 
-Accounts in **Frozen** status could have active AWS resources running in them that still incur cost. As a next step, you can either:
+Accounts in **Frozen** status might also incur costs. You can eject the account to preserve resources, or wait for automatic cleanup after thresholds are exceeded.
 
-- Eject the account out of the sandbox OU structure if you want to preserve the AWS resources, or
-- Clean-up the resources in the account, and reuse for sandbox experiments.
+Accounts in **Clean Up** show a sub-status indicating the current cleanup phase (Initializing, Revoking Access, Nuke Phase, Cooling Down, Validating).
 
-If no manual action is taken, the solution will automatically clean-up and recycle the account for reuse after final budget/duration thresholds are exceeded.
-
-Refer to the [Managing existing accounts](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/administrator-guide.html#manage-accounts) section.
-
-When a clean-up action is initiated, the solution will complete multiple clean up attempts and update the status.
-
-- Upon successful clean up of AWS resources in an account, the solution will move the account to the pool of available accounts for sandbox use.
-- If the account clean-up workflow is unsuccessful, the solution will move the account to **Quarantine** and send an email to the Admin. You will need to manually clean-up the remaining resources and initiate the _Retry Cleanup_ action.
-- If the workflow fails to move the account to **Available** or **Quarantine** status within 24 hours, the **Clean-up** status is displayed in red, and you will have to manually perform the **Retry Cleanup** action.
+For more information, see [Managing existing accounts](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/administrator-guide.html#manage-accounts).

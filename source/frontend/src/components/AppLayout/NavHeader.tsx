@@ -7,7 +7,11 @@ import TopNavigation, {
 import { Density, Mode } from "@cloudscape-design/global-styles";
 import { FC, useMemo } from "react";
 
-import { IsbUser } from "@amzn/innovation-sandbox-commons/types/isb-types";
+import {
+  type IsbUser,
+  getUserEmail,
+  getUserLabel,
+} from "@amzn/innovation-sandbox-commons/utils/auth-utils";
 import { useAppContext } from "@amzn/innovation-sandbox-frontend/components/AppContext/context";
 
 export interface NavHeaderProps {
@@ -96,8 +100,8 @@ export const NavHeader: FC<NavHeaderProps> = ({
     if (user) {
       menu.push({
         type: "menu-dropdown",
-        text: user.displayName,
-        description: user.email,
+        text: getUserLabel(user),
+        description: getUserEmail(user),
         iconName: "user-profile",
         items: [{ id: "exit", text: "Exit" }],
         onItemClick: onExit,

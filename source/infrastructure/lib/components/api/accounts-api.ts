@@ -2,16 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 import { Aws } from "aws-cdk-lib";
 import { LambdaIntegration } from "aws-cdk-lib/aws-apigateway";
-import { Role } from "aws-cdk-lib/aws-iam";
+import { PolicyStatement, Role } from "aws-cdk-lib/aws-iam";
 import { Construct } from "constructs";
 import path from "path";
 
 import { AccountLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/account-lambda-environment.js";
 import {
   RestApi,
-  RestApiResourceProps,
+  RestApiProps,
 } from "@amzn/innovation-sandbox-infrastructure/components/api/rest-api-all";
-import { addAppConfigExtensionLayer } from "@amzn/innovation-sandbox-infrastructure/components/config/app-config-lambda-extension";
 import { IsbLambdaFunction } from "@amzn/innovation-sandbox-infrastructure/components/isb-lambda-function";
 import { IsbKmsKeys } from "@amzn/innovation-sandbox-infrastructure/components/kms";
 import {
@@ -22,21 +21,23 @@ import {
 } from "@amzn/innovation-sandbox-infrastructure/helpers/isb-roles";
 import {
   grantCfnStackSetCleanupPermissions,
-  grantIsbAppConfigRead,
+  grantIsbDbReadOnly,
   grantIsbDbReadWrite,
   grantIsbSsmParameterRead,
 } from "@amzn/innovation-sandbox-infrastructure/helpers/policy-generators";
 import { IsbComputeStack } from "@amzn/innovation-sandbox-infrastructure/isb-compute-stack";
 
 export class AccountsApi {
-  constructor(restApi: RestApi, scope: Construct, props: RestApiResourceProps) {
+  constructor(restApi: RestApi, scope: Construct, props: RestApiProps) {
+    const { namespace } = props;
     const {
-      configApplicationId,
-      configEnvironmentId,
-      globalConfigConfigurationProfileId,
+      configTableName,
       accountTable,
       leaseTable,
       blueprintTable,
+      cleanupReportTable,
+      cognitoUserPoolId,
+      cognitoAppClientId,
     } = IsbComputeStack.sharedSpokeConfig.data;
 
     const accountsLambdaFunction = new IsbLambdaFunction(
@@ -58,27 +59,24 @@ export class AccountsApi {
           "accounts-handler.ts",
         ),
         handler: "handler",
-        namespace: props.namespace,
+        namespace: namespace,
         environment: {
-          JWT_SECRET_NAME: props.jwtSecret.secretName,
-          APP_CONFIG_APPLICATION_ID: configApplicationId,
-          APP_CONFIG_PROFILE_ID: globalConfigConfigurationProfileId,
-          APP_CONFIG_ENVIRONMENT_ID: configEnvironmentId,
-          AWS_APPCONFIG_EXTENSION_PREFETCH_LIST: `/applications/${configApplicationId}/environments/${configEnvironmentId}/configurations/${globalConfigConfigurationProfileId}`,
+          CONFIG_TABLE_NAME: configTableName,
           ACCOUNT_TABLE_NAME: accountTable,
           LEASE_TABLE_NAME: leaseTable,
           BLUEPRINT_TABLE_NAME: blueprintTable,
-          SANDBOX_ACCOUNT_ROLE_NAME: getSandboxAccountRoleName(props.namespace),
-          ISB_NAMESPACE: props.namespace,
+          CLEANUP_REPORT_TABLE_NAME: cleanupReportTable,
+          SANDBOX_ACCOUNT_ROLE_NAME: getSandboxAccountRoleName(namespace),
+          ISB_NAMESPACE: namespace,
           INTERMEDIATE_ROLE_ARN: IntermediateRole.getRoleArn(),
           ORG_MGT_ROLE_ARN: getOrgMgtRoleArn(
             scope,
-            props.namespace,
+            namespace,
             props.orgMgtAccountId,
           ),
           IDC_ROLE_ARN: getIdcRoleArn(
             scope,
-            props.namespace,
+            namespace,
             props.idcAccountId,
           ),
           ACCOUNT_POOL_CONFIG_PARAM_ARN:
@@ -90,6 +88,8 @@ export class AccountsApi {
           ORG_MGT_ACCOUNT_ID: props.orgMgtAccountId,
           IDC_ACCOUNT_ID: props.idcAccountId,
           HUB_ACCOUNT_ID: Aws.ACCOUNT_ID,
+          COGNITO_USER_POOL_ID: cognitoUserPoolId,
+          COGNITO_APP_CLIENT_ID: cognitoAppClientId,
         },
         logGroup: restApi.logGroup,
         envSchema: AccountLambdaEnvironmentSchema,
@@ -110,17 +110,12 @@ export class AccountsApi {
       IsbComputeStack.sharedSpokeConfig.data.accountTable,
       IsbComputeStack.sharedSpokeConfig.data.leaseTable,
       IsbComputeStack.sharedSpokeConfig.data.blueprintTable,
+      IsbComputeStack.sharedSpokeConfig.data.cleanupReportTable,
     );
-    grantIsbAppConfigRead(
-      scope,
-      accountsLambdaFunction,
-      globalConfigConfigurationProfileId,
-    );
-    addAppConfigExtensionLayer(accountsLambdaFunction);
+    grantIsbDbReadOnly(scope, accountsLambdaFunction, configTableName);
     props.isbEventBus.grantPutEventsTo(accountsLambdaFunction.lambdaFunction);
 
-    props.jwtSecret.grantRead(accountsLambdaFunction.lambdaFunction);
-    IsbKmsKeys.get(scope, props.namespace).grantEncryptDecrypt(
+    IsbKmsKeys.get(scope, namespace).grantEncryptDecrypt(
       accountsLambdaFunction.lambdaFunction,
     );
 
@@ -131,6 +126,14 @@ export class AccountsApi {
 
     IntermediateRole.addTrustedRole(
       accountsLambdaFunction.lambdaFunction.role! as Role,
+    );
+
+    // Grant permission to skip account cooldown via durable execution callback
+    (accountsLambdaFunction.lambdaFunction.role! as Role).addToPolicy(
+      new PolicyStatement({
+        actions: ["lambda:SendDurableExecutionCallbackSuccess"],
+        resources: [`${props.durableCleanupFunctionArn}:*/durable-execution/*`],
+      }),
     );
 
     const accountsResource = restApi.root.addResource("accounts", {
@@ -152,8 +155,19 @@ export class AccountsApi {
     const accountEjectResource = accountIdResource.addResource("eject");
     accountEjectResource.addMethod("POST");
 
+    const accountQuarantineResource =
+      accountIdResource.addResource("quarantine");
+    accountQuarantineResource.addMethod("POST");
+
     const accountsUnregisteredResource =
       accountsResource.addResource("unregistered");
     accountsUnregisteredResource.addMethod("GET");
+
+    const cleanupReportsResource =
+      accountIdResource.addResource("cleanup-reports");
+    cleanupReportsResource.addMethod("GET");
+
+    const skipCooldownResource = accountIdResource.addResource("skipCooldown");
+    skipCooldownResource.addMethod("POST");
   }
 }

@@ -14,12 +14,13 @@ import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTe
 
 // Mock the useNavigate hook
 const mockNavigate = vi.fn();
+const testLeaseId = crypto.randomUUID();
 vi.mock("react-router-dom", async () => {
   const actual = await vi.importActual("react-router-dom");
   return {
     ...actual,
     useNavigate: () => mockNavigate,
-    useParams: () => ({ leaseId: "test-lease-id" }),
+    useParams: () => ({ leaseId: testLeaseId }),
   };
 });
 
@@ -30,7 +31,7 @@ vi.mock("@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb", () => ({
 
 describe("ApprovalDetails", () => {
   const mockLease = createPendingLease({
-    uuid: "test-lease-id",
+    uuid: testLeaseId,
   });
 
   beforeEach(() => {
@@ -51,7 +52,7 @@ describe("ApprovalDetails", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
-        mockLease.userEmail,
+        `${mockLease.originalLeaseTemplateName} (${mockLease.uuid.slice(0, 8)})`,
       );
       expect(
         screen.getByText(mockLease.originalLeaseTemplateName, {

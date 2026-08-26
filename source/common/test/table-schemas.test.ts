@@ -35,6 +35,12 @@ import {
   PendingLeaseSchema,
 } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import {
+  GroupAssignmentSchema,
+  GroupMembershipCacheSchema,
+  PrincipalSchemaVersion,
+  UserAssignmentSchema,
+} from "@amzn/innovation-sandbox-commons/data/principal/principal.js";
+import {
   SandboxAccountSchema,
   SandboxAccountSchemaVersion,
 } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
@@ -42,46 +48,60 @@ import {
 test("LeaseTemplate Schema Version", () => {
   //Changes to this test have critical upgrade path implications as detailed at the top of this file
   expect(objectHash.sha1(LeaseTemplateSchema.shape)).toMatchInlineSnapshot(
-    `"3d46ee015190c3e6b35cad8a244c756a13a57ae9"`,
+    `"1e46cde63c2b28d5547f1903b4cf54b8a214ede3"`,
   );
-  expect(LeaseTemplateSchemaVersion).toEqual(3);
+  expect(LeaseTemplateSchemaVersion).toEqual(4);
 });
 
 test("Lease Schema Version", () => {
   //Changes to this test have critical upgrade path implications as detailed at the top of this file
   expect(objectHash.sha1(PendingLeaseSchema.shape)).toMatchInlineSnapshot(
-    `"c4a59a3fe622dd7584cf5dfcb314f5b519a95b1c"`,
+    `"739c05d6d508f176215c589da02ec411d70b7cf0"`,
   );
   expect(
     objectHash.sha1(ApprovalDeniedLeaseSchema.shape),
-  ).toMatchInlineSnapshot(`"4771510cfadbbc8d2b2be4e58edba02a7d8091cf"`);
+  ).toMatchInlineSnapshot(`"debf5d0f05944bc1b73326919a4441bfbf00c5ea"`);
   expect(objectHash.sha1(MonitoredLeaseSchema.shape)).toMatchInlineSnapshot(
-    `"15c4120d6254a56ebba1cf8c2d49200911ce61ed"`,
+    `"fd7006975b048fc87e2ee0892a04c9fce7a40c0b"`,
   );
   expect(objectHash.sha1(ExpiredLeaseSchema.shape)).toMatchInlineSnapshot(
-    `"d6c97629462bb477448d644f94e6cac7eceb6778"`,
+    `"78baad9302cb24b73ad94c88cf8c6436a9b26242"`,
   );
-  expect(LeaseSchemaVersion).toEqual(3);
+  expect(LeaseSchemaVersion).toEqual(4);
 });
 
 test("SandboxAccount Schema Version", () => {
   //Changes to this test have critical upgrade path implications as detailed at the top of this file
   expect(objectHash.sha1(SandboxAccountSchema.shape)).toMatchInlineSnapshot(
-    `"48aa14f06a1a3c0c3722917f076486bd2325db9d"`,
+    `"a3347fd7aac558b63b24198e3bc039aa13dd36f6"`,
   );
-  expect(SandboxAccountSchemaVersion).toEqual(1);
+  expect(SandboxAccountSchemaVersion).toEqual(2);
 });
 
 test("Blueprint Schema Version", () => {
   //Changes to this test have critical upgrade path implications as detailed at the top of this file
   expect(objectHash.sha1(BlueprintItemSchema.shape)).toMatchInlineSnapshot(
-    `"3fda6ff7037b064e2844090050a8775dc457d5d6"`,
+    `"281fee84ac41a3208505e530c60792da92f73d42"`,
   );
   expect(objectHash.sha1(StackSetItemSchema.shape)).toMatchInlineSnapshot(
-    `"4cffc26d63954218083438cdbba4557a578c2946"`,
+    `"b30be5fc056b1fd4102a28b337daf5edfba10561"`,
   );
   expect(
     objectHash.sha1(DeploymentHistoryItemSchema.shape),
-  ).toMatchInlineSnapshot(`"360fa8296a0eb1ea9b83af76731b0cbe1b627d0c"`);
+  ).toMatchInlineSnapshot(`"dcbcc8e9cb9a31704d9e4caf1ab7ea1a75416477"`);
   expect(BlueprintSchemaVersion).toEqual(1);
+});
+
+test("Principal Schema Version", () => {
+  //Changes to this test have critical upgrade path implications as detailed at the top of this file
+  expect(objectHash.sha1(UserAssignmentSchema.shape)).toMatchInlineSnapshot(
+    `"7fccccb74e31d6ece696994096fd5de3a76c97f0"`,
+  );
+  expect(objectHash.sha1(GroupAssignmentSchema.shape)).toMatchInlineSnapshot(
+    `"d20730a6aec66a4a1d6f7b7b59b7510c521eac07"`,
+  );
+  expect(
+    objectHash.sha1(GroupMembershipCacheSchema.shape),
+  ).toMatchInlineSnapshot(`"7d6b270ae7f4ffbd3793d1425cf5e5ad38ed791a"`);
+  expect(PrincipalSchemaVersion).toEqual(1);
 });

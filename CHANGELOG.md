@@ -5,6 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-08-26
+
+### Added
+
+- Multi-user lease sharing enabling collaborative access to sandbox accounts with support for individual users and IAM Identity Center groups ([#15](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/15), [#77](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/77), [#89](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/89))
+- In-app configuration management replacing AWS AppConfig with a DynamoDB-backed Admin Settings UI, with automated migration on upgrade
+- Amazon Cognito authentication with SigV4 request signing, replacing the custom SAML + self-signed JWT implementation
+- Machine-to-machine (M2M) API access via per-client IAM roles with CloudTrail audit trail and CLI helper scripts (`scripts/m2m/`) ([#19](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/19))
+- Post-cleanup resource validation using AWS Resource Explorer to detect residual resources before account reuse
+- Configurable account cooldown period after cleanup to ensure cost data settlement before reuse ([#70](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/70))
+- Cleanup summary reports visible in the UI showing per-stage outcomes and execution history
+- Account tagging for native AWS cost allocation, enabling Cost Explorer, Budgets, and Cost Anomaly Detection analysis by user, team, and lease template
+- SCP customization parameters (`AdditionalAllowedServices`, `AdditionalPrincipalExceptions`, `BedrockInferenceProfilePatterns`) that persist across upgrades ([#74](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/74), [#83](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/83), [#39](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/39))
+- 18 new services added to the baseline allowed services SCP including `sts:*`, `ssm-guiconnect:*`, `execute-api:*`, `ecr-public:*`, `eks-auth:*`, Bedrock AgentCore, S3 Tables, S3 Vectors, and Textract ([#59](https://github.com/aws-solutions/innovation-sandbox-on-aws/pull/59) @YutaOkoshi, [#67](https://github.com/aws-solutions/innovation-sandbox-on-aws/pull/67) @marcpeiser, [#73](https://github.com/aws-solutions/innovation-sandbox-on-aws/pull/73) @chrisns, [#163](https://github.com/aws-solutions/innovation-sandbox-on-aws/pull/163) @ia9, [#81](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/81), [#109](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/109), [#162](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/162))
+- Manual account quarantine allowing administrators to temporarily isolate accounts from the UI ([#85](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/85))
+- User self-service lease termination from the lease details page ([#33](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/33))
+- Custom domain support for CloudFront with BYO ACM certificate ([#65](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/65))
+- Support for multiple Innovation Sandbox deployments within the same AWS Organization via namespaced global resources ([#14](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/14))
+
+### Fixed
+
+- Account cleanup now passes the ISB spoke role to CloudFormation during stack deletion, resolving failures on stacks deployed with a creation role ([#118](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/118))
+- Account cleanup no longer fails when AWS Security Incident Response is enabled in sandbox accounts ([#101](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/101))
+- Concurrent cleanup executions no longer spuriously quarantine accounts
+- Email notifications render properly formatted HTML anchor tags
+- Fixed stale data displayed in UI after state changes
+
+### Changed
+
+- Authentication mechanism migrated from custom SAML + self-signed JWT to Amazon Cognito with SigV4 (**breaking** — post-deployment SAML app reconfiguration required; see [upgrade guide](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/update-the-solution.html))
+
+### Removed
+
+- Amazon CloudWatch Application Insights integration
+- AppConfig extension from all non-nuke Lambda functions
+- Custom JWT secret rotation Lambda and Secrets Manager secret
+- SSO Handler Lambda (replaced by Cognito hosted UI)
+- Amazon Lex V1 from the allowed services SCP
+
+### Security
+
+- API Gateway authorization migrated to IAM (SigV4)
+
 ## [1.2.17] - 2026-08-18
 
 ### Security
@@ -402,7 +445,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Lease unfreezing capability allowing users to reinstate frozen leases ([#42](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/42))
 - Cost reporting groups feature for tracking and reporting costs by organizational groups ([#43](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/43))
-- Lease assignment functionality allowing administrators and managers to assign leases to other users([#44](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/44))
+- Lease assignment functionality allowing administrators and managers to assign leases to other users ([#44](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/44))
 - Prioritization of accounts that have been used less recently when selecting an account to use in a lease
 - Visibility configuration to set lease templates as PUBLIC or PRIVATE - PUBLIC templates are visible to all users, while PRIVATE templates are only accessible to Admin and Manager roles, enabling administrators to create restricted templates for specific use cases
 

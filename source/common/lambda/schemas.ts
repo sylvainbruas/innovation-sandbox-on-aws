@@ -13,7 +13,7 @@ export const createPaginationQueryStringParametersSchema = ({
 }: PaginationSchemaOptions = {}) =>
   z.object({
     pageIdentifier: z.string().optional(),
-    pageSize: z.coerce
+    maxResults: z.coerce
       .number()
       .int()
       .gt(0)

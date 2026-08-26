@@ -223,6 +223,32 @@ describe("InputField", () => {
     expect(customOnBlurCalled).toBe(true);
   });
 
+  test("does not forward min/max onto a non-number input", () => {
+    function TestTextWithBounds() {
+      const { control } = useForm<TestFormValues>({
+        defaultValues: { testField: "" },
+      });
+
+      return (
+        <InputField
+          controllerProps={{ control, name: "testField" }}
+          formFieldProps={{ label: "Test Field" }}
+          inputProps={{ placeholder: "Enter text" }}
+          // min/max are only meaningful for type="number"; the default text
+          // input must not receive them (would apply spurious native semantics).
+          min={1}
+          max={10}
+        />
+      );
+    }
+
+    renderWithQueryClient(<TestTextWithBounds />);
+
+    const input = screen.getByPlaceholderText("Enter text");
+    expect(input).not.toHaveAttribute("min");
+    expect(input).not.toHaveAttribute("max");
+  });
+
   test("handles number type input correctly", async () => {
     const NumberSchema = z.object({
       age: z.number().min(18, "Must be at least 18"),

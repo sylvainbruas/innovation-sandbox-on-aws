@@ -6,7 +6,7 @@ Create leases directly on behalf of other users without requiring approval. Usef
 
 ---
 
-## Wizard Steps
+## Wizard steps
 
 **Step 1: Select Lease Template**
 Choose any available lease template (public or private).

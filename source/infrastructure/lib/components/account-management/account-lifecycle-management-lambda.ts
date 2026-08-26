@@ -7,7 +7,6 @@ import { Construct } from "constructs";
 import path from "path";
 
 import { AccountLifecycleManagementEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/account-lifecycle-management-lambda-environment.js";
-import { addAppConfigExtensionLayer } from "@amzn/innovation-sandbox-infrastructure/components/config/app-config-lambda-extension";
 import { EventsToSqsToLambda } from "@amzn/innovation-sandbox-infrastructure/components/events-to-sqs-to-lambda";
 import { IsbLambdaFunction } from "@amzn/innovation-sandbox-infrastructure/components/isb-lambda-function";
 import {
@@ -18,7 +17,7 @@ import {
 } from "@amzn/innovation-sandbox-infrastructure/helpers/isb-roles";
 import {
   grantCfnStackSetCleanupPermissions,
-  grantIsbAppConfigRead,
+  grantIsbDbReadOnly,
   grantIsbDbReadWrite,
   grantIsbSsmParameterRead,
 } from "@amzn/innovation-sandbox-infrastructure/helpers/policy-generators";
@@ -42,12 +41,11 @@ export class AccountLifecycleManagementLambda extends Construct {
     super(scope, id);
 
     const {
-      configApplicationId,
-      configEnvironmentId,
-      globalConfigConfigurationProfileId,
+      configTableName,
       accountTable,
       leaseTable,
       blueprintTable,
+      principalTable,
     } = IsbComputeStack.sharedSpokeConfig.data;
 
     const lambda = new IsbLambdaFunction(this, id, {
@@ -68,15 +66,13 @@ export class AccountLifecycleManagementLambda extends Construct {
       handler: "handler",
       namespace: props.namespace,
       environment: {
-        APP_CONFIG_APPLICATION_ID: configApplicationId,
-        APP_CONFIG_PROFILE_ID: globalConfigConfigurationProfileId,
-        APP_CONFIG_ENVIRONMENT_ID: configEnvironmentId,
-        AWS_APPCONFIG_EXTENSION_PREFETCH_LIST: `/applications/${configApplicationId}/environments/${configEnvironmentId}/configurations/${globalConfigConfigurationProfileId}`,
+        CONFIG_TABLE_NAME: configTableName,
         ISB_EVENT_BUS: props.isbEventBus.eventBusName,
         ISB_NAMESPACE: props.namespace,
         ACCOUNT_TABLE_NAME: accountTable,
         LEASE_TABLE_NAME: leaseTable,
         BLUEPRINT_TABLE_NAME: blueprintTable,
+        PRINCIPAL_TABLE_NAME: principalTable,
         SANDBOX_ACCOUNT_ROLE_NAME: getSandboxAccountRoleName(props.namespace),
         INTERMEDIATE_ROLE_ARN: IntermediateRole.getRoleArn(),
         ORG_MGT_ROLE_ARN: getOrgMgtRoleArn(
@@ -106,15 +102,15 @@ export class AccountLifecycleManagementLambda extends Construct {
       lambda.lambdaFunction.role! as Role,
       IsbComputeStack.sharedSpokeConfig.parameterArns.accountPoolConfigParamArn,
     );
-    grantIsbAppConfigRead(scope, lambda, globalConfigConfigurationProfileId);
     grantIsbDbReadWrite(
       scope,
       lambda,
       leaseTable,
       accountTable,
       blueprintTable,
+      principalTable,
     );
-    addAppConfigExtensionLayer(lambda);
+    grantIsbDbReadOnly(scope, lambda, configTableName);
     props.isbEventBus.grantPutEventsTo(lambda.lambdaFunction);
     IntermediateRole.addTrustedRole(lambda.lambdaFunction.role! as Role);
 

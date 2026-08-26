@@ -8,10 +8,10 @@ This project is a React project bootstrapped with [Vite](https://vite.dev).
 
 ## Getting started
 
-1. Ensure that the [AWS Innovation Sandbox CDK](../cdk) project has been deployed to your AWS account.
+1. Ensure that the [AWS Innovation Sandbox CDK](../infrastructure) project has been deployed to your AWS account.
 2. Run `npm install` to install NPM packages
-3. After the CDK stack is deployed, a post deployment script will automatically generate a config file (`config.js`) in the `public`. This allows the local UI server to connect to the deployed backend in AWS.
-4. Run `npm start` to run the UI locally
+3. Configure the repo-root `.env` file with at minimum `DEPLOY_REGION` and `STACK_PREFIX` (defaults to `InnovationSandbox`). The dev server uses these to resolve the deployed CloudFront URL for API proxying. Alternatively, set `VITE_API_PROXY_TARGET` directly to skip the CloudFormation lookup. If using a named AWS profile for the hub account, set `HUB_ACCOUNT_PROFILE`.
+4. Run `npm run dev` to run the UI locally
 
 ---
 
@@ -23,26 +23,31 @@ This project is a React project bootstrapped with [Vite](https://vite.dev).
 
 2. [Cloudscape Design Components](https://cloudscape.design) - An open source design system for cloud applications.
 
-3. [AWS Northstar](https://aws.github.io/aws-northstar) - A design library built on top of Cloudscape that provides a way to rapidly build tables, forms and other UI elements.
+3. [AWS Northstar](https://aws.github.io/aws-northstar) - A library built on top of Cloudscape used for table components.
 
-4. [AWS Amplify UI](https://ui.docs.amplify.aws) - The project uses Amplify UI to generate login/signup screens that integrate with [Amazon Cognito](https://aws.amazon.com/cognito). Note: the wider Amplify ecosystem including CLI and deployment mechanisms are **not** used in this project.
+4. [AWS Amplify](https://docs.amplify.aws/javascript/) - Used as a Cognito SDK client for authentication token management and SigV4 request signing. The wider Amplify ecosystem including CLI and deployment mechanisms are **not** used in this project.
 
-5. [React Query](https://tanstack.com/query/latest/docs/framework/react/overview) - for fetching, caching and synchronising data fetched from the back end API's.
+5. [TanStack Query](https://tanstack.com/query/latest/docs/framework/react/overview) - For fetching, caching and synchronizing server state from the backend APIs.
+
+6. [React Hook Form](https://react-hook-form.com) + [Zod](https://zod.dev) - Form state management and runtime validation.
 
 #### Folder Structure
 
-- `src/assets` - static assets such as images and stylesheets
+- `src/assets` - Static assets such as images
 
-- `src/domains` - each domain is split into its own sub folders with the following structure:
-  - `pages` - a folder for pages specific to that domain
-  - `components` - a folder for components specific to that domain
-  - `service.ts` - a class that performs business logic for that domain, e.g. fetching data from an API
-  - `hooks.ts` - a set of React hooks that wrap the above services using React Query
-  - `types.ts` - any type definitions specific to that domain
+- `src/domains` - Each domain is split into its own sub folders with the following structure:
+  - `pages` - Pages specific to that domain
+  - `components` - Components specific to that domain (including `forms/` for form components)
+  - `service.ts` - A class that performs API calls for that domain
+  - `hooks.ts` - React hooks that wrap the above services using TanStack Query
+  - `validation.ts` - Zod schemas for form validation
+  - `types.ts` - Type definitions specific to that domain
 
-- `src/components` - any common/shared components that are not domain specific go in this folder
+- `src/components` - Common/shared components that are not domain specific
 
-- `src/helpers` - any helper or utility functions go in this folder. Ideally these should be unit testable and not include React/JSX.
+- `src/hooks` - Shared React hooks (breadcrumbs, app layout context, etc.)
+
+- `src/helpers` - Helper or utility functions. Ideally these should be unit testable and not include React/JSX.
 
 ---
 
@@ -53,7 +58,7 @@ In the project directory, you can run:
 #### Local development
 
 ```
-npm start
+npm run dev
 ```
 
 The page will reload when you make changes.\

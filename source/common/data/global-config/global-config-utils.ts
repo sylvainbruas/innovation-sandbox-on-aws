@@ -19,30 +19,85 @@ export class ValidationException extends Error {
 export function validateLeaseCompliesWithGlobalConfig(
   lease: Lease,
   globalConfig: GlobalConfig,
+  options?: { previous: Lease },
 ) {
-  validateMaxSpend(lease.maxSpend, globalConfig);
+  validateLeaseSharingEnabled(lease.allowOwnerToShareLease, globalConfig);
+  validateMaxSpend(
+    lease.maxSpend,
+    globalConfig,
+    options && { previous: options.previous.maxSpend },
+  );
 
   if (isMonitoredLease(lease)) {
     //monitored leases consider expirationDate to be authoritative over leaseDuration, so this is the field we must validate
-    const start = DateTime.fromISO(lease.startDate, { zone: "utc" });
-    const expiration = lease.expirationDate
-      ? DateTime.fromISO(lease.expirationDate, { zone: "utc" })
-      : undefined;
     validateMaxDuration(
-      computeDurationBetweenInHours(start, expiration),
+      leaseDurationInHours(lease),
       globalConfig,
+      options && { previous: leaseDurationInHours(options.previous) },
     );
   } else {
-    validateMaxDuration(lease.leaseDurationInHours, globalConfig);
+    validateMaxDuration(
+      lease.leaseDurationInHours,
+      globalConfig,
+      options && { previous: options.previous.leaseDurationInHours },
+    );
   }
 }
 
 export function validateLeaseTemplateCompliesWithGlobalConfig(
-  leaseTemplate: Pick<LeaseTemplate, "maxSpend" | "leaseDurationInHours">,
+  leaseTemplate: Pick<
+    LeaseTemplate,
+    "maxSpend" | "leaseDurationInHours" | "allowOwnerToShareLease"
+  >,
+  globalConfig: GlobalConfig,
+  options?: {
+    previous: Pick<LeaseTemplate, "maxSpend" | "leaseDurationInHours">;
+  },
+) {
+  validateLeaseSharingEnabled(
+    leaseTemplate.allowOwnerToShareLease,
+    globalConfig,
+  );
+  validateMaxSpend(
+    leaseTemplate.maxSpend,
+    globalConfig,
+    options && { previous: options.previous.maxSpend },
+  );
+  validateMaxDuration(
+    leaseTemplate.leaseDurationInHours,
+    globalConfig,
+    options && { previous: options.previous.leaseDurationInHours },
+  );
+}
+
+/**
+ * Duration in hours for a lease, using expirationDate (authoritative for
+ * monitored leases) when present, else the configured leaseDurationInHours.
+ */
+function leaseDurationInHours(lease: Lease): number | undefined {
+  if (isMonitoredLease(lease)) {
+    const start = DateTime.fromISO(lease.startDate, { zone: "utc" });
+    const expiration = lease.expirationDate
+      ? DateTime.fromISO(lease.expirationDate, { zone: "utc" })
+      : undefined;
+    return computeDurationBetweenInHours(start, expiration);
+  }
+  return lease.leaseDurationInHours;
+}
+
+function validateLeaseSharingEnabled(
+  allowOwnerToShareLease: boolean | undefined,
   globalConfig: GlobalConfig,
 ) {
-  validateMaxSpend(leaseTemplate.maxSpend, globalConfig);
-  validateMaxDuration(leaseTemplate.leaseDurationInHours, globalConfig);
+  // Only block enabling sharing — setting to false is always permitted as a security-positive action
+  if (
+    allowOwnerToShareLease === true &&
+    !globalConfig.leases.leaseSharingEnabled
+  ) {
+    throw new ValidationException(
+      "Cannot enable allowOwnerToShareLease because lease sharing is not available.",
+    );
+  }
 }
 
 function computeDurationBetweenInHours(
@@ -56,6 +111,7 @@ function computeDurationBetweenInHours(
 function validateMaxSpend(
   maxSpend: number | undefined,
   globalConfig: GlobalConfig,
+  options?: { previous?: number },
 ) {
   //maxSpend must be within global settings when used
   if (maxSpend && maxSpend > globalConfig.leases.maxBudget) {
@@ -64,8 +120,14 @@ function validateMaxSpend(
     );
   }
 
+  // On updates that leave the value unchanged, don't retroactively block edits
+  // to unrelated fields just because a required max budget is missing. Only
+  // enforce the requirement on create, or when the value is actually changed.
+  const isUnchangedUpdate =
+    options !== undefined && maxSpend === options.previous;
+
   //unlimited spend is not allowed if not enabled in global config
-  if (!maxSpend && globalConfig.leases.requireMaxBudget) {
+  if (!maxSpend && globalConfig.leases.requireMaxBudget && !isUnchangedUpdate) {
     throw new ValidationException(
       "A max budget must be provided as required by administrator settings. Please contact your administrator if you need to create a lease without specifying a max budget.",
     );
@@ -75,6 +137,7 @@ function validateMaxSpend(
 function validateMaxDuration(
   durationInHours: number | undefined,
   globalConfig: GlobalConfig,
+  options?: { previous?: number },
 ) {
   if (
     durationInHours &&
@@ -85,7 +148,15 @@ function validateMaxDuration(
     );
   }
 
-  if (!durationInHours && globalConfig.leases.requireMaxDuration) {
+  // See validateMaxSpend: unchanged updates must not be blocked retroactively.
+  const isUnchangedUpdate =
+    options !== undefined && durationInHours === options.previous;
+
+  if (
+    !durationInHours &&
+    globalConfig.leases.requireMaxDuration &&
+    !isUnchangedUpdate
+  ) {
     throw new ValidationException(
       "A duration must be provided as required by administrator settings. Please contact your administrator if you need to create a lease without specifying a duration.",
     );

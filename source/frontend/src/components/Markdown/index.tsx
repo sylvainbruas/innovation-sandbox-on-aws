@@ -27,15 +27,25 @@ export const Markdown = ({ file }: MarkdownProps) => {
   const [markdown, setMarkdown] = useState<MarkdownData | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const init = async () => {
+  // `isCurrent` guards against out-of-order responses: when `file` changes
+  // while a fetch is in flight (e.g. the settings page swaps the help file on
+  // tab switch, reconciling into this same mounted instance), the superseded
+  // request must not overwrite the newer file's content or error state.
+  const init = async (isCurrent: () => boolean) => {
     setError(null);
     const response = await fetch(`/markdown/${file}.md`);
+    if (!isCurrent()) {
+      return;
+    }
     if (!response.ok) {
       setError(`Failed to load markdown file: ${response.status}`);
       return;
     }
 
     const rawMarkdown = await response.text();
+    if (!isCurrent()) {
+      return;
+    }
     const parsed = fm<{ title?: string }>(rawMarkdown);
 
     setMarkdown({
@@ -47,7 +57,14 @@ export const Markdown = ({ file }: MarkdownProps) => {
   };
 
   useEffect(() => {
-    init();
+    let current = true;
+    // Clear stale content so the panel shows its loading state instead of the
+    // previous file's help while the new file is fetched (e.g. on a tab switch).
+    setMarkdown(null);
+    init(() => current);
+    return () => {
+      current = false;
+    };
   }, [file]);
 
   if (error) {

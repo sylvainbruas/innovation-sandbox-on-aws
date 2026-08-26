@@ -7,6 +7,7 @@ import { Divider } from "@amzn/innovation-sandbox-frontend/components/Divider";
 import { ErrorPanel } from "@amzn/innovation-sandbox-frontend/components/ErrorPanel";
 import CardsField from "@amzn/innovation-sandbox-frontend/components/FormFields/CardsField";
 import { Loader } from "@amzn/innovation-sandbox-frontend/components/Loader";
+import { SharingStatusIndicator } from "@amzn/innovation-sandbox-frontend/components/SharingStatusIndicator";
 import { VisibilityIndicator } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/components/VisibilityIndicator";
 import { useGetLeaseTemplates } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/hooks";
 import { formatCurrency } from "@amzn/innovation-sandbox-frontend/helpers/util";
@@ -73,6 +74,14 @@ const LeaseTemplateCardContent = ({ option }: { option: LeaseTemplate }) => (
             <StatusIndicator type="success">
               No approval required
             </StatusIndicator>
+          ),
+        },
+        {
+          label: "Sharing",
+          value: (
+            <SharingStatusIndicator
+              allowOwnerToShareLease={option.allowOwnerToShareLease}
+            />
           ),
         },
       ]}

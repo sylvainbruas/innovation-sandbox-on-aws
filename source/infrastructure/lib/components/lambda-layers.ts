@@ -79,7 +79,7 @@ class NodejsLayerVersion extends LayerVersion {
     super(scope, id, {
       code: Code.fromAsset(path.join(props.path, "dist")),
       description: props.description,
-      compatibleRuntimes: [Runtime.NODEJS_22_X],
+      compatibleRuntimes: [Runtime.NODEJS_24_X],
       compatibleArchitectures: [Architecture.ARM_64],
     });
   }
