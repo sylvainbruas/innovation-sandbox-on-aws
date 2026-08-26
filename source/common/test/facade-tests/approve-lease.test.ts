@@ -7,11 +7,16 @@ import {
   MonitoredLease,
   PendingLeaseSchema,
 } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
+import { PrincipalStore } from "@amzn/innovation-sandbox-commons/data/principal/principal-store.js";
+import { PrincipalCacheItemSchema } from "@amzn/innovation-sandbox-commons/data/principal/principal.js";
 import {
   SandboxAccount,
   SandboxAccountSchema,
 } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
-import { InnovationSandbox } from "@amzn/innovation-sandbox-commons/innovation-sandbox.js";
+import {
+  InnovationSandbox,
+  M2mAssigneeNotAllowedError,
+} from "@amzn/innovation-sandbox-commons/innovation-sandbox.js";
 import { IsbEventBridgeClient } from "@amzn/innovation-sandbox-commons/sdk-clients/event-bridge-client.js";
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
 import {
@@ -21,10 +26,14 @@ import {
   mockedIdcService,
   mockedLeaseStore,
   mockedLeaseTemplateStore,
+  mockedOrganizationsTaggingService,
   mockedOrgsService,
 } from "@amzn/innovation-sandbox-commons/test/mocking/common-mocks.js";
 import { createMockOf } from "@amzn/innovation-sandbox-commons/test/mocking/mock-utils.js";
-import { IsbUserSchema } from "@amzn/innovation-sandbox-commons/types/isb-types.js";
+import {
+  IdcIdentitySchema,
+  buildM2mSyntheticEmail,
+} from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
 import { Logger } from "@aws-lambda-powertools/logger";
 import { Tracer } from "@aws-lambda-powertools/tracer";
 import { DateTime } from "luxon";
@@ -34,8 +43,10 @@ function createMockContext() {
   return {
     isbEventBridgeClient: createMockOf(IsbEventBridgeClient),
     orgsService: mockedOrgsService(),
+    organizationsTaggingService: mockedOrganizationsTaggingService(),
     idcService: mockedIdcService(),
     leaseStore: mockedLeaseStore(),
+    principalStore: createMockOf(PrincipalStore),
     sandboxAccountStore: mockedAccountStore(),
     blueprintStore: mockedBlueprintStore(),
     blueprintDeploymentService: mockedBlueprintDeploymentService(),
@@ -49,7 +60,7 @@ const currentDateTime = DateTime.fromISO("2024-12-20T08:45:00.000Z", {
   zone: "utc",
 }) as DateTime<true>;
 
-const mockUser = generateSchemaData(IsbUserSchema);
+const mockUser = generateSchemaData(IdcIdentitySchema);
 
 describe("InnovationSandbox.approveLease()", () => {
   let mockContext: ReturnType<typeof createMockContext>;
@@ -69,6 +80,47 @@ describe("InnovationSandbox.approveLease()", () => {
           throw new Error("Invalid ISB User.");
         }
       },
+    );
+
+    // Mock owner resolution used by triggerAssignmentProcessing
+    mockContext.idcService.getCachedPrincipalByAttr.mockImplementation(
+      async (_type, email) => {
+        if (email === mockUser.email) {
+          return {
+            principalId: mockUser.userId,
+            principalType: "USER" as const,
+            displayName: mockUser.displayName,
+            email: mockUser.email,
+          };
+        }
+        return undefined;
+      },
+    );
+
+    // Default: return a matching cache entry for every requested principal so
+    // publishLease's enrichment doesn't hard-fail on zocker-generated random
+    // desiredAssignments. Tests that care about specific cache behavior override.
+    mockContext.principalStore.batchGetCacheItems.mockImplementation(
+      async (keys) =>
+        keys.map((k) =>
+          generateSchemaData(PrincipalCacheItemSchema, {
+            sk: `${k.principalType.toLowerCase()}#${k.principalId}`,
+            principalId: k.principalId,
+            principalType: k.principalType,
+            displayName:
+              k.principalId === mockUser.userId
+                ? mockUser.displayName
+                : `${k.principalType} ${k.principalId.slice(0, 8)}`,
+            ...(k.principalType === "USER"
+              ? {
+                  email:
+                    k.principalId === mockUser.userId
+                      ? mockUser.email
+                      : `${k.principalId.slice(0, 8)}@example.com`,
+                }
+              : {}),
+          }),
+        ),
     );
 
     mockContext.sandboxAccountStore.findByStatus.mockResolvedValue({
@@ -157,17 +209,23 @@ describe("InnovationSandbox.approveLease()", () => {
       approvedBy: approver,
       awsAccountId: mockAvailableAccount.awsAccountId,
       startDate: currentDateTime.toISO(),
-      expirationDate: currentDateTime.plus({ hour: 100 }).toISO(),
       lastCheckedDate: currentDateTime.toISO(),
       totalCostAccrued: 0,
     };
 
     expect(mockContext.orgsService.moveAccount).toHaveBeenCalledWith(
-      mockAvailableAccount,
+      {
+        ...mockAvailableAccount,
+        currentLease: {
+          leaseId: leaseToApprove.uuid,
+          ownerEmail: leaseToApprove.userEmail,
+        },
+      },
       "Available",
       "Active",
     );
-    expect(mockContext.leaseStore.update).toHaveBeenCalledWith(
+    expect(mockContext.leaseStore.update).toHaveBeenNthCalledWith(
+      1,
       expectedSavedLease,
     );
   });
@@ -222,34 +280,45 @@ describe("InnovationSandbox.approveLease()", () => {
     },
   );
 
+  test("Rejects an M2M-assignee lease with a logged error (defense-in-depth)", async () => {
+    const leaseToApprove = generateSchemaData(PendingLeaseSchema, {
+      status: "PendingApproval",
+      userEmail: buildM2mSyntheticEmail("some-client", "Admin"),
+      blueprintId: null,
+      blueprintName: null,
+    });
+
+    await expect(
+      InnovationSandbox.approveLease(
+        { lease: leaseToApprove, approver: "test@example.com" },
+        mockContext,
+      ),
+    ).rejects.toThrow(M2mAssigneeNotAllowedError);
+
+    expect(mockContext.idcService.getUserFromEmail).not.toHaveBeenCalled();
+    expect(mockContext.leaseStore.update).not.toHaveBeenCalled();
+    expect(mockContext.logger.error).toHaveBeenCalledWith(
+      expect.stringContaining("IDC-grant code path"),
+      expect.objectContaining({ leaseId: leaseToApprove.uuid }),
+    );
+  });
+
   describe("Acquire available account", () => {
     const accountWithoutTimestamp = generateSchemaData(SandboxAccountSchema, {
       status: "Available",
-      cleanupExecutionContext: undefined,
+      lastCleanupCompletedAt: undefined,
     });
 
     const accountWithOldTimestamp = generateSchemaData(SandboxAccountSchema, {
       status: "Available",
-      cleanupExecutionContext: {
-        stateMachineExecutionStartTime: currentDateTime
-          .minus({ hours: 48 })
-          .toISO(),
-        stateMachineExecutionArn:
-          "arn:aws:states:us-east-1:123456789012:execution:cleanup-state-machine:execution-1",
-      },
+      lastCleanupCompletedAt: currentDateTime.minus({ hours: 48 }).toISO(),
     });
 
     const accountWithRecentTimestamp = generateSchemaData(
       SandboxAccountSchema,
       {
         status: "Available",
-        cleanupExecutionContext: {
-          stateMachineExecutionStartTime: currentDateTime
-            .minus({ hours: 2 })
-            .toISO(),
-          stateMachineExecutionArn:
-            "arn:aws:states:us-east-1:123456789012:execution:cleanup-state-machine:execution-2",
-        },
+        lastCleanupCompletedAt: currentDateTime.minus({ hours: 2 }).toISO(),
       },
     );
 

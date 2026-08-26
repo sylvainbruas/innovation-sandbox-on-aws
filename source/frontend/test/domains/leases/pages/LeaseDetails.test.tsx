@@ -10,6 +10,7 @@ import { useGetLeaseById } from "@amzn/innovation-sandbox-frontend/domains/lease
 import { LeaseDetails } from "@amzn/innovation-sandbox-frontend/domains/leases/pages/LeaseDetails";
 import { useGetConfigurations } from "@amzn/innovation-sandbox-frontend/domains/settings/hooks";
 import { useBreadcrumb } from "@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb";
+import { ModalProvider } from "@amzn/innovation-sandbox-frontend/hooks/useModal";
 import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
 
 // Mock hooks
@@ -25,6 +26,50 @@ vi.mock("react-router-dom", async () => {
 vi.mock("@amzn/innovation-sandbox-frontend/domains/leases/hooks");
 vi.mock("@amzn/innovation-sandbox-frontend/domains/settings/hooks");
 vi.mock("@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb");
+
+// AccountLoginLink reaches into runtime config; stub it to a plain button so
+// the details page can render the login action without that dependency.
+vi.mock(
+  "@amzn/innovation-sandbox-frontend/components/AccountLoginLink",
+  () => ({
+    AccountLoginLink: ({ accountId }: { accountId: string }) => (
+      <button>Login to account {accountId}</button>
+    ),
+  }),
+);
+
+// The terminate modal depends on useTerminateLease, which this file's
+// auto-mock of leases/hooks leaves undefined. Stub the content; the page's job
+// is only to open the modal (its "Terminate Lease" header comes from the
+// ModalProvider), and the modal's own behavior is covered by its own tests.
+vi.mock(
+  "@amzn/innovation-sandbox-frontend/domains/leases/components/TerminateLeaseConfirmationModal",
+  () => ({
+    TerminateLeaseConfirmationModal: () => <div>terminate confirmation</div>,
+  }),
+);
+
+const mockUseUser = vi.fn();
+vi.mock("@amzn/innovation-sandbox-frontend/hooks/useUser", () => ({
+  useUser: () => mockUseUser(),
+}));
+
+// Default to an Admin viewer so the existing edit-button assertions hold; the
+// user-facing suite below overrides this with a plain User.
+const adminUser = {
+  type: "user" as const,
+  email: "admin@example.com",
+  userId: "admin-id",
+  roles: ["Admin" as const],
+};
+
+// Wrap in ModalProvider: the page opens the terminate modal via useModal().
+const renderLeaseDetails = () =>
+  renderWithQueryClient(
+    <ModalProvider>
+      <LeaseDetails />
+    </ModalProvider>,
+  );
 
 const mockActiveLease = {
   uuid: "lease-123",
@@ -84,6 +129,11 @@ describe("LeaseDetails", () => {
   beforeEach(() => {
     vi.clearAllMocks();
 
+    mockUseUser.mockReturnValue({
+      user: adminUser,
+      isAdmin: true,
+      isManager: false,
+    });
     (useNavigate as any).mockReturnValue(mockNavigate);
     (useParams as any).mockReturnValue({ leaseId: "lease-123" });
     (useBreadcrumb as any).mockReturnValue(mockSetBreadcrumb);
@@ -114,7 +164,7 @@ describe("LeaseDetails", () => {
       isError: false,
     });
 
-    renderWithQueryClient(<LeaseDetails />);
+    renderLeaseDetails();
 
     expect(screen.getByText("Loading...")).toBeInTheDocument();
   });
@@ -126,7 +176,7 @@ describe("LeaseDetails", () => {
       isError: false,
     });
 
-    renderWithQueryClient(<LeaseDetails />);
+    renderLeaseDetails();
 
     expect(screen.getByText("Loading...")).toBeInTheDocument();
   });
@@ -141,7 +191,7 @@ describe("LeaseDetails", () => {
       error: new Error("Failed to load lease"),
     });
 
-    renderWithQueryClient(<LeaseDetails />);
+    renderLeaseDetails();
 
     expect(
       screen.getByText("There was a problem loading this lease."),
@@ -160,7 +210,7 @@ describe("LeaseDetails", () => {
       error: new Error("Failed to load config"),
     });
 
-    renderWithQueryClient(<LeaseDetails />);
+    renderLeaseDetails();
 
     expect(
       screen.getByText(
@@ -170,7 +220,7 @@ describe("LeaseDetails", () => {
   });
 
   it("displays lease details for active lease", async () => {
-    renderWithQueryClient(<LeaseDetails />);
+    renderLeaseDetails();
 
     // Wait for the page to load by checking for a unique element
     await waitFor(() => {
@@ -200,7 +250,7 @@ describe("LeaseDetails", () => {
   });
 
   it("displays edit buttons for active lease", async () => {
-    renderWithQueryClient(<LeaseDetails />);
+    renderLeaseDetails();
 
     await waitFor(() => {
       expect(screen.getByText("Lease Details")).toBeInTheDocument();
@@ -211,9 +261,20 @@ describe("LeaseDetails", () => {
     expect(editButtons).toHaveLength(3);
   });
 
+  it("shows admin-only fields (cost report, last monitored) for an admin", async () => {
+    renderLeaseDetails();
+
+    await waitFor(() => {
+      expect(screen.getByText("Lease Details")).toBeInTheDocument();
+    });
+
+    expect(screen.getByText("Cost Report Settings")).toBeInTheDocument();
+    expect(screen.getByText("Last Monitored")).toBeInTheDocument();
+  });
+
   it("navigates to edit budget page when edit budget clicked", async () => {
     const user = userEvent.setup();
-    renderWithQueryClient(<LeaseDetails />);
+    renderLeaseDetails();
 
     await waitFor(() => {
       expect(screen.getByText("Budget Settings")).toBeInTheDocument();
@@ -237,7 +298,7 @@ describe("LeaseDetails", () => {
 
   it("navigates to edit duration page when edit duration clicked", async () => {
     const user = userEvent.setup();
-    renderWithQueryClient(<LeaseDetails />);
+    renderLeaseDetails();
 
     await waitFor(() => {
       expect(screen.getByText("Duration Settings")).toBeInTheDocument();
@@ -261,7 +322,7 @@ describe("LeaseDetails", () => {
 
   it("navigates to edit cost report page when edit cost report clicked", async () => {
     const user = userEvent.setup();
-    renderWithQueryClient(<LeaseDetails />);
+    renderLeaseDetails();
 
     await waitFor(() => {
       expect(screen.getByText("Cost Report Settings")).toBeInTheDocument();
@@ -293,7 +354,7 @@ describe("LeaseDetails", () => {
       error: null,
     });
 
-    renderWithQueryClient(<LeaseDetails />);
+    renderLeaseDetails();
 
     await waitFor(() => {
       expect(screen.getByText("Lease Details")).toBeInTheDocument();
@@ -314,7 +375,7 @@ describe("LeaseDetails", () => {
       error: null,
     });
 
-    renderWithQueryClient(<LeaseDetails />);
+    renderLeaseDetails();
 
     await waitFor(() => {
       expect(screen.getByText("Lease Details")).toBeInTheDocument();
@@ -334,7 +395,7 @@ describe("LeaseDetails", () => {
       error: null,
     });
 
-    renderWithQueryClient(<LeaseDetails />);
+    renderLeaseDetails();
 
     await waitFor(() => {
       expect(screen.getByText("Lease Details")).toBeInTheDocument();
@@ -358,7 +419,7 @@ describe("LeaseDetails", () => {
       error: null,
     });
 
-    renderWithQueryClient(<LeaseDetails />);
+    renderLeaseDetails();
 
     await waitFor(() => {
       expect(screen.getByText("Lease Details")).toBeInTheDocument();
@@ -382,7 +443,7 @@ describe("LeaseDetails", () => {
       error: null,
     });
 
-    renderWithQueryClient(<LeaseDetails />);
+    renderLeaseDetails();
 
     await waitFor(() => {
       expect(screen.getByText("Lease Details")).toBeInTheDocument();
@@ -406,7 +467,7 @@ describe("LeaseDetails", () => {
       error: null,
     });
 
-    renderWithQueryClient(<LeaseDetails />);
+    renderLeaseDetails();
 
     await waitFor(() => {
       expect(screen.getByText("Budget Thresholds")).toBeInTheDocument();
@@ -418,7 +479,7 @@ describe("LeaseDetails", () => {
   });
 
   it("displays duration thresholds", async () => {
-    renderWithQueryClient(<LeaseDetails />);
+    renderLeaseDetails();
 
     await waitFor(() => {
       expect(screen.getByText("Duration Thresholds")).toBeInTheDocument();
@@ -445,7 +506,7 @@ describe("LeaseDetails", () => {
       error: null,
     });
 
-    renderWithQueryClient(<LeaseDetails />);
+    renderLeaseDetails();
 
     await waitFor(() => {
       expect(screen.getByText("Lease Details")).toBeInTheDocument();
@@ -458,7 +519,7 @@ describe("LeaseDetails", () => {
   });
 
   it("sets breadcrumb with lease information", async () => {
-    renderWithQueryClient(<LeaseDetails />);
+    renderLeaseDetails();
 
     await waitFor(() => {
       expect(mockSetBreadcrumb).toHaveBeenCalled();
@@ -476,7 +537,7 @@ describe("LeaseDetails", () => {
     });
 
     const user = userEvent.setup();
-    renderWithQueryClient(<LeaseDetails />);
+    renderLeaseDetails();
 
     const retryButton = screen.getByRole("button", { name: /try again/i });
     await user.click(retryButton);
@@ -494,7 +555,7 @@ describe("LeaseDetails", () => {
     });
 
     const user = userEvent.setup();
-    renderWithQueryClient(<LeaseDetails />);
+    renderLeaseDetails();
 
     const retryButton = screen.getByRole("button", { name: /try again/i });
     await user.click(retryButton);
@@ -503,7 +564,7 @@ describe("LeaseDetails", () => {
   });
 
   it("displays lease ID with copy functionality", async () => {
-    renderWithQueryClient(<LeaseDetails />);
+    renderLeaseDetails();
 
     await waitFor(() => {
       expect(screen.getByText("lease-123")).toBeInTheDocument();
@@ -515,7 +576,7 @@ describe("LeaseDetails", () => {
   });
 
   it("displays AWS account ID with copy functionality for active lease", async () => {
-    renderWithQueryClient(<LeaseDetails />);
+    renderLeaseDetails();
 
     await waitFor(() => {
       expect(screen.getByText("123456789012")).toBeInTheDocument();
@@ -524,5 +585,255 @@ describe("LeaseDetails", () => {
     // The CopyToClipboard component should be present
     const accountIdText = screen.getByText("123456789012");
     expect(accountIdText).toBeInTheDocument();
+  });
+
+  describe("Assignments tab gating", () => {
+    it("shows the Assignments tab for an admin viewing an active lease", async () => {
+      renderLeaseDetails();
+
+      await waitFor(() => {
+        expect(screen.getByText("Lease Details")).toBeInTheDocument();
+      });
+
+      // showAssignmentsTab = isActiveLease && (isAdminOrManager || isOwner):
+      // admin + active lease renders the tabbed view with an Assignments tab.
+      expect(
+        screen.getByRole("tab", { name: "Assignments" }),
+      ).toBeInTheDocument();
+    });
+
+    it("shows the Assignments tab for a frozen lease", async () => {
+      // A freeze retains the desired assignments so unfreeze can restore
+      // access, so the list is still worth showing (read-only).
+      (useGetLeaseById as any).mockReturnValue({
+        data: { ...mockActiveLease, status: "Frozen" },
+        isFetching: false,
+        isLoading: false,
+        isError: false,
+        refetch: mockRefetch,
+        error: null,
+      });
+
+      renderLeaseDetails();
+
+      await waitFor(() => {
+        expect(screen.getByText("Lease Details")).toBeInTheDocument();
+      });
+
+      expect(
+        screen.getByRole("tab", { name: "Assignments" }),
+      ).toBeInTheDocument();
+    });
+
+    it("shows the Assignments tab for a terminated lease", async () => {
+      // Nothing clears desiredAssignments on terminate, so the list answers
+      // "who had access to this account" — an audit question that outlives the
+      // lease. Renders read-only.
+      (useGetLeaseById as any).mockReturnValue({
+        data: { ...mockActiveLease, status: "ManuallyTerminated" },
+        isFetching: false,
+        isLoading: false,
+        isError: false,
+        refetch: mockRefetch,
+        error: null,
+      });
+
+      renderLeaseDetails();
+
+      await waitFor(() => {
+        expect(screen.getByText("Lease Details")).toBeInTheDocument();
+      });
+
+      expect(
+        screen.getByRole("tab", { name: "Assignments" }),
+      ).toBeInTheDocument();
+    });
+
+    it("hides the Assignments tab for a non-active (pending) lease", async () => {
+      (useGetLeaseById as any).mockReturnValue({
+        data: mockPendingLease,
+        isFetching: false,
+        isLoading: false,
+        isError: false,
+        refetch: mockRefetch,
+        error: null,
+      });
+
+      renderLeaseDetails();
+
+      await waitFor(() => {
+        expect(screen.getByText("Lease Details")).toBeInTheDocument();
+      });
+
+      // Non-active lease: the summary renders directly, no Assignments tab.
+      expect(
+        screen.queryByRole("tab", { name: "Assignments" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("hides the Assignments tab for a non-owner, non-admin viewer of an active lease", async () => {
+      mockUseUser.mockReturnValue({
+        user: {
+          type: "user" as const,
+          email: "stranger@example.com",
+          userId: "stranger-id",
+          roles: ["User" as const],
+        },
+        isAdmin: false,
+        isManager: false,
+      });
+
+      renderLeaseDetails();
+
+      await waitFor(() => {
+        expect(screen.getByText("Lease Details")).toBeInTheDocument();
+      });
+
+      // Not admin/manager and not the lease owner: no Assignments tab.
+      expect(
+        screen.queryByRole("tab", { name: "Assignments" }),
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  describe("Actions for lease owners (Users)", () => {
+    // A plain User who owns mockActiveLease (userEmail: user@example.com).
+    const ownerUser = {
+      type: "user" as const,
+      email: "user@example.com",
+      userId: "user-id",
+      roles: ["User" as const],
+    };
+
+    const asOwnerUser = () =>
+      mockUseUser.mockReturnValue({
+        user: ownerUser,
+        isAdmin: false,
+        isManager: false,
+      });
+
+    const withTerminationEnabled = (enabled: boolean) =>
+      (useGetConfigurations as any).mockReturnValue({
+        data: {
+          ...mockConfig,
+          leases: { ...mockConfig.leases, allowUserLeaseTermination: enabled },
+        },
+        isLoading: false,
+        isError: false,
+        refetch: mockRefetchConfig,
+        error: null,
+      });
+
+    it("shows the login action for an active lease", async () => {
+      asOwnerUser();
+      renderLeaseDetails();
+
+      await waitFor(() => {
+        expect(
+          screen.getByText("Login to account 123456789012"),
+        ).toBeInTheDocument();
+      });
+    });
+
+    it("hides all edit buttons for a non-admin viewer", async () => {
+      asOwnerUser();
+      renderLeaseDetails();
+
+      await waitFor(() => {
+        expect(screen.getByText("Lease Details")).toBeInTheDocument();
+      });
+
+      expect(screen.queryAllByRole("button", { name: "Edit" })).toHaveLength(0);
+    });
+
+    it("hides admin-only fields (cost report, last monitored) for a User", async () => {
+      asOwnerUser();
+      renderLeaseDetails();
+
+      await waitFor(() => {
+        expect(screen.getByText("Lease Details")).toBeInTheDocument();
+      });
+
+      expect(screen.queryByText("Last Monitored")).not.toBeInTheDocument();
+    });
+
+    it("shows the terminate action when the owner can terminate", async () => {
+      asOwnerUser();
+      withTerminationEnabled(true);
+      renderLeaseDetails();
+
+      await waitFor(() => {
+        expect(
+          screen.getByRole("button", { name: "Terminate lease" }),
+        ).toBeInTheDocument();
+      });
+    });
+
+    it("hides the terminate action when termination is disabled", async () => {
+      asOwnerUser();
+      withTerminationEnabled(false);
+      renderLeaseDetails();
+
+      await waitFor(() => {
+        expect(screen.getByText("Lease Details")).toBeInTheDocument();
+      });
+
+      expect(
+        screen.queryByRole("button", { name: "Terminate lease" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("hides the terminate action when the viewer is not the owner", async () => {
+      mockUseUser.mockReturnValue({
+        user: { ...ownerUser, email: "someone-else@example.com" },
+        isAdmin: false,
+        isManager: false,
+      });
+      withTerminationEnabled(true);
+      renderLeaseDetails();
+
+      await waitFor(() => {
+        expect(screen.getByText("Lease Details")).toBeInTheDocument();
+      });
+
+      expect(
+        screen.queryByRole("button", { name: "Terminate lease" }),
+      ).not.toBeInTheDocument();
+    });
+
+    it("opens the terminate confirmation modal when clicked", async () => {
+      asOwnerUser();
+      withTerminationEnabled(true);
+      const user = userEvent.setup();
+      renderLeaseDetails();
+
+      const terminateButton = await screen.findByRole("button", {
+        name: "Terminate lease",
+      });
+      await user.click(terminateButton);
+
+      expect(
+        await screen.findByRole("heading", { name: "Terminate Lease" }),
+      ).toBeInTheDocument();
+    });
+
+    it("shows the pending-approval indicator for a pending lease", async () => {
+      asOwnerUser();
+      (useGetLeaseById as any).mockReturnValue({
+        data: { ...mockPendingLease, status: "PendingApproval" },
+        isFetching: false,
+        isLoading: false,
+        isError: false,
+        refetch: mockRefetch,
+        error: null,
+      });
+      renderLeaseDetails();
+
+      await waitFor(() => {
+        expect(
+          screen.getByText("Your account is pending approval"),
+        ).toBeInTheDocument();
+      });
+    });
   });
 });

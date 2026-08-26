@@ -105,19 +105,30 @@ const onCreateOrUpdate = async (
       //Data
       configApplicationId: validatedDataConfig.configApplicationId,
       configEnvironmentId: validatedDataConfig.configEnvironmentId,
-      globalConfigConfigurationProfileId:
-        validatedDataConfig.globalConfigConfigurationProfileId,
+      configTableName: validatedDataConfig.configTableName,
       nukeConfigConfigurationProfileId:
         validatedDataConfig.nukeConfigConfigurationProfileId,
-      reportingConfigConfigurationProfileId:
-        validatedDataConfig.reportingConfigConfigurationProfileId,
+      validatorExclusionConfigConfigurationProfileId:
+        validatedDataConfig.validatorExclusionConfigConfigurationProfileId,
       accountTable: validatedDataConfig.accountTable,
       leaseTemplateTable: validatedDataConfig.leaseTemplateTable,
       leaseTable: validatedDataConfig.leaseTable,
       blueprintTable: validatedDataConfig.blueprintTable,
+      principalTable: validatedDataConfig.principalTable,
+      cleanupReportTable: validatedDataConfig.cleanupReportTable,
       tableKmsKeyId: validatedDataConfig.tableKmsKeyId,
       dataSolutionVersion: validatedDataConfig.solutionVersion,
       dataSupportedSchemas: validatedDataConfig.supportedSchemas,
+      cognitoUserPoolId: validatedDataConfig.cognitoUserPoolId,
+      cognitoUserPoolArn: validatedDataConfig.cognitoUserPoolArn,
+      cognitoAppClientId: validatedDataConfig.cognitoAppClientId,
+      cognitoIdentityPoolId: validatedDataConfig.cognitoIdentityPoolId,
+      cognitoDomain: validatedDataConfig.cognitoDomain,
+      awsAccessPortalUrl: validatedDataConfig.awsAccessPortalUrl,
+      identityPoolAdminRoleName: validatedDataConfig.identityPoolAdminRoleName,
+      identityPoolManagerRoleName:
+        validatedDataConfig.identityPoolManagerRoleName,
+      identityPoolUserRoleName: validatedDataConfig.identityPoolUserRoleName,
     },
     PhysicalResourceId:
       (event as any).PhysicalResourceId ?? "SharedJsonParamParser",

@@ -10,8 +10,8 @@ import { AwsAccountIdSchema } from "@amzn/innovation-sandbox-commons/utils/zod.j
 export const AccountCleanupFailureEventSchema = z.object({
   accountId: AwsAccountIdSchema,
   cleanupExecutionContext: z.object({
-    stateMachineExecutionArn: z.string(),
-    stateMachineExecutionStartTime: z.string(),
+    executionArn: z.string(),
+    executionStartTime: z.string(),
   }),
   reason: CleanupReasonSchema,
 });

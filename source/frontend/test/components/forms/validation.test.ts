@@ -413,7 +413,7 @@ describe("Blueprint Selection Validation", () => {
 
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.issues[0].message).toContain("Invalid uuid");
+        expect(result.error.issues[0].message).toContain("Invalid UUID");
       }
     });
 
@@ -425,7 +425,7 @@ describe("Blueprint Selection Validation", () => {
 
       expect(result.success).toBe(false);
       if (!result.success) {
-        expect(result.error.issues[0].message).toContain("Invalid uuid");
+        expect(result.error.issues[0].message).toContain("Invalid UUID");
       }
     });
 

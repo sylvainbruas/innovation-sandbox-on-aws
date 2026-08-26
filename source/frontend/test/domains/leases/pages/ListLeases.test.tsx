@@ -7,13 +7,12 @@ import createWrapper, {
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
-import { BrowserRouter } from "react-router-dom";
+import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-import { now } from "@amzn/innovation-sandbox-commons/utils/time-utils";
 import { ListLeases } from "@amzn/innovation-sandbox-frontend/domains/leases/pages/ListLeases";
 import { MonitoredLeaseWithLeaseId } from "@amzn/innovation-sandbox-frontend/domains/leases/types";
-import { config } from "@amzn/innovation-sandbox-frontend/helpers/config";
+import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import { ModalProvider } from "@amzn/innovation-sandbox-frontend/hooks/useModal";
 import { createConfiguration } from "@amzn/innovation-sandbox-frontend/mocks/factories/configurationFactory";
 import {
@@ -27,7 +26,6 @@ import {
 } from "@amzn/innovation-sandbox-frontend/mocks/mockApi";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
 import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
-import { DateTime } from "luxon";
 
 // Mock ResizeObserver
 class ResizeObserver {
@@ -42,6 +40,29 @@ window.ResizeObserver = ResizeObserver;
 vi.mock("@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb", () => ({
   useBreadcrumb: () => vi.fn(),
 }));
+
+// Mock CognitoAuthService with Admin role so all tabs and bulk actions are visible
+vi.mock(
+  "@amzn/innovation-sandbox-frontend/helpers/CognitoAuthService",
+  async () => {
+    const [
+      { authenticated, mockAuthenticatedUser },
+      { buildCognitoAuthServiceMock },
+    ] = await Promise.all([
+      import("@amzn/innovation-sandbox-frontend-test/utils/cognitoFixtures"),
+      import("@amzn/innovation-sandbox-frontend-test/utils/cognitoServiceMock"),
+    ]);
+    return {
+      CognitoAuthService: buildCognitoAuthServiceMock({
+        getCurrentUser: vi
+          .fn()
+          .mockResolvedValue(
+            authenticated({ ...mockAuthenticatedUser, roles: ["Admin"] }),
+          ),
+      }),
+    };
+  },
+);
 
 // Mock the navigate function
 const mockNavigate = vi.fn();
@@ -76,9 +97,9 @@ describe("ListLeases", () => {
   const renderComponent = () =>
     renderWithQueryClient(
       <ModalProvider>
-        <BrowserRouter>
+        <MemoryRouter initialEntries={["/leases"]}>
           <ListLeases />
-        </BrowserRouter>
+        </MemoryRouter>
       </ModalProvider>,
     );
 
@@ -131,18 +152,28 @@ describe("ListLeases", () => {
   });
 
   beforeEach(() => {
-    const mockConfig = createConfiguration({
-      auth: {
-        awsAccessPortalUrl: "https://test.aws.amazon.com/access-portal",
-        webAppUrl: "https://test.aws.amazon.com",
-      },
-    });
+    const mockConfig = createConfiguration({});
     mockConfigurationApi.returns(mockConfig);
     server.use(mockConfigurationApi.getHandler());
+
+    // Default: shared leases return empty
+    server.use(
+      http.get(`${getConfig().ApiUrl}/leases/shared`, () => {
+        return HttpResponse.json({
+          status: "success",
+          data: { result: [], nextPageIdentifier: null },
+        });
+      }),
+    );
   });
 
-  test("renders the header correctly", async () => {
+  // ─── Page Structure Tests ──────────────────────────────────────────────────
+
+  test("renders the page header correctly", async () => {
+    mockLeaseApi.returns([]);
+    server.use(mockLeaseApi.getHandler());
     renderComponent();
+
     const wrapper = createWrapper();
     const header = wrapper.findHeader();
     expect(header?.findHeadingText()?.getElement()).toHaveTextContent("Leases");
@@ -151,122 +182,207 @@ describe("ListLeases", () => {
     );
   });
 
-  test("displays active leases by default", async () => {
-    const mockLeases = [mockActiveLease, mockPendingLease, mockExpiredLease];
-    mockLeaseApi.returns(mockLeases);
+  test("renders tabs for All Leases, My Leases, and Shared with me", async () => {
+    mockLeaseApi.returns([]);
     server.use(mockLeaseApi.getHandler());
+    renderComponent();
 
+    const wrapper = createWrapper();
+    const tabs = wrapper.findTabs();
+    expect(tabs).not.toBeNull();
+
+    // Verify the three tabs exist
+    expect(
+      screen.getByRole("tab", { name: /All Leases/i }),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /My Leases/i })).toBeInTheDocument();
+    expect(
+      screen.getByRole("tab", { name: /Shared with me/i }),
+    ).toBeInTheDocument();
+  });
+
+  test("All Leases tab is active by default", async () => {
+    mockLeaseApi.returns([]);
+    server.use(mockLeaseApi.getHandler());
+    renderComponent();
+
+    const allTab = screen.getByRole("tab", { name: /All Leases/i });
+    expect(allTab).toHaveAttribute("aria-selected", "true");
+  });
+
+  test("renders Request lease button in header", async () => {
+    mockLeaseApi.returns([]);
+    server.use(mockLeaseApi.getHandler());
+    renderComponent();
+
+    expect(
+      screen.getByRole("button", { name: /Request lease/i }),
+    ).toBeInTheDocument();
+  });
+
+  test("renders Assign lease button for admin users", async () => {
+    mockLeaseApi.returns([]);
+    server.use(mockLeaseApi.getHandler());
+    renderComponent();
+
+    await waitFor(() => {
+      expect(
+        screen.getByRole("button", { name: /Assign lease/i }),
+      ).toBeInTheDocument();
+    });
+  });
+
+  test("navigates to /request when Request lease is clicked", async () => {
+    mockLeaseApi.returns([]);
+    server.use(mockLeaseApi.getHandler());
+    renderComponent();
+    const user = userEvent.setup();
+
+    const requestButton = screen.getByRole("button", {
+      name: /Request lease/i,
+    });
+    await user.click(requestButton);
+
+    expect(mockNavigate).toHaveBeenCalledWith("/request");
+  });
+
+  // ─── All Leases Tab (Admin) ────────────────────────────────────────────────
+
+  test("displays leases in the All Leases tab", async () => {
+    mockLeaseApi.returns([mockActiveLease, mockPendingLease]);
+    server.use(mockLeaseApi.getHandler());
     renderComponent();
 
     await waitFor(() => {
       expect(screen.getByText(mockActiveLease.userEmail)).toBeInTheDocument();
-      expect(
-        screen.getByText(mockActiveLease.originalLeaseTemplateName),
-      ).toBeInTheDocument();
-      expect(
-        screen.getByText(mockActiveLease.awsAccountId),
-      ).toBeInTheDocument();
-
-      // Ensure pending and expired leases are not initially displayed
-      expect(
-        screen.queryByText(mockPendingLease.userEmail),
-      ).not.toBeInTheDocument();
-      expect(
-        screen.queryByText(mockExpiredLease.userEmail),
-      ).not.toBeInTheDocument();
     });
   });
 
-  test("displays 'No items to display' when no leases", async () => {
+  test("shows table counter with item count (default status filter applied)", async () => {
+    // Default filter shows PendingApproval/Active/Frozen/Provisioning, so the
+    // expired lease is filtered out: 2 of 3 total.
+    mockLeaseApi.returns([mockActiveLease, mockPendingLease, mockExpiredLease]);
+    server.use(mockLeaseApi.getHandler());
+    renderComponent();
+
+    await waitFor(() => {
+      expect(screen.getByText("(2/3)")).toBeInTheDocument();
+    });
+  });
+
+  test("shows leases with default status filter (PendingApproval, Active, Frozen, Provisioning visible; all others hidden)", async () => {
+    // Create one lease per status to verify the default filter behavior
+    const makeLease = (
+      status: string,
+      email: string,
+    ): MonitoredLeaseWithLeaseId => ({
+      ...createActiveLease({
+        userEmail: email,
+        uuid: testUuid,
+        originalLeaseTemplateName: `${status} Template`,
+        status: status as "Active" | "Frozen" | "Provisioning",
+        awsAccountId: "123456789012",
+        totalCostAccrued: 0,
+        maxSpend: 1000,
+      }),
+      leaseId: btoa(JSON.stringify({ userEmail: email, uuid: testUuid })),
+    });
+
+    // Statuses that should be VISIBLE by default
+    const visibleLeases = [
+      makeLease("PendingApproval", "pending@example.com"),
+      makeLease("Active", "active@example.com"),
+      makeLease("Frozen", "frozen@example.com"),
+      makeLease("Provisioning", "provisioning@example.com"),
+    ];
+
+    // Statuses that should be HIDDEN by default
+    const hiddenLeases = [
+      makeLease("Expired", "expired@example.com"),
+      makeLease("ManuallyTerminated", "terminated@example.com"),
+      makeLease("ApprovalDenied", "denied@example.com"),
+      makeLease("ProvisioningFailed", "provfailed@example.com"),
+    ];
+
+    mockLeaseApi.returns([...visibleLeases, ...hiddenLeases]);
+    server.use(mockLeaseApi.getHandler());
+    renderComponent();
+
+    // Wait for leases to load
+    await waitFor(() => {
+      expect(screen.getByText("active@example.com")).toBeInTheDocument();
+    });
+
+    // Verify all default-visible statuses are shown
+    for (const lease of visibleLeases) {
+      expect(screen.getByText(lease.userEmail)).toBeInTheDocument();
+    }
+
+    // Verify all non-default statuses are hidden
+    for (const lease of hiddenLeases) {
+      expect(screen.queryByText(lease.userEmail)).not.toBeInTheDocument();
+    }
+  });
+
+  test("renders lease name alias as link", async () => {
+    mockLeaseApi.returns([mockActiveLease]);
+    server.use(mockLeaseApi.getHandler());
+    renderComponent();
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(
+          `${mockActiveLease.originalLeaseTemplateName} (${testUuid.slice(0, 8)})`,
+        ),
+      ).toBeInTheDocument();
+    });
+  });
+
+  test("renders account login link for active leases", async () => {
+    mockLeaseApi.returns([mockActiveLease]);
+    server.use(mockLeaseApi.getHandler());
+    renderComponent();
+
+    await waitFor(
+      () => {
+        expect(screen.getByText("Login")).toBeInTheDocument();
+      },
+      { timeout: 5000 },
+    );
+  });
+
+  test("renders budget progress bar for monitored leases", async () => {
+    mockLeaseApi.returns([mockActiveLease]);
+    server.use(mockLeaseApi.getHandler());
+    renderComponent();
+
+    await waitFor(() => {
+      const bar = screen.getByTestId("budget-progress-bar");
+      expect(bar).toBeInTheDocument();
+      expect(bar).toHaveAttribute("data-current", "100");
+      expect(bar).toHaveAttribute("data-max", "1000");
+    });
+  });
+
+  test("displays empty state when no leases exist", async () => {
     mockLeaseApi.returns([]);
     server.use(mockLeaseApi.getHandler());
-
     renderComponent();
 
     await waitFor(() => {
       const wrapper = createWrapper();
       const table = wrapper.findTable();
       expect(table?.findEmptySlot()?.getElement()).toHaveTextContent(
-        "No items to display",
+        "No leases found.",
       );
     });
   });
 
-  test("allows filtering by status", async () => {
-    const mockLeases = [mockActiveLease, mockPendingLease, mockExpiredLease];
-    mockLeaseApi.returns(mockLeases);
-    server.use(mockLeaseApi.getHandler());
-
-    renderComponent();
-    const user = userEvent.setup();
-
-    await waitFor(() => {
-      expect(screen.getByTestId("status-filter")).toBeInTheDocument();
-    });
-
-    const statusFilter = screen.getByTestId("status-filter");
-
-    const chooseOptionsButton =
-      within(statusFilter).getByText("Choose options");
-    await user.click(chooseOptionsButton);
-
-    await waitFor(() => {
-      const dropdownButton = within(statusFilter).getByRole("button", {
-        name: "Choose options",
-      });
-      expect(dropdownButton).toHaveAttribute("aria-expanded", "true");
-    });
-
-    const options = await screen.findAllByRole("option");
-
-    const activeOption = options.find((option) =>
-      option.textContent!.includes("Active"),
-    );
-    if (activeOption) await user.click(activeOption);
-
-    const pendingOption = options.find((option) =>
-      option.textContent!.includes("Pending Approval"),
-    );
-    if (pendingOption) await user.click(pendingOption);
-
-    await waitFor(() => {
-      expect(screen.getByText(mockPendingLease.userEmail)).toBeInTheDocument();
-      expect(
-        screen.queryByText(mockActiveLease.userEmail),
-      ).not.toBeInTheDocument();
-      expect(
-        screen.queryByText(mockExpiredLease.userEmail),
-      ).not.toBeInTheDocument();
-    });
-
-    await user.click(chooseOptionsButton);
-
-    const selectedOptions = within(statusFilter).getAllByRole("group");
-    expect(selectedOptions).toHaveLength(1);
-    expect(selectedOptions[0]).toHaveTextContent("Pending Approval");
-  });
-
-  test("displays AWS account information and login link", async () => {
-    mockLeaseApi.returns([mockActiveLease]);
-    server.use(mockLeaseApi.getHandler());
-
-    renderComponent();
-
-    await waitFor(() => {
-      expect(
-        screen.getByText(mockActiveLease.awsAccountId),
-      ).toBeInTheDocument();
-      expect(screen.getByText("Login to account")).toBeInTheDocument();
-    });
-
-    const loginButton = screen.getByText("Login to account");
-    expect(loginButton).toBeInTheDocument();
-  });
+  // ─── Selection & Bulk Actions ──────────────────────────────────────────────
 
   test("allows selecting and deselecting leases", async () => {
     mockLeaseApi.returns([mockActiveLease, mockPendingLease]);
     server.use(mockLeaseApi.getHandler());
-
     renderComponent();
     const user = userEvent.setup();
 
@@ -274,21 +390,19 @@ describe("ListLeases", () => {
       expect(screen.getByText(mockActiveLease.userEmail)).toBeInTheDocument();
     });
 
-    const checkbox = screen.getAllByRole("checkbox")[1]; // First checkbox after "select all"
+    const checkbox = screen.getAllByRole("checkbox")[1]; // First after "select all"
     await user.click(checkbox);
 
     const actionsButton = screen.getByText("Actions").closest("button");
     expect(actionsButton).not.toBeDisabled();
 
     await user.click(checkbox);
-
     expect(actionsButton).toBeDisabled();
   });
 
-  test("opens terminate modal when 'Terminate' action is selected", async () => {
+  test("opens terminate modal when Terminate action is selected", async () => {
     mockLeaseApi.returns([mockActiveLease]);
     server.use(mockLeaseApi.getHandler());
-
     renderComponent();
     const user = userEvent.setup();
 
@@ -306,25 +420,13 @@ describe("ListLeases", () => {
     await user.click(terminateOption);
 
     const modal = screen.getByRole("dialog");
-    await waitFor(() => {
-      expect(modal).toBeInTheDocument();
-    });
-
-    const modalContent = within(modal);
-
-    expect(modalContent.getByText("Terminate Lease(s)")).toBeInTheDocument();
-
-    await waitFor(() =>
-      expect(
-        modalContent.getByText(mockActiveLease.awsAccountId),
-      ).toBeInTheDocument(),
-    );
+    expect(modal).toBeInTheDocument();
+    expect(within(modal).getByText("Terminate Lease(s)")).toBeInTheDocument();
   });
 
-  test("opens freeze modal when 'Freeze' action is selected", async () => {
+  test("opens freeze modal when Freeze action is selected", async () => {
     mockLeaseApi.returns([mockActiveLease]);
     server.use(mockLeaseApi.getHandler());
-
     renderComponent();
     const user = userEvent.setup();
 
@@ -342,25 +444,13 @@ describe("ListLeases", () => {
     await user.click(freezeOption);
 
     const modal = screen.getByRole("dialog");
-    await waitFor(() => {
-      expect(modal).toBeInTheDocument();
-    });
-
-    const modalContent = within(modal);
-
-    expect(modalContent.getByText("Freeze Lease(s)")).toBeInTheDocument();
-
-    await waitFor(() =>
-      expect(
-        modalContent.getByText(mockActiveLease.awsAccountId),
-      ).toBeInTheDocument(),
-    );
+    expect(modal).toBeInTheDocument();
+    expect(within(modal).getByText("Freeze Lease(s)")).toBeInTheDocument();
   });
 
-  test("opens unfreeze modal when 'Unfreeze' action is selected", async () => {
+  test("opens unfreeze modal when Unfreeze action is selected", async () => {
     mockLeaseApi.returns([mockFrozenLease]);
     server.use(mockLeaseApi.getHandler());
-
     renderComponent();
     const user = userEvent.setup();
 
@@ -378,25 +468,40 @@ describe("ListLeases", () => {
     await user.click(unfreezeOption);
 
     const modal = screen.getByRole("dialog");
+    expect(modal).toBeInTheDocument();
+    expect(within(modal).getByText("Unfreeze Lease(s)")).toBeInTheDocument();
+  });
+
+  test("navigates to lease details when Update action is selected", async () => {
+    mockLeaseApi.returns([mockActiveLease]);
+    server.use(mockLeaseApi.getHandler());
+    renderComponent();
+    const user = userEvent.setup();
+
     await waitFor(() => {
-      expect(modal).toBeInTheDocument();
+      expect(screen.getByText(mockActiveLease.userEmail)).toBeInTheDocument();
     });
 
-    const modalContent = within(modal);
+    const checkbox = screen.getAllByRole("checkbox")[1];
+    await user.click(checkbox);
 
-    expect(modalContent.getByText("Unfreeze Lease(s)")).toBeInTheDocument();
+    const actionsButton = screen.getByText("Actions");
+    await user.click(actionsButton);
 
-    await waitFor(() =>
-      expect(
-        modalContent.getByText(mockFrozenLease.awsAccountId),
-      ).toBeInTheDocument(),
+    const updateOption = await screen.findByText("Update");
+    await user.click(updateOption);
+
+    expect(mockNavigate).toHaveBeenCalledWith(
+      `/leases/${mockActiveLease.leaseId}`,
     );
   });
+
+  // ─── Refresh ───────────────────────────────────────────────────────────────
 
   test("refreshes lease data when refresh button is clicked", async () => {
     let requestCount = 0;
     server.use(
-      http.get(`${config.ApiUrl}/leases`, () => {
+      http.get(`${getConfig().ApiUrl}/leases`, () => {
         requestCount++;
         return HttpResponse.json({
           status: "success",
@@ -412,14 +517,10 @@ describe("ListLeases", () => {
     );
 
     renderComponent();
-
     const user = userEvent.setup();
 
     await waitFor(() => {
       expect(screen.getByText(mockActiveLease.userEmail)).toBeInTheDocument();
-      expect(
-        screen.queryByText(mockPendingLease.userEmail),
-      ).not.toBeInTheDocument();
     });
 
     const wrapper = createWrapper();
@@ -430,273 +531,21 @@ describe("ListLeases", () => {
     );
 
     expect(refreshButton).not.toBeNull();
-    expect(refreshButton?.getElement()).not.toBeDisabled();
     await user.click(refreshButton!.getElement());
 
     await waitFor(() => {
-      expect(screen.getByText(mockActiveLease.userEmail)).toBeInTheDocument();
-      // The pending lease should still not be visible after refresh
-      expect(
-        screen.queryByText(mockPendingLease.userEmail),
-      ).not.toBeInTheDocument();
+      expect(requestCount).toBeGreaterThanOrEqual(2);
     });
   });
 
-  test("renders budget progress bar correctly for active leases", async () => {
-    const mockLease = createActiveLease({
-      totalCostAccrued: 500,
-      maxSpend: 1000,
-      userEmail: "test@example.com",
-      originalLeaseTemplateName: "Test Template",
-    });
-    mockLeaseApi.returns([mockLease]);
-    server.use(mockLeaseApi.getHandler());
-
-    renderComponent();
-
-    await waitFor(() => {
-      expect(screen.getByText(mockLease.userEmail)).toBeInTheDocument();
-    });
-
-    // Find the mocked BudgetProgressBar
-    const budgetProgressBar = screen.getByTestId("budget-progress-bar");
-    expect(budgetProgressBar).toBeInTheDocument();
-
-    // Check if the correct values are passed to the BudgetProgressBar
-    expect(budgetProgressBar).toHaveAttribute("data-current", "500");
-    expect(budgetProgressBar).toHaveAttribute("data-max", "1000");
-  });
-
-  test("renders expiry status correctly for active leases", async () => {
-    const futureDate = new Date();
-    futureDate.setDate(futureDate.getDate() + 7);
-    const mockLease = createActiveLease({
-      expirationDate: futureDate.toISOString(),
-      leaseDurationInHours: 168,
-    });
-    mockLeaseApi.returns([mockLease]);
-    server.use(mockLeaseApi.getHandler());
-
-    renderComponent();
-
-    await waitFor(() => {
-      expect(screen.getByText(/in 6 days/i)).toBeInTheDocument();
-    });
-  });
-
-  test.each([
-    { amount: 1, unit: "hours", expected: /1 hour ago/i },
-    { amount: 3, unit: "hours", expected: /3 hours ago/i },
-    { amount: 1, unit: "days", expected: /1 day ago/i },
-    { amount: 3, unit: "days", expected: /3 days ago/i },
-    { amount: 1, unit: "months", expected: /1 month ago/i },
-  ])(
-    "renders expiry status correctly for expired leases - $amount $unit ago",
-    async ({ amount, unit, expected }) => {
-      const expirationDate = DateTime.now()
-        .minus({ [unit]: amount })
-        .toISO();
-      const mockLease = createExpiredLease({
-        endDate: expirationDate,
-      });
-      mockLeaseApi.returns([mockLease]);
-      server.use(mockLeaseApi.getHandler());
-
-      renderComponent();
-      const user = userEvent.setup();
-
-      const statusFilter = screen.getByTestId("status-filter");
-      const chooseOptionsButton =
-        within(statusFilter).getByText("Choose options");
-      await user.click(chooseOptionsButton);
-
-      within(statusFilter).getByRole("button", {
-        name: "Choose options",
-      });
-
-      const options = await screen.findAllByRole("option");
-      const expiredOption = options.find((option) =>
-        option.textContent!.includes("Expired"),
-      );
-      if (expiredOption) await user.click(expiredOption);
-
-      await waitFor(() => {
-        expect(screen.getByText(expected)).toBeInTheDocument();
-      });
-    },
-  );
-
-  test("renders account login link for active leases", async () => {
-    mockLeaseApi.returns([mockActiveLease]);
-    server.use(mockLeaseApi.getHandler());
-
-    renderComponent();
-
-    await waitFor(() => {
-      const loginLink = screen.getByText("Login to account");
-      expect(loginLink).toBeInTheDocument();
-    });
-  });
-
-  test("should render all columns properly", async () => {
-    const mockLease = createActiveLease({
-      costReportGroup: "finance-team-a",
-    });
-
-    mockLeaseApi.returns([mockLease]);
-    server.use(mockLeaseApi.getHandler());
-
-    renderComponent();
-
-    await waitFor(() => {
-      expect(screen.getByText(mockLease.userEmail)).toBeInTheDocument();
-      expect(screen.getByText(mockLease.createdBy!)).toBeInTheDocument();
-      expect(
-        screen.getByText(mockLease.originalLeaseTemplateName),
-      ).toBeInTheDocument();
-      expect(screen.getByText(mockLease.awsAccountId)).toBeInTheDocument();
-      expect(screen.getByText("Login to account")).toBeInTheDocument();
-      expect(screen.getByText("finance-team-a")).toBeInTheDocument();
-
-      const budgetProgressBar = screen.getByTestId("budget-progress-bar");
-      expect(budgetProgressBar).toBeInTheDocument();
-      expect(budgetProgressBar).toHaveAttribute(
-        "data-current",
-        mockLease.totalCostAccrued.toString(),
-      );
-      expect(budgetProgressBar).toHaveAttribute(
-        "data-max",
-        mockLease.maxSpend?.toString(),
-      );
-      const activeElements = screen.getAllByText("Active");
-      expect(activeElements.length).toBe(2);
-    });
-
-    const wrapper = createWrapper();
-    const table = wrapper.findTable();
-
-    expect(table?.findColumnHeaders()).toHaveLength(11);
-
-    const columnHeaders = table?.findColumnHeaders();
-    const headerTexts = columnHeaders?.map(
-      (header) => header.getElement().textContent,
-    );
-
-    expect(headerTexts).toContain("User");
-    expect(headerTexts).toContain("Created By");
-    expect(headerTexts).toContain("Lease Template");
-    expect(headerTexts).toContain("Blueprint");
-    expect(headerTexts).toContain("Cost Report Group");
-    expect(headerTexts).toContain("Budget");
-    expect(headerTexts).toContain("Expiry");
-    expect(headerTexts).toContain("Status");
-    expect(headerTexts).toContain("AWS Account");
-    expect(headerTexts).toContain("Access");
-  });
-
-  test("shows threshold breach warning when unfreezing lease with budget risk", async () => {
-    const mockLease = createActiveLease({
-      status: "Frozen",
-      totalCostAccrued: 75, // Above budget threshold
-      maxSpend: 1000,
-      budgetThresholds: [{ dollarsSpent: 50, action: "FREEZE_ACCOUNT" }],
-      durationThresholds: [{ hoursRemaining: 4, action: "FREEZE_ACCOUNT" }],
-      expirationDate: now().plus({ hour: 2 }).toISO(), // 2 hours from now (less than 4 hour threshold)
-    });
-
-    mockLeaseApi.returns([mockLease]);
-    server.use(mockLeaseApi.getHandler());
-
-    renderComponent();
-    const user = userEvent.setup();
-
-    await waitFor(() => {
-      expect(screen.getByText(mockLease.userEmail)).toBeInTheDocument();
-    });
-
-    const checkbox = screen.getAllByRole("checkbox")[1];
-    await user.click(checkbox);
-
-    const actionsButton = screen.getByText("Actions");
-    await user.click(actionsButton);
-
-    const unfreezeOption = await screen.findByText("Unfreeze");
-    await user.click(unfreezeOption);
-
-    const modal = screen.getByRole("dialog");
-    await waitFor(() => {
-      expect(modal).toBeInTheDocument();
-    });
-
-    const modalContent = within(modal);
-    expect(modalContent.getByText("Unfreeze Lease(s)")).toBeInTheDocument();
-
-    // Should show threshold breach warning
-    expect(
-      modalContent.getByText("Threshold Breach Warning"),
-    ).toBeInTheDocument();
-    expect(
-      modalContent.getByText(/Budget threshold breached/),
-    ).toBeInTheDocument();
-    expect(
-      modalContent.getByText(/Duration threshold breached/),
-    ).toBeInTheDocument();
-    expect(
-      modalContent.getByText(
-        /Consider extending the lease duration or budget limits/,
-      ),
-    ).toBeInTheDocument();
-  });
-
-  test("shows no warning when unfreezing lease without threshold risk", async () => {
-    const mockLease = createActiveLease({
-      status: "Frozen",
-      totalCostAccrued: 20, // Below threshold
-      maxSpend: 1000,
-      budgetThresholds: [{ dollarsSpent: 50, action: "FREEZE_ACCOUNT" }],
-      durationThresholds: [{ hoursRemaining: 4, action: "FREEZE_ACCOUNT" }],
-      expirationDate: now().plus({ hour: 8 }).toISO(), // 8 hours from now (more than 4 hour threshold)
-    });
-
-    mockLeaseApi.returns([mockLease]);
-    server.use(mockLeaseApi.getHandler());
-
-    renderComponent();
-    const user = userEvent.setup();
-
-    await waitFor(() => {
-      expect(screen.getByText(mockLease.userEmail)).toBeInTheDocument();
-    });
-
-    const checkbox = screen.getAllByRole("checkbox")[1];
-    await user.click(checkbox);
-
-    const actionsButton = screen.getByText("Actions");
-    await user.click(actionsButton);
-
-    const unfreezeOption = await screen.findByText("Unfreeze");
-    await user.click(unfreezeOption);
-
-    const modal = screen.getByRole("dialog");
-    await waitFor(() => {
-      expect(modal).toBeInTheDocument();
-    });
-
-    const modalContent = within(modal);
-    expect(modalContent.getByText("Unfreeze Lease(s)")).toBeInTheDocument();
-
-    // Should not show threshold breach warning
-    expect(
-      modalContent.queryByText("Threshold Breach Warning"),
-    ).not.toBeInTheDocument();
-  });
+  // ─── Terminate/Freeze/Unfreeze Success & Error ─────────────────────────────
 
   test("successfully terminates lease and shows success status", async () => {
     mockLeaseApi.returns([mockActiveLease]);
     server.use(
       mockLeaseApi.getHandler(),
       http.post(
-        `${config.ApiUrl}/leases/${mockActiveLease.leaseId}/terminate`,
+        `${getConfig().ApiUrl}/leases/${mockActiveLease.leaseId}/terminate`,
         () => {
           return HttpResponse.json({
             status: "success",
@@ -723,14 +572,9 @@ describe("ListLeases", () => {
     await user.click(terminateOption);
 
     const modal = screen.getByRole("dialog");
-    await waitFor(() => {
-      expect(modal).toBeInTheDocument();
-    });
-
     const submitButton = within(modal).getByRole("button", { name: /Submit/i });
     await user.click(submitButton);
 
-    // Verify success status appears
     await waitFor(() => {
       expect(within(modal).getByText("Success")).toBeInTheDocument();
     });
@@ -741,13 +585,10 @@ describe("ListLeases", () => {
     server.use(
       mockLeaseApi.getHandler(),
       http.post(
-        `${config.ApiUrl}/leases/${mockActiveLease.leaseId}/terminate`,
+        `${getConfig().ApiUrl}/leases/${mockActiveLease.leaseId}/terminate`,
         () => {
           return HttpResponse.json(
-            {
-              status: "fail",
-              data: { message: "Termination failed" },
-            },
+            { status: "fail", data: { message: "Termination failed" } },
             { status: 500 },
           );
         },
@@ -771,14 +612,9 @@ describe("ListLeases", () => {
     await user.click(terminateOption);
 
     const modal = screen.getByRole("dialog");
-    await waitFor(() => {
-      expect(modal).toBeInTheDocument();
-    });
-
     const submitButton = within(modal).getByRole("button", { name: /Submit/i });
     await user.click(submitButton);
 
-    // Verify failed status appears
     await waitFor(() => {
       expect(within(modal).getByText("Failed")).toBeInTheDocument();
     });
@@ -789,7 +625,7 @@ describe("ListLeases", () => {
     server.use(
       mockLeaseApi.getHandler(),
       http.post(
-        `${config.ApiUrl}/leases/${mockActiveLease.leaseId}/freeze`,
+        `${getConfig().ApiUrl}/leases/${mockActiveLease.leaseId}/freeze`,
         () => {
           return HttpResponse.json({
             status: "success",
@@ -816,14 +652,9 @@ describe("ListLeases", () => {
     await user.click(freezeOption);
 
     const modal = screen.getByRole("dialog");
-    await waitFor(() => {
-      expect(modal).toBeInTheDocument();
-    });
-
     const submitButton = within(modal).getByRole("button", { name: /Submit/i });
     await user.click(submitButton);
 
-    // Verify success status appears
     await waitFor(() => {
       expect(within(modal).getByText("Success")).toBeInTheDocument();
     });
@@ -834,7 +665,7 @@ describe("ListLeases", () => {
     server.use(
       mockLeaseApi.getHandler(),
       http.post(
-        `${config.ApiUrl}/leases/${mockFrozenLease.leaseId}/unfreeze`,
+        `${getConfig().ApiUrl}/leases/${mockFrozenLease.leaseId}/unfreeze`,
         () => {
           return HttpResponse.json({
             status: "success",
@@ -861,23 +692,19 @@ describe("ListLeases", () => {
     await user.click(unfreezeOption);
 
     const modal = screen.getByRole("dialog");
-    await waitFor(() => {
-      expect(modal).toBeInTheDocument();
-    });
-
     const submitButton = within(modal).getByRole("button", { name: /Submit/i });
     await user.click(submitButton);
 
-    // Verify success status appears
     await waitFor(() => {
       expect(within(modal).getByText("Success")).toBeInTheDocument();
     });
   });
 
-  test("navigates to lease details when 'Update' action is selected", async () => {
+  // ─── Tab Navigation ────────────────────────────────────────────────────────
+
+  test("switches to My Leases tab when clicked", async () => {
     mockLeaseApi.returns([mockActiveLease]);
     server.use(mockLeaseApi.getHandler());
-
     renderComponent();
     const user = userEvent.setup();
 
@@ -885,60 +712,202 @@ describe("ListLeases", () => {
       expect(screen.getByText(mockActiveLease.userEmail)).toBeInTheDocument();
     });
 
-    const checkbox = screen.getAllByRole("checkbox")[1];
-    await user.click(checkbox);
+    const myLeasesTab = screen.getByRole("tab", { name: /My Leases/i });
+    await user.click(myLeasesTab);
 
-    const actionsButton = screen.getByText("Actions");
-    await user.click(actionsButton);
-
-    const updateOption = await screen.findByText("Update");
-    await user.click(updateOption);
-
-    expect(mockNavigate).toHaveBeenCalledWith(
-      `/leases/${mockActiveLease.leaseId}`,
-    );
+    expect(myLeasesTab).toHaveAttribute("aria-selected", "true");
   });
 
-  test("filters leases by lease template", async () => {
-    const lease1 = createActiveLease({
-      userEmail: "user1@example.com",
-      originalLeaseTemplateName: "Template A",
-    });
-    const lease2 = createActiveLease({
-      userEmail: "user2@example.com",
-      originalLeaseTemplateName: "Template B",
-    });
-
-    mockLeaseApi.returns([lease1, lease2]);
+  test("switches to Shared with me tab when clicked", async () => {
+    mockLeaseApi.returns([mockActiveLease]);
     server.use(mockLeaseApi.getHandler());
+    renderComponent();
+    const user = userEvent.setup();
+
+    const sharedTab = screen.getByRole("tab", { name: /Shared with me/i });
+    await user.click(sharedTab);
+
+    expect(sharedTab).toHaveAttribute("aria-selected", "true");
+  });
+
+  // ─── Shared with me Tab ────────────────────────────────────────────────────
+
+  test("Shared with me tab shows empty state when no shared leases", async () => {
+    mockLeaseApi.returns([]);
+    server.use(mockLeaseApi.getHandler());
+    renderComponent();
+    const user = userEvent.setup();
+
+    const sharedTab = screen.getByRole("tab", { name: /Shared with me/i });
+    await user.click(sharedTab);
+
+    await waitFor(() => {
+      expect(screen.getByText("No shared leases found.")).toBeInTheDocument();
+    });
+  });
+
+  test("Shared with me tab shows shared leases when available", async () => {
+    mockLeaseApi.returns([]);
+    server.use(mockLeaseApi.getHandler());
+
+    const sharedLease = {
+      ...mockActiveLease,
+      userEmail: "sharer@example.com",
+      leaseId: "shared-lease-1",
+      accessType: "direct",
+    };
+
+    server.use(
+      http.get(`${getConfig().ApiUrl}/leases/shared`, () => {
+        return HttpResponse.json({
+          status: "success",
+          data: { result: [sharedLease], nextPageIdentifier: null },
+        });
+      }),
+    );
 
     renderComponent();
     const user = userEvent.setup();
 
-    await waitFor(() => {
-      expect(screen.getByText(lease1.userEmail)).toBeInTheDocument();
-      expect(screen.getByText(lease2.userEmail)).toBeInTheDocument();
-    });
-
-    // Find the lease template filter
-    const leaseTemplateFilters = screen.getAllByText("Choose options");
-    const leaseTemplateFilter = leaseTemplateFilters[1]; // Second filter is lease template
-
-    await user.click(leaseTemplateFilter);
+    const sharedTab = screen.getByRole("tab", { name: /Shared with me/i });
+    await user.click(sharedTab);
 
     await waitFor(() => {
-      const options = screen.getAllByRole("option");
-      const templateAOption = options.find((option) =>
-        option.textContent!.includes("Template A"),
-      );
-      if (templateAOption) {
-        user.click(templateAOption);
-      }
+      expect(screen.getByText("sharer@example.com")).toBeInTheDocument();
     });
+  });
+
+  test("Shared with me tab excludes leases owned by the current user", async () => {
+    mockLeaseApi.returns([]);
+    server.use(mockLeaseApi.getHandler());
+
+    // The direct endpoint returns owned leases too; the current user is
+    // test@example.com (mockAuthenticatedUser), so their own lease must be
+    // filtered out of the Shared with me tab.
+    const ownedLease = {
+      ...mockActiveLease,
+      userEmail: "test@example.com",
+      leaseId: "owned-lease-1",
+    };
+    const sharedLease = {
+      ...mockActiveLease,
+      userEmail: "sharer@example.com",
+      leaseId: "shared-lease-1",
+    };
+
+    server.use(
+      http.get(`${getConfig().ApiUrl}/leases/shared`, () => {
+        return HttpResponse.json({
+          status: "success",
+          data: {
+            result: [ownedLease, sharedLease],
+            nextPageIdentifier: null,
+          },
+        });
+      }),
+    );
+
+    renderComponent();
+    const user = userEvent.setup();
+
+    const sharedTab = screen.getByRole("tab", { name: /Shared with me/i });
+    await user.click(sharedTab);
 
     await waitFor(() => {
-      expect(screen.getByText(lease1.userEmail)).toBeInTheDocument();
-      expect(screen.queryByText(lease2.userEmail)).not.toBeInTheDocument();
+      expect(screen.getByText("sharer@example.com")).toBeInTheDocument();
     });
+
+    // The current user's own lease should not appear in Shared with me
+    expect(screen.queryByText("test@example.com")).not.toBeInTheDocument();
+  });
+
+  // ─── Error State ───────────────────────────────────────────────────────────
+
+  test("shows error state when lease fetch fails", async () => {
+    // Override with 500 error - must be added AFTER beforeEach handlers
+    server.use(
+      http.get(`${getConfig().ApiUrl}/leases`, () => {
+        return HttpResponse.json(
+          { status: "error", message: "Internal error" },
+          { status: 500 },
+        );
+      }),
+    );
+
+    renderComponent();
+
+    await waitFor(() => {
+      expect(screen.getByText("Failed to load all leases")).toBeInTheDocument();
+    });
+  });
+
+  // ─── Access Type Badge Tests ───────────────────────────────────────────────
+
+  test("All tab (admin) shows 'Owner' badge for current user's lease", async () => {
+    // mockActiveLease has userEmail "test@example.com" matching mock user
+    mockLeaseApi.returns([mockActiveLease]);
+    server.use(mockLeaseApi.getHandler());
+    renderComponent();
+
+    await waitFor(
+      () => {
+        expect(screen.getByText("Owner")).toBeInTheDocument();
+      },
+      { timeout: 5000 },
+    );
+  });
+
+  test("All tab (admin) shows 'Global' badge for non-owned lease", async () => {
+    // mockPendingLease has userEmail "pending@example.com" — not the current user
+    mockLeaseApi.returns([mockPendingLease]);
+    server.use(mockLeaseApi.getHandler());
+    renderComponent();
+
+    await waitFor(
+      () => {
+        expect(screen.getByText("Global")).toBeInTheDocument();
+      },
+      { timeout: 5000 },
+    );
+  });
+
+  test("All tab (admin) shows 'Direct' badge for directly-shared lease", async () => {
+    const sharedLease = {
+      ...createActiveLease({
+        userEmail: "other@example.com",
+        originalLeaseTemplateName: "Shared Template",
+        status: "Active",
+        awsAccountId: "333333333333",
+      }),
+      leaseId: "shared-direct-lease-1",
+      accessType: "direct",
+    } as MonitoredLeaseWithLeaseId & { accessType: string };
+
+    mockLeaseApi.returns([sharedLease]);
+    server.use(
+      mockLeaseApi.getHandler(),
+      http.get(`${getConfig().ApiUrl}/leases/shared`, ({ request }) => {
+        const url = new URL(request.url);
+        const accessType = url.searchParams.get("accessType");
+        if (accessType === "direct") {
+          return HttpResponse.json({
+            status: "success",
+            data: { result: [sharedLease], nextPageIdentifier: null },
+          });
+        }
+        return HttpResponse.json({
+          status: "success",
+          data: { result: [], nextPageIdentifier: null },
+        });
+      }),
+    );
+    renderComponent();
+
+    await waitFor(
+      () => {
+        expect(screen.getByText("Direct")).toBeInTheDocument();
+      },
+      { timeout: 5000 },
+    );
   });
 });

@@ -38,7 +38,7 @@ export default function baseMiddlewareBundle<T extends BaseLambdaSchema>(
     .use(environmentValidatorMiddleware({ schema, logger }))
     .use(
       injectLambdaContext(logger, {
-        logEvent: process.env.POWERTOOLS_LOG_LEVEL === "DEBUG",
+        logEvent: process.env.AWS_LAMBDA_LOG_LEVEL === "DEBUG",
         resetKeys: true,
       }),
     )

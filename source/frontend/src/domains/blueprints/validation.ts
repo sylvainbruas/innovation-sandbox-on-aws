@@ -195,7 +195,7 @@ export const DeploymentConfigurationValidationSchema = z.object({
     .min(1, "At least one region is required"),
   deploymentTimeout: z
     .number({
-      invalid_type_error: "Deployment timeout must be a number",
+      error: "Deployment timeout must be a number",
     })
     .min(
       BLUEPRINT_DEPLOYMENT_TIMEOUT.MIN,
@@ -213,13 +213,13 @@ export const DeploymentConfigurationValidationSchema = z.object({
   }),
   maxConcurrentPercentage: z
     .number({
-      invalid_type_error: "Maximum concurrent percentage must be a number",
+      error: "Maximum concurrent percentage must be a number",
     })
     .min(1, "Maximum concurrent percentage must be at least 1%")
     .max(100, "Maximum concurrent percentage must be at most 100%"),
   failureTolerancePercentage: z
     .number({
-      invalid_type_error: "Failure tolerance percentage must be a number",
+      error: "Failure tolerance percentage must be a number",
     })
     .min(0, "Failure tolerance percentage must be at least 0%")
     .max(100, "Failure tolerance percentage must be at most 100%"),

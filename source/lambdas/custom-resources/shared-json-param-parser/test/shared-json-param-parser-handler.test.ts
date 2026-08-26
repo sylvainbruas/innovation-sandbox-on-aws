@@ -71,16 +71,29 @@ describe("lambda handler", () => {
   const testDataConfig = {
     configApplicationId: "App111",
     configEnvironmentId: "Env111",
-    globalConfigConfigurationProfileId: "Profile111",
+    configTableName: "ConfigTable111",
     nukeConfigConfigurationProfileId: "NukeProfile111",
-    reportingConfigConfigurationProfileId: "ReportingProfile111",
+    validatorExclusionConfigConfigurationProfileId:
+      "ValidatorExclusionProfile111",
     accountTable: "AccountTable",
     leaseTemplateTable: "LeaseTemplateTable",
     leaseTable: "LeaseTable",
     blueprintTable: "test-blueprint-table",
+    principalTable: "test-principal-table",
+    cleanupReportTable: "CleanupReportTable",
     tableKmsKeyId: "KmsKeyId",
     solutionVersion: "v3.0.0",
     supportedSchemas: ["1"],
+    cognitoUserPoolId: "us-east-1_abc123",
+    cognitoUserPoolArn:
+      "arn:aws:cognito-idp:us-east-1:123456789012:userpool/us-east-1_abc123",
+    cognitoAppClientId: "1234567890abcdef",
+    cognitoIdentityPoolId: "us-east-1:00000000-0000-0000-0000-000000000000",
+    cognitoDomain: "test-isb",
+    awsAccessPortalUrl: "https://d-0000000000.awsapps.com/start",
+    identityPoolAdminRoleName: "test-isb-admin-role",
+    identityPoolManagerRoleName: "test-isb-manager-role",
+    identityPoolUserRoleName: "test-isb-user-role",
   };
 
   const eventCreate: CdkCustomResourceEvent = {
@@ -149,19 +162,29 @@ describe("lambda handler", () => {
     // Data config with prefixed keys
     configApplicationId: testDataConfig.configApplicationId,
     configEnvironmentId: testDataConfig.configEnvironmentId,
-    globalConfigConfigurationProfileId:
-      testDataConfig.globalConfigConfigurationProfileId,
+    configTableName: testDataConfig.configTableName,
     nukeConfigConfigurationProfileId:
       testDataConfig.nukeConfigConfigurationProfileId,
-    reportingConfigConfigurationProfileId:
-      testDataConfig.reportingConfigConfigurationProfileId,
+    validatorExclusionConfigConfigurationProfileId:
+      testDataConfig.validatorExclusionConfigConfigurationProfileId,
     accountTable: testDataConfig.accountTable,
     leaseTemplateTable: testDataConfig.leaseTemplateTable,
     leaseTable: testDataConfig.leaseTable,
     blueprintTable: testDataConfig.blueprintTable,
+    principalTable: testDataConfig.principalTable,
+    cleanupReportTable: testDataConfig.cleanupReportTable,
     tableKmsKeyId: testDataConfig.tableKmsKeyId,
     dataSolutionVersion: testDataConfig.solutionVersion,
     dataSupportedSchemas: JSON.stringify(testDataConfig.supportedSchemas),
+    cognitoUserPoolId: testDataConfig.cognitoUserPoolId,
+    cognitoUserPoolArn: testDataConfig.cognitoUserPoolArn,
+    cognitoAppClientId: testDataConfig.cognitoAppClientId,
+    cognitoIdentityPoolId: testDataConfig.cognitoIdentityPoolId,
+    cognitoDomain: testDataConfig.cognitoDomain,
+    awsAccessPortalUrl: testDataConfig.awsAccessPortalUrl,
+    identityPoolAdminRoleName: testDataConfig.identityPoolAdminRoleName,
+    identityPoolManagerRoleName: testDataConfig.identityPoolManagerRoleName,
+    identityPoolUserRoleName: testDataConfig.identityPoolUserRoleName,
   };
 
   it("should return the parsed configs on create", async () => {

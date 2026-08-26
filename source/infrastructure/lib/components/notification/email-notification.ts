@@ -3,7 +3,6 @@
 
 import { SubscribedEmailEvents } from "@amzn/innovation-sandbox-commons/isb-services/notification/email-events";
 import { EmailNotificationEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/email-notification-lambda-environment.js";
-import { addAppConfigExtensionLayer } from "@amzn/innovation-sandbox-infrastructure/components/config/app-config-lambda-extension";
 import { EventsToLambda } from "@amzn/innovation-sandbox-infrastructure/components/events-to-lambda";
 import { IsbLambdaFunction } from "@amzn/innovation-sandbox-infrastructure/components/isb-lambda-function";
 import { IsbKmsKeys } from "@amzn/innovation-sandbox-infrastructure/components/kms";
@@ -12,12 +11,12 @@ import {
   IntermediateRole,
 } from "@amzn/innovation-sandbox-infrastructure/helpers/isb-roles";
 import {
-  grantIsbAppConfigRead,
+  grantIsbDbReadOnly,
   grantIsbSsmParameterRead,
 } from "@amzn/innovation-sandbox-infrastructure/helpers/policy-generators";
 import { IsbComputeResources } from "@amzn/innovation-sandbox-infrastructure/isb-compute-resources";
 import { IsbComputeStack } from "@amzn/innovation-sandbox-infrastructure/isb-compute-stack";
-import { Duration } from "aws-cdk-lib";
+import { Duration, Stack } from "aws-cdk-lib";
 import { EventBus } from "aws-cdk-lib/aws-events";
 import { Policy, PolicyStatement, Role } from "aws-cdk-lib/aws-iam";
 import { Construct } from "constructs";
@@ -27,6 +26,7 @@ export interface EmailNotificationLambdaProps {
   isbEventBus: EventBus;
   namespace: string;
   idcAccountId: string;
+  webAppUrl: string;
 }
 
 export class EmailNotificationLambda extends Construct {
@@ -37,11 +37,7 @@ export class EmailNotificationLambda extends Construct {
   ) {
     super(scope, id);
 
-    const {
-      configApplicationId,
-      configEnvironmentId,
-      globalConfigConfigurationProfileId,
-    } = IsbComputeStack.sharedSpokeConfig.data;
+    const { configTableName } = IsbComputeStack.sharedSpokeConfig.data;
 
     const lambda = new IsbLambdaFunction(this, id, {
       description: "consumes email notification messages and sends emails",
@@ -60,16 +56,14 @@ export class EmailNotificationLambda extends Construct {
       handler: "handler",
       namespace: props.namespace,
       environment: {
+        CONFIG_TABLE_NAME: configTableName,
         ISB_EVENT_BUS: props.isbEventBus.eventBusName,
-        APP_CONFIG_APPLICATION_ID: configApplicationId,
-        APP_CONFIG_ENVIRONMENT_ID: configEnvironmentId,
-        APP_CONFIG_PROFILE_ID: globalConfigConfigurationProfileId,
-        AWS_APPCONFIG_EXTENSION_PREFETCH_LIST: `/applications/${configApplicationId}/environments/${configEnvironmentId}/configurations/${globalConfigConfigurationProfileId}`,
         INTERMEDIATE_ROLE_ARN: IntermediateRole.getRoleArn(),
         IDC_ROLE_ARN: getIdcRoleArn(scope, props.namespace, props.idcAccountId),
         ISB_NAMESPACE: props.namespace,
         IDC_CONFIG_PARAM_ARN:
           IsbComputeStack.sharedSpokeConfig.parameterArns.idcConfigParamArn,
+        WEB_APP_URL: props.webAppUrl,
       },
       logGroup: IsbComputeResources.globalLogGroup,
       envSchema: EmailNotificationEnvironmentSchema,
@@ -81,14 +75,19 @@ export class EmailNotificationLambda extends Construct {
       lambda.lambdaFunction.role! as Role,
       IsbComputeStack.sharedSpokeConfig.parameterArns.idcConfigParamArn,
     );
-    grantIsbAppConfigRead(scope, lambda, globalConfigConfigurationProfileId);
-    addAppConfigExtensionLayer(lambda);
+    grantIsbDbReadOnly(scope, lambda, configTableName);
 
     const emailSendPolicy = new Policy(scope, "EmailNotificationSendPolicy", {
       statements: [
         new PolicyStatement({
           actions: ["ses:SendEmail"],
-          resources: ["*"],
+          resources: [
+            Stack.of(scope).formatArn({
+              service: "ses",
+              resource: "identity",
+              resourceName: "*",
+            }),
+          ],
         }),
       ],
     });

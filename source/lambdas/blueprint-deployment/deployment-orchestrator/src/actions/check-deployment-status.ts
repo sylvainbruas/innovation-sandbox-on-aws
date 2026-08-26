@@ -25,11 +25,11 @@ export const CheckStatusActionInputSchema = z.object({
   action: z.literal("CHECK_STATUS"),
   stackSetId: z.string().min(1),
   operationId: z.string().min(1),
-  blueprintId: z.string().uuid(),
-  leaseId: z.string().uuid(),
+  blueprintId: z.uuid(),
+  leaseId: z.uuid(),
   accountId: AwsAccountIdSchema,
   deploymentTimeoutMinutes: z.number(),
-  executionStartTime: z.string().datetime(),
+  executionStartTime: z.iso.datetime(),
 });
 
 export type CheckStatusActionInput = z.infer<

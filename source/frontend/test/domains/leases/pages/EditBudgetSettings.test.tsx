@@ -13,7 +13,7 @@ import {
 } from "@amzn/innovation-sandbox-frontend/components/Toast";
 import { EditBudgetSettings } from "@amzn/innovation-sandbox-frontend/domains/leases/pages/EditBudgetSettings";
 import { MonitoredLeaseWithLeaseId } from "@amzn/innovation-sandbox-frontend/domains/leases/types";
-import { config } from "@amzn/innovation-sandbox-frontend/helpers/config";
+import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
 import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
 import { ApiResponse } from "@amzn/innovation-sandbox-frontend/types";
@@ -83,14 +83,14 @@ describe("EditBudgetSettings", () => {
 
     // Setup default MSW handlers
     server.use(
-      http.get(`${config.ApiUrl}/leases/lease-123`, () => {
+      http.get(`${getConfig().ApiUrl}/leases/lease-123`, () => {
         const response: ApiResponse<MonitoredLeaseWithLeaseId> = {
           status: "success",
           data: mockLease,
         };
         return HttpResponse.json(response);
       }),
-      http.get(`${config.ApiUrl}/configurations`, () => {
+      http.get(`${getConfig().ApiUrl}/configurations`, () => {
         const response: ApiResponse<typeof mockConfig> = {
           status: "success",
           data: mockConfig,
@@ -102,7 +102,7 @@ describe("EditBudgetSettings", () => {
 
   it("shows loading state while fetching lease data", () => {
     server.use(
-      http.get(`${config.ApiUrl}/leases/lease-123`, () => {
+      http.get(`${getConfig().ApiUrl}/leases/lease-123`, () => {
         // Simulate loading by delaying indefinitely
         return new Promise(() => {});
       }),
@@ -115,7 +115,7 @@ describe("EditBudgetSettings", () => {
 
   it("shows loading state while fetching config data", () => {
     server.use(
-      http.get(`${config.ApiUrl}/configurations`, () => {
+      http.get(`${getConfig().ApiUrl}/configurations`, () => {
         // Simulate loading by delaying indefinitely
         return new Promise(() => {});
       }),
@@ -128,7 +128,7 @@ describe("EditBudgetSettings", () => {
 
   it("shows error state when lease fails to load", async () => {
     server.use(
-      http.get(`${config.ApiUrl}/leases/lease-123`, () => {
+      http.get(`${getConfig().ApiUrl}/leases/lease-123`, () => {
         return HttpResponse.json(
           { status: "error", message: "Failed to load lease" },
           { status: 500 },
@@ -150,7 +150,7 @@ describe("EditBudgetSettings", () => {
 
     // Test retry functionality
     server.use(
-      http.get(`${config.ApiUrl}/leases/lease-123`, () => {
+      http.get(`${getConfig().ApiUrl}/leases/lease-123`, () => {
         const response: ApiResponse<MonitoredLeaseWithLeaseId> = {
           status: "success",
           data: mockLease,
@@ -168,7 +168,7 @@ describe("EditBudgetSettings", () => {
 
   it("shows error state when config fails to load", async () => {
     server.use(
-      http.get(`${config.ApiUrl}/configurations`, () => {
+      http.get(`${getConfig().ApiUrl}/configurations`, () => {
         return HttpResponse.json(
           { status: "error", message: "Failed to load config" },
           { status: 500 },
@@ -190,7 +190,7 @@ describe("EditBudgetSettings", () => {
 
     // Test retry functionality
     server.use(
-      http.get(`${config.ApiUrl}/configurations`, () => {
+      http.get(`${getConfig().ApiUrl}/configurations`, () => {
         const response: ApiResponse<typeof mockConfig> = {
           status: "success",
           data: mockConfig,
@@ -226,10 +226,13 @@ describe("EditBudgetSettings", () => {
     let submittedData: any = null;
 
     server.use(
-      http.patch(`${config.ApiUrl}/leases/lease-123`, async ({ request }) => {
-        submittedData = await request.json();
-        return HttpResponse.json({ status: "success", data: {} });
-      }),
+      http.patch(
+        `${getConfig().ApiUrl}/leases/lease-123`,
+        async ({ request }) => {
+          submittedData = await request.json();
+          return HttpResponse.json({ status: "success", data: {} });
+        },
+      ),
     );
 
     const user = userEvent.setup();
@@ -264,10 +267,13 @@ describe("EditBudgetSettings", () => {
     let submittedData: any = null;
 
     server.use(
-      http.patch(`${config.ApiUrl}/leases/lease-123`, async ({ request }) => {
-        submittedData = await request.json();
-        return HttpResponse.json({ status: "success", data: {} });
-      }),
+      http.patch(
+        `${getConfig().ApiUrl}/leases/lease-123`,
+        async ({ request }) => {
+          submittedData = await request.json();
+          return HttpResponse.json({ status: "success", data: {} });
+        },
+      ),
     );
 
     const user = userEvent.setup();
@@ -301,7 +307,7 @@ describe("EditBudgetSettings", () => {
     const errorMessage = "Network error";
 
     server.use(
-      http.patch(`${config.ApiUrl}/leases/lease-123`, () => {
+      http.patch(`${getConfig().ApiUrl}/leases/lease-123`, () => {
         return HttpResponse.json(
           { status: "error", message: errorMessage },
           { status: 500 },
@@ -404,7 +410,7 @@ describe("EditBudgetSettings", () => {
     };
 
     server.use(
-      http.get(`${config.ApiUrl}/leases/lease-123`, () => {
+      http.get(`${getConfig().ApiUrl}/leases/lease-123`, () => {
         const response: ApiResponse<MonitoredLeaseWithLeaseId> = {
           status: "success",
           data: leaseWithNoBudget,
@@ -422,5 +428,54 @@ describe("EditBudgetSettings", () => {
     // Budget should be disabled
     const toggle = screen.getByRole("checkbox");
     expect(toggle).not.toBeChecked();
+  });
+
+  it("assigns a budget when required and none was previously set", async () => {
+    // Regression: with a required budget and none set, the enable toggle is
+    // forced-on-but-disabled, so maxBudgetEnabled stays false. Entering a value
+    // must still submit it (not null).
+    const configRequired = {
+      ...mockConfig,
+      leases: { ...mockConfig.leases, requireMaxBudget: true },
+    };
+    const leaseWithNoBudget: MonitoredLeaseWithLeaseId = {
+      ...mockLease,
+      maxSpend: undefined,
+      budgetThresholds: [],
+    };
+
+    let submittedData: any = null;
+    server.use(
+      http.get(`${getConfig().ApiUrl}/configurations`, () =>
+        HttpResponse.json({ status: "success", data: configRequired }),
+      ),
+      http.get(`${getConfig().ApiUrl}/leases/lease-123`, () =>
+        HttpResponse.json({ status: "success", data: leaseWithNoBudget }),
+      ),
+      http.patch(
+        `${getConfig().ApiUrl}/leases/lease-123`,
+        async ({ request }) => {
+          submittedData = await request.json();
+          return HttpResponse.json({ status: "success", data: {} });
+        },
+      ),
+    );
+
+    const user = userEvent.setup();
+    renderComponent();
+
+    await waitFor(() => {
+      expect(screen.getByText("Edit Budget Settings")).toBeInTheDocument();
+    });
+
+    const maxSpendInput = await screen.findByPlaceholderText("e.g., 50");
+    await user.clear(maxSpendInput);
+    await user.type(maxSpendInput, "150");
+
+    const saveButton = screen.getByRole("button", { name: "Save changes" });
+    await waitFor(() => expect(saveButton).not.toBeDisabled());
+    await user.click(saveButton);
+
+    await waitFor(() => expect(submittedData?.maxSpend).toBe(150));
   });
 });

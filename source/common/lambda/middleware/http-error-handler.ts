@@ -92,7 +92,10 @@ export const httpErrorHandler = (
     }
 
     if (baseErrorHandler.onError) {
-      await baseErrorHandler.onError(request as Parameters<typeof baseErrorHandler.onError>[0]);
+      // Cast needed: @middy/http-error-handler expects a broader Request type
+      await baseErrorHandler.onError(
+        request as Parameters<typeof baseErrorHandler.onError>[0],
+      );
     }
   };
 
@@ -122,7 +125,7 @@ export function createHttpJSendValidationError(zodErrors: ZodError) {
     statusCode: 400,
     status: "fail",
     data: {
-      errors: zodErrors.errors.map((error) => ({
+      errors: zodErrors.issues.map((error) => ({
         field: error.path.join(".") || "input",
         message: error.message,
       })),

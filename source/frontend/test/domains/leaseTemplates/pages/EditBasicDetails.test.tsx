@@ -12,7 +12,7 @@ import {
   showSuccessToast,
 } from "@amzn/innovation-sandbox-frontend/components/Toast";
 import { EditBasicDetails } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/pages/EditBasicDetails";
-import { config } from "@amzn/innovation-sandbox-frontend/helpers/config";
+import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import { mockBasicLeaseTemplate } from "@amzn/innovation-sandbox-frontend/mocks/handlers/leaseTemplateHandlers";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
 import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
@@ -85,7 +85,7 @@ describe("EditBasicDetails", () => {
     const submitSpy = vi.fn();
     server.use(
       http.put(
-        `${config.ApiUrl}/leaseTemplates/${mockUuid}`,
+        `${getConfig().ApiUrl}/leaseTemplates/${mockUuid}`,
         async ({ request }) => {
           const data = await request.json();
           submitSpy(data);
@@ -117,7 +117,7 @@ describe("EditBasicDetails", () => {
 
   test("displays error toast on submission failure", async () => {
     server.use(
-      http.put(`${config.ApiUrl}/leaseTemplates/${mockUuid}`, () => {
+      http.put(`${getConfig().ApiUrl}/leaseTemplates/${mockUuid}`, () => {
         return HttpResponse.json(
           { status: "error", message: "Update failed" },
           { status: 500 },
@@ -176,7 +176,7 @@ describe("EditBasicDetails", () => {
 
   test("displays error panel when lease template fails to load", async () => {
     server.use(
-      http.get(`${config.ApiUrl}/leaseTemplates/${mockUuid}`, () => {
+      http.get(`${getConfig().ApiUrl}/leaseTemplates/${mockUuid}`, () => {
         return HttpResponse.json(
           { status: "error", message: "Not found" },
           { status: 404 },

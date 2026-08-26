@@ -7,27 +7,25 @@ import path from "path";
 import { LeaseTemplateLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/lease-template-lambda-environment.js";
 import {
   RestApi,
-  RestApiResourceProps,
+  RestApiProps,
 } from "@amzn/innovation-sandbox-infrastructure/components/api/rest-api-all";
-import { addAppConfigExtensionLayer } from "@amzn/innovation-sandbox-infrastructure/components/config/app-config-lambda-extension";
 import { IsbLambdaFunction } from "@amzn/innovation-sandbox-infrastructure/components/isb-lambda-function";
 import { IsbKmsKeys } from "@amzn/innovation-sandbox-infrastructure/components/kms";
 import {
-  AppConfigReadPolicyStatement,
   grantIsbDbReadOnly,
   grantIsbDbReadWrite,
 } from "@amzn/innovation-sandbox-infrastructure/helpers/policy-generators";
 import { IsbComputeStack } from "@amzn/innovation-sandbox-infrastructure/isb-compute-stack";
 
 export class LeaseTemplatesApi {
-  constructor(restApi: RestApi, scope: Construct, props: RestApiResourceProps) {
+  constructor(restApi: RestApi, scope: Construct, props: RestApiProps) {
+    const { namespace } = props;
     const {
-      configApplicationId,
-      configEnvironmentId,
-      globalConfigConfigurationProfileId,
-      reportingConfigConfigurationProfileId,
+      configTableName,
       leaseTemplateTable,
       blueprintTable,
+      cognitoUserPoolId,
+      cognitoAppClientId,
     } = IsbComputeStack.sharedSpokeConfig.data;
 
     const leaseTemplatesLambdaFunction = new IsbLambdaFunction(
@@ -49,24 +47,14 @@ export class LeaseTemplatesApi {
           "lease-templates-handler.ts",
         ),
         handler: "handler",
-        namespace: props.namespace,
+        namespace: namespace,
         environment: {
-          JWT_SECRET_NAME: props.jwtSecret.secretName,
-          APP_CONFIG_APPLICATION_ID: configApplicationId,
-          APP_CONFIG_ENVIRONMENT_ID: configEnvironmentId,
-          APP_CONFIG_PROFILE_ID: globalConfigConfigurationProfileId,
-          REPORTING_CONFIG_PROFILE_ID: reportingConfigConfigurationProfileId,
-          AWS_APPCONFIG_EXTENSION_PREFETCH_LIST: `/applications/${configApplicationId}/environments/${configEnvironmentId}/configurations/${globalConfigConfigurationProfileId},/applications/${configApplicationId}/environments/${configEnvironmentId}/configurations/${reportingConfigConfigurationProfileId}`,
+          CONFIG_TABLE_NAME: configTableName,
           LEASE_TEMPLATE_TABLE_NAME: leaseTemplateTable,
           BLUEPRINT_TABLE_NAME: blueprintTable,
-        },
-        bundling: {
-          externalModules: [
-            "@middy/core",
-            "@aws-lambda-powertools/logger",
-            "@aws-lambda-powertools/tracer",
-            "@aws-lambda-powertools/parser",
-          ],
+          COGNITO_USER_POOL_ID: cognitoUserPoolId,
+          COGNITO_APP_CLIENT_ID: cognitoAppClientId,
+          ISB_NAMESPACE: namespace,
         },
         logGroup: restApi.logGroup,
         envSchema: LeaseTemplateLambdaEnvironmentSchema,
@@ -78,28 +66,14 @@ export class LeaseTemplatesApi {
       leaseTemplatesLambdaFunction,
       leaseTemplateTable,
     );
-    grantIsbDbReadOnly(scope, leaseTemplatesLambdaFunction, blueprintTable);
-    addAppConfigExtensionLayer(leaseTemplatesLambdaFunction);
-
-    leaseTemplatesLambdaFunction.lambdaFunction.addToRolePolicy(
-      new AppConfigReadPolicyStatement(scope, {
-        configurations: [
-          {
-            applicationId: configApplicationId,
-            environmentId: configEnvironmentId,
-            configurationProfileId: globalConfigConfigurationProfileId,
-          },
-          {
-            applicationId: configApplicationId,
-            environmentId: configEnvironmentId,
-            configurationProfileId: reportingConfigConfigurationProfileId,
-          },
-        ],
-      }),
+    grantIsbDbReadOnly(
+      scope,
+      leaseTemplatesLambdaFunction,
+      configTableName,
+      blueprintTable,
     );
 
-    props.jwtSecret.grantRead(leaseTemplatesLambdaFunction.lambdaFunction);
-    IsbKmsKeys.get(scope, props.namespace).grantEncryptDecrypt(
+    IsbKmsKeys.get(scope, namespace).grantEncryptDecrypt(
       leaseTemplatesLambdaFunction.lambdaFunction,
     );
 

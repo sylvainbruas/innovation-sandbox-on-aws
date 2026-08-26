@@ -6,6 +6,7 @@ import {
   GetCommand,
   PutCommand,
   ScanCommand,
+  UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
 
 import {
@@ -19,6 +20,7 @@ import {
   base64DecodeCompositeKey,
   base64EncodeCompositeKey,
 } from "@amzn/innovation-sandbox-commons/data/encoding.js";
+import { ResourceLock } from "@amzn/innovation-sandbox-commons/data/resource-lock.js";
 import { SandboxAccountStore } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account-store.js";
 import {
   SandboxAccount,
@@ -32,6 +34,11 @@ import {
   validateItem,
   withMetadata,
 } from "@amzn/innovation-sandbox-commons/data/utils.js";
+import {
+  nowAsIsoDatetimeString,
+  parseDatetime,
+} from "@amzn/innovation-sandbox-commons/utils/time-utils.js";
+import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
 
 export class DynamoSandboxAccountStore extends SandboxAccountStore {
   private readonly tableName: string;
@@ -136,5 +143,130 @@ export class DynamoSandboxAccountStore extends SandboxAccountStore {
     );
 
     return parseSingleItemResult(result.Item, SandboxAccountSchema);
+  }
+
+  public async update(
+    accountId: AwsAccountId,
+    params: {
+      set?: Partial<Omit<SandboxAccount, "awsAccountId" | "meta">>;
+      remove?: Array<
+        keyof Omit<SandboxAccount, "awsAccountId" | "meta" | "status">
+      >;
+    },
+  ): Promise<void> {
+    const setExpressions: string[] = [];
+    const removeExpressions: string[] = [];
+    const expressionAttributeNames: Record<string, string> = {};
+    const expressionAttributeValues: Record<string, unknown> = {};
+
+    // Always update meta.lastEditTime
+    setExpressions.push("#meta.#lastEditTime = :lastEditTime");
+    expressionAttributeNames["#meta"] = "meta";
+    expressionAttributeNames["#lastEditTime"] = "lastEditTime";
+    expressionAttributeValues[":lastEditTime"] = nowAsIsoDatetimeString();
+
+    // SET fields (including explicit null → DynamoDB NULL type)
+    if (params.set) {
+      for (const [key, value] of Object.entries(params.set)) {
+        const attrName = `#${key}`;
+        expressionAttributeNames[attrName] = key;
+        setExpressions.push(`${attrName} = :${key}`);
+        expressionAttributeValues[`:${key}`] = value ?? null;
+      }
+    }
+
+    // REMOVE fields (delete the attribute from the item)
+    if (params.remove) {
+      for (const key of params.remove) {
+        const attrName = `#${key}`;
+        expressionAttributeNames[attrName] = key;
+        removeExpressions.push(attrName);
+      }
+    }
+
+    const updateParts: string[] = [];
+    if (setExpressions.length > 0) {
+      updateParts.push(`SET ${setExpressions.join(", ")}`);
+    }
+    if (removeExpressions.length > 0) {
+      updateParts.push(`REMOVE ${removeExpressions.join(", ")}`);
+    }
+
+    await this.ddbClient.send(
+      new UpdateCommand({
+        TableName: this.tableName,
+        Key: { awsAccountId: accountId },
+        UpdateExpression: updateParts.join(" "),
+        ConditionExpression: "attribute_exists(awsAccountId)",
+        ExpressionAttributeNames: expressionAttributeNames,
+        ExpressionAttributeValues: expressionAttributeValues,
+      }),
+    );
+  }
+
+  public async acquireLock(
+    accountId: AwsAccountId,
+    ownerId: string,
+    timeoutSeconds: number,
+    meta?: Record<string, string>,
+  ): Promise<SandboxAccount> {
+    const acquiredAt = nowAsIsoDatetimeString();
+    const expiresAt = parseDatetime(acquiredAt)
+      .plus({ seconds: timeoutSeconds })
+      .toISO()!;
+
+    const lock: ResourceLock = {
+      ownerId,
+      acquiredAt,
+      expiresAt,
+      ...(meta ? { meta } : {}),
+    };
+
+    const result = await this.ddbClient.send(
+      new UpdateCommand({
+        TableName: this.tableName,
+        Key: { awsAccountId: accountId },
+        UpdateExpression: "SET resourceLock = :lock",
+        ConditionExpression:
+          "attribute_exists(awsAccountId) AND (attribute_not_exists(resourceLock) OR resourceLock.ownerId = :ownerId OR resourceLock.expiresAt < :now)",
+        ExpressionAttributeValues: {
+          ":lock": lock,
+          ":ownerId": ownerId,
+          ":now": acquiredAt,
+        },
+        ReturnValues: "ALL_NEW",
+      }),
+    );
+
+    return SandboxAccountSchema.parse(result.Attributes);
+  }
+
+  public async releaseLock(
+    accountId: AwsAccountId,
+    ownerId: string,
+  ): Promise<boolean> {
+    try {
+      await this.ddbClient.send(
+        new UpdateCommand({
+          TableName: this.tableName,
+          Key: { awsAccountId: accountId },
+          UpdateExpression: "REMOVE resourceLock",
+          ConditionExpression: "resourceLock.ownerId = :ownerId",
+          ExpressionAttributeValues: {
+            ":ownerId": ownerId,
+          },
+        }),
+      );
+      return true;
+    } catch (error: unknown) {
+      if (error instanceof ConditionalCheckFailedException) {
+        // No-op: lock doesn't exist, already released, or owned by someone else.
+        // This makes releaseLock safe for defensive cleanup in catch blocks.
+        // Returning false lets callers detect they no longer own the lock (e.g.
+        // a preempted execution) and avoid taking owner-only actions.
+        return false;
+      }
+      throw error;
+    }
   }
 }

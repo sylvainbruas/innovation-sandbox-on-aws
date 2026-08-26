@@ -10,6 +10,11 @@ import {
 } from "aws-cdk-lib/aws-iam";
 import { Construct } from "constructs";
 
+import {
+  getIsbTagValue,
+  isbTagName,
+} from "@amzn/innovation-sandbox-infrastructure/helpers/tagging-helper";
+
 type IntermediateRoleProps = {
   namespace: string;
   idcAccountId: string;
@@ -62,12 +67,13 @@ export function getIdcRoleArn(
 
 export class IntermediateRole {
   private static instance = undefined as undefined | Role;
-  private static readonly trustedRoles: Role[] = [];
+  private static namespace = undefined as undefined | string;
   public static getInstance(
     scope: Construct,
     props: IntermediateRoleProps,
   ): Role {
     if (!IntermediateRole.instance) {
+      IntermediateRole.namespace = props.namespace;
       IntermediateRole.instance = new Role(scope, "IntermediateRole", {
         roleName: getIntermediateRoleName(props.namespace),
         // assumedBy can't be empty on role creation. But we don't have the lambda execution roles yet.
@@ -130,10 +136,9 @@ export class IntermediateRole {
     return IntermediateRole.instance;
   }
   public static addTrustedRole(role: Role) {
-    if (!IntermediateRole.instance) {
+    if (!IntermediateRole.instance || IntermediateRole.namespace === undefined) {
       throw new Error("IntermediateRole not created yet");
     }
-    IntermediateRole.trustedRoles.push(role);
     const cfnRole = IntermediateRole.instance.node.defaultChild as CfnRole;
     cfnRole.addPropertyOverride("AssumeRolePolicyDocument.Statement", [
       {
@@ -158,9 +163,9 @@ export class IntermediateRole {
           },
         },
         Condition: {
-          "ForAnyValue:StringEquals": {
-            "aws:PrincipalArn": IntermediateRole.trustedRoles.map(
-              (role) => role.roleArn,
+          StringEquals: {
+            [`aws:PrincipalTag/${isbTagName}`]: getIsbTagValue(
+              IntermediateRole.namespace,
             ),
           },
         },
@@ -170,6 +175,37 @@ export class IntermediateRole {
         Action: "sts:AssumeRole",
         Principal: {
           Service: "cloudformation.amazonaws.com",
+        },
+        // Scope the CloudFormation service trust to StackSets in this (hub)
+        // account. Without a source-account/source-ARN condition, any external
+        // account's CloudFormation service could name this role as a StackSet
+        // administration role and assume it (confused deputy), which is
+        // dangerous because this role can assume into every sandbox account,
+        // the IDC account, and the Org Management account.
+        Condition: {
+          StringEquals: {
+            "aws:SourceAccount": {
+              Ref: "AWS::AccountId",
+            },
+          },
+          ArnLike: {
+            "aws:SourceArn": {
+              "Fn::Join": [
+                "",
+                [
+                  "arn:",
+                  {
+                    Ref: "AWS::Partition",
+                  },
+                  ":cloudformation:*:",
+                  {
+                    Ref: "AWS::AccountId",
+                  },
+                  ":stackset/*",
+                ],
+              ],
+            },
+          },
         },
       },
     ]);

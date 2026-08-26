@@ -15,11 +15,12 @@ export const useGetLeaseTemplates = () => {
   });
 };
 
-export const useGetLeaseTemplateById = (uuid: string) => {
+export const useGetLeaseTemplateById = (uuid?: string) => {
   return useQuery({
     queryKey: ["leaseTemplates", uuid],
     queryFn: async () =>
-      await new LeaseTemplateService().getLeaseTemplateById(uuid),
+      await new LeaseTemplateService().getLeaseTemplateById(uuid!),
+    enabled: !!uuid,
   });
 };
 

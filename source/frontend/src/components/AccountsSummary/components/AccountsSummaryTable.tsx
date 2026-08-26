@@ -30,16 +30,8 @@ const StatusCell = ({
   item: AccountStatusDatum;
   onClick?: (item: AccountStatusDatum) => void;
   filter?: SandboxAccountStatus;
-}) => (
-  <div
-    onClick={() => onClick?.(item)}
-    className={classNames(
-      { [styles.clickable]: !!onClick },
-      {
-        [styles.semiTransparent]: filter && filter !== item.status,
-      },
-    )}
-  >
+}) => {
+  const content = (
     <SpaceBetween size="xs" direction="horizontal" alignItems="center">
       <svg
         className={classNames(styles.icon, {
@@ -60,8 +52,23 @@ const StatusCell = ({
         {item.title}
       </span>
     </SpaceBetween>
-  </div>
-);
+  );
+
+  const containerClass = classNames(
+    { [styles.clickable]: !!onClick },
+    {
+      [styles.semiTransparent]: filter && filter !== item.status,
+    },
+  );
+
+  return onClick ? (
+    <button type="button" onClick={() => onClick(item)} className={containerClass}>
+      {content}
+    </button>
+  ) : (
+    <div className={containerClass}>{content}</div>
+  );
+};
 
 const CountCell = ({
   item,
@@ -71,21 +78,24 @@ const CountCell = ({
   item: AccountStatusDatum;
   onClick?: (item: AccountStatusDatum) => void;
   filter?: SandboxAccountStatus;
-}) => (
-  <span
-    onClick={() => onClick?.(item)}
-    className={classNames(
-      styles.rightAlign,
-      { [styles.clickable]: !!onClick },
-      { [styles.bold]: item.title === "Total" },
-      {
-        [styles.semiTransparent]: filter && filter !== item.status,
-      },
-    )}
-  >
-    {item.value}
-  </span>
-);
+}) => {
+  const containerClass = classNames(
+    styles.rightAlign,
+    { [styles.clickable]: !!onClick },
+    { [styles.bold]: item.title === "Total" },
+    {
+      [styles.semiTransparent]: filter && filter !== item.status,
+    },
+  );
+
+  return onClick ? (
+    <button type="button" onClick={() => onClick(item)} className={containerClass}>
+      {item.value}
+    </button>
+  ) : (
+    <span className={containerClass}>{item.value}</span>
+  );
+};
 
 const HeaderCell = ({ children }: { children: ReactNode }) => (
   <span className={styles.rightAlign}>{children}</span>

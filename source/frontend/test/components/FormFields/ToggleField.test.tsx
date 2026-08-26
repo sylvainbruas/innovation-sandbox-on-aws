@@ -221,6 +221,56 @@ describe("ToggleField", () => {
     expect(toggle).toBeInTheDocument();
   });
 
+  test("renders an Enabled/Disabled state label from the live value when stateLabel is set", async () => {
+    const user = userEvent.setup();
+
+    function TestStateLabel({ defaultValue = false }: { defaultValue?: boolean }) {
+      const { control } = useForm<TestFormValues>({
+        defaultValues: { isEnabled: defaultValue },
+      });
+      return (
+        <ToggleField
+          controllerProps={{ control, name: "isEnabled" }}
+          formFieldProps={{ label: "Enable Feature" }}
+          stateLabel
+        />
+      );
+    }
+
+    renderWithQueryClient(<TestStateLabel defaultValue={false} />);
+
+    // Reflects the live value with no explicit children supplied.
+    expect(screen.getByText("Disabled")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("checkbox"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Enabled")).toBeInTheDocument();
+      expect(screen.queryByText("Disabled")).not.toBeInTheDocument();
+    });
+  });
+
+  test("explicit toggleProps.children overrides the stateLabel", () => {
+    function TestOverride() {
+      const { control } = useForm<TestFormValues>({
+        defaultValues: { isEnabled: false },
+      });
+      return (
+        <ToggleField
+          controllerProps={{ control, name: "isEnabled" }}
+          formFieldProps={{ label: "Enable Feature" }}
+          stateLabel
+          toggleProps={{ children: "Custom label" }}
+        />
+      );
+    }
+
+    renderWithQueryClient(<TestOverride />);
+
+    expect(screen.getByText("Custom label")).toBeInTheDocument();
+    expect(screen.queryByText("Disabled")).not.toBeInTheDocument();
+  });
+
   test("handles keyboard interaction", async () => {
     const user = userEvent.setup();
     renderWithQueryClient(<TestComponent defaultValue={false} />);

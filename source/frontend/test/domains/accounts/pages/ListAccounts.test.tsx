@@ -9,8 +9,9 @@ import { describe, expect, test, vi } from "vitest";
 
 import { SandboxAccount } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
 import { ListAccounts } from "@amzn/innovation-sandbox-frontend/domains/accounts/pages/ListAccounts";
-import { config } from "@amzn/innovation-sandbox-frontend/helpers/config";
+import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import { ModalProvider } from "@amzn/innovation-sandbox-frontend/hooks/useModal";
+import { createSandboxAccount } from "@amzn/innovation-sandbox-frontend/mocks/factories/accountFactory";
 import { mockAccounts } from "@amzn/innovation-sandbox-frontend/mocks/handlers/accountHandlers";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
 import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
@@ -98,7 +99,7 @@ describe("ListAccounts", () => {
 
   test("displays loading state while fetching accounts", async () => {
     server.use(
-      http.get(`${config.ApiUrl}/accounts`, async () => {
+      http.get(`${getConfig().ApiUrl}/accounts`, async () => {
         await new Promise((resolve) => setTimeout(resolve, 100));
         return HttpResponse.json({
           status: "success",
@@ -139,7 +140,7 @@ describe("ListAccounts", () => {
   test("refreshes account data when refresh button is clicked", async () => {
     let requestCount = 0;
     server.use(
-      http.get(`${config.ApiUrl}/accounts`, () => {
+      http.get(`${getConfig().ApiUrl}/accounts`, () => {
         requestCount++;
         return HttpResponse.json({
           status: "success",
@@ -274,6 +275,94 @@ describe("ListAccounts", () => {
     expect(menuItem).toHaveAttribute("aria-disabled", "true");
   });
 
+  test("enables 'Quarantine account' when only Available/Active accounts are selected", async () => {
+    renderComponent();
+    const user = userEvent.setup();
+
+    await screen.findByRole("table");
+
+    const eligibleAccounts = mockAccounts.filter(
+      (account) =>
+        account.status === "Available" || account.status === "Active",
+    );
+
+    for (const account of eligibleAccounts) {
+      await screen.findByText(account.awsAccountId);
+      const row = screen.getByText(account.awsAccountId).closest("tr");
+      const checkbox = within(row!).getByRole("checkbox");
+      await user.click(checkbox);
+    }
+
+    const actionsButton = screen.getByText("Actions");
+    await user.click(actionsButton);
+
+    const quarantineOption = await screen.findByText("Quarantine account");
+    const menuItem = quarantineOption.closest('[role="menuitem"]');
+    expect(menuItem).not.toHaveAttribute("aria-disabled", "true");
+  });
+
+  test("disables 'Quarantine account' when a Quarantine or CleanUp account is selected", async () => {
+    renderComponent();
+    const user = userEvent.setup();
+
+    await screen.findByRole("table");
+
+    const ineligibleAccounts = mockAccounts.filter(
+      (account) =>
+        account.status === "Available" || account.status === "Quarantine",
+    );
+
+    for (const account of ineligibleAccounts) {
+      await screen.findByText(account.awsAccountId);
+      const row = screen.getByText(account.awsAccountId).closest("tr");
+      const checkbox = within(row!).getByRole("checkbox");
+      await user.click(checkbox);
+    }
+
+    const actionsButton = screen.getByText("Actions");
+    await user.click(actionsButton);
+
+    const quarantineOption = await screen.findByText("Quarantine account");
+    const menuItem = quarantineOption.closest('[role="menuitem"]');
+    expect(menuItem).toHaveAttribute("aria-disabled", "true");
+  });
+
+  test("disables 'Retry cleanup' when a selected account has a live cleanup lock", async () => {
+    // A live (non-expired) resource lock means a cleanup execution is already
+    // running for that account; retrying would race it. An eligible status
+    // (CleanUp) must not be enough on its own.
+    const lockedAccount = createSandboxAccount({
+      status: "CleanUp",
+      resourceLock: {
+        ownerId: "cleanup-execution",
+        acquiredAt: new Date(Date.now() - 60_000).toISOString(),
+        expiresAt: new Date(Date.now() + 60 * 60_000).toISOString(),
+      },
+    });
+    server.use(
+      http.get(`${getConfig().ApiUrl}/accounts`, () =>
+        HttpResponse.json({
+          status: "success",
+          data: { result: [lockedAccount], nextPageIdentifier: null },
+        }),
+      ),
+    );
+
+    renderComponent();
+    const user = userEvent.setup();
+
+    await screen.findByRole("table");
+    await screen.findByText(lockedAccount.awsAccountId);
+    const row = screen.getByText(lockedAccount.awsAccountId).closest("tr");
+    await user.click(within(row!).getByRole("checkbox"));
+
+    await user.click(screen.getByText("Actions"));
+
+    const cleanupOption = await screen.findByText("Retry cleanup");
+    const menuItem = cleanupOption.closest('[role="menuitem"]');
+    expect(menuItem).toHaveAttribute("aria-disabled", "true");
+  });
+
   test("opens cleanup modal when 'Retry cleanup' is selected", async () => {
     renderComponent();
     const user = userEvent.setup();
@@ -319,12 +408,195 @@ describe("ListAccounts", () => {
     );
   });
 
+  test("reconciles a selected account whose status changes on refresh (status-gated actions and popup reflect current data)", async () => {
+    // Reporter's scenario: an account is quarantined while it remains selected.
+    // The selection stores a snapshot taken when the account was Available, so
+    // without reconciliation the "Quarantine account" action stays enabled and
+    // the review popup shows the stale status.
+    const target = mockAccounts.find((a) => a.status === "Available")!;
+    let requestCount = 0;
+
+    server.use(
+      http.get(`${getConfig().ApiUrl}/accounts`, () => {
+        requestCount++;
+        const result =
+          requestCount === 1
+            ? mockAccounts
+            : mockAccounts.map((account) =>
+                account.awsAccountId === target.awsAccountId
+                  ? { ...account, status: "Quarantine" as const }
+                  : account,
+              );
+        return HttpResponse.json({
+          status: "success",
+          data: { result, nextPageIdentifier: null },
+        } as ApiResponse<ApiPaginatedResult<SandboxAccount>>);
+      }),
+    );
+
+    renderComponent();
+    const user = userEvent.setup();
+
+    // Select the account while it is Available (Quarantine action is valid).
+    await screen.findByText(target.awsAccountId);
+    await user.click(
+      within(
+        screen.getByText(target.awsAccountId).closest("tr")!,
+      ).getByRole("checkbox"),
+    );
+
+    // Refresh; the account comes back Quarantine. Gate on the reconciled row
+    // rendering rather than on request receipt to avoid racing the react-query
+    // commit and the reconciliation that follows it.
+    await user.click(screen.getByTestId("refresh-button"));
+    await waitFor(() => {
+      const refreshedRow = screen.getByText(target.awsAccountId).closest("tr");
+      expect(within(refreshedRow!).getByText("Quarantine")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByText("Actions"));
+
+    // The sole selected account is now Quarantine, so "Quarantine account" must
+    // be disabled (the reporter's bug: it stayed enabled on the stale snapshot).
+    const quarantineOption = await screen.findByText("Quarantine account");
+    expect(quarantineOption.closest('[role="menuitem"]')).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+
+    // Retry cleanup is now valid, and its review popup must show the current
+    // "Quarantine" status rather than the stale "Available".
+    const cleanupOption = await screen.findByText("Retry cleanup");
+    expect(cleanupOption.closest('[role="menuitem"]')).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    await user.click(cleanupOption);
+
+    const modal = screen.getByRole("dialog");
+    await waitFor(() => expect(modal).toBeInTheDocument());
+    const modalContent = within(modal);
+    expect(
+      modalContent.getByText("1 account(s) to retry cleanup"),
+    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(modalContent.getByText("Quarantine")).toBeInTheDocument(),
+    );
+  });
+
+  test("keeps a status-gated action disabled for a genuinely mixed selection after reconciliation", async () => {
+    // Two accounts are selected while both are quarantine-eligible; on refresh
+    // one becomes Quarantine. The selection is now genuinely mixed, so the
+    // "Quarantine account" action must stay disabled - guarding against the fix
+    // over-enabling actions.
+    const becomesQuarantine = mockAccounts.find(
+      (a) => a.status === "Available",
+    )!;
+    const staysActive = mockAccounts.find((a) => a.status === "Active")!;
+    let requestCount = 0;
+
+    server.use(
+      http.get(`${getConfig().ApiUrl}/accounts`, () => {
+        requestCount++;
+        const result =
+          requestCount === 1
+            ? mockAccounts
+            : mockAccounts.map((account) =>
+                account.awsAccountId === becomesQuarantine.awsAccountId
+                  ? { ...account, status: "Quarantine" as const }
+                  : account,
+              );
+        return HttpResponse.json({
+          status: "success",
+          data: { result, nextPageIdentifier: null },
+        } as ApiResponse<ApiPaginatedResult<SandboxAccount>>);
+      }),
+    );
+
+    renderComponent();
+    const user = userEvent.setup();
+
+    await screen.findByText(becomesQuarantine.awsAccountId);
+    await user.click(
+      within(
+        screen.getByText(becomesQuarantine.awsAccountId).closest("tr")!,
+      ).getByRole("checkbox"),
+    );
+    await user.click(
+      within(
+        screen.getByText(staysActive.awsAccountId).closest("tr")!,
+      ).getByRole("checkbox"),
+    );
+
+    await user.click(screen.getByTestId("refresh-button"));
+    await waitFor(() => {
+      const refreshedRow = screen
+        .getByText(becomesQuarantine.awsAccountId)
+        .closest("tr");
+      expect(within(refreshedRow!).getByText("Quarantine")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByText("Actions"));
+    const quarantineOption = await screen.findByText("Quarantine account");
+    expect(quarantineOption.closest('[role="menuitem"]')).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+  });
+
+  test("drops selections for accounts removed from the pool after a refetch", async () => {
+    // Ejecting/removing an account should not leave a dangling selection that
+    // drives actions or the review popup.
+    const target = mockAccounts.find((a) => a.status === "Available")!;
+    let requestCount = 0;
+
+    server.use(
+      http.get(`${getConfig().ApiUrl}/accounts`, () => {
+        requestCount++;
+        const result =
+          requestCount === 1
+            ? mockAccounts
+            : mockAccounts.filter(
+                (account) => account.awsAccountId !== target.awsAccountId,
+              );
+        return HttpResponse.json({
+          status: "success",
+          data: { result, nextPageIdentifier: null },
+        } as ApiResponse<ApiPaginatedResult<SandboxAccount>>);
+      }),
+    );
+
+    renderComponent();
+    const user = userEvent.setup();
+
+    await screen.findByText(target.awsAccountId);
+    await user.click(
+      within(
+        screen.getByText(target.awsAccountId).closest("tr")!,
+      ).getByRole("checkbox"),
+    );
+    expect(screen.getByText("Actions").closest("button")).not.toBeDisabled();
+
+    // Refresh; the selected account is no longer part of the pool.
+    await user.click(screen.getByTestId("refresh-button"));
+    await waitFor(() =>
+      expect(
+        screen.queryByText(target.awsAccountId),
+      ).not.toBeInTheDocument(),
+    );
+
+    // The stale selection must be pruned, disabling the actions dropdown again.
+    await waitFor(() =>
+      expect(screen.getByText("Actions").closest("button")).toBeDisabled(),
+    );
+  });
+
   test("displays login link for accounts", async () => {
     renderComponent();
 
     await screen.findByText(mockAccounts[0].awsAccountId);
 
-    const loginLinks = screen.getAllByText("Login to account");
+    const loginLinks = screen.getAllByText("Login");
     expect(loginLinks.length).toBeGreaterThan(0);
   });
 
@@ -352,7 +624,7 @@ describe("ListAccounts", () => {
     ];
 
     server.use(
-      http.get(`${config.ApiUrl}/accounts`, () => {
+      http.get(`${getConfig().ApiUrl}/accounts`, () => {
         return HttpResponse.json({
           status: "success",
           data: {
@@ -379,7 +651,7 @@ describe("ListAccounts", () => {
     ];
 
     server.use(
-      http.get(`${config.ApiUrl}/accounts`, () => {
+      http.get(`${getConfig().ApiUrl}/accounts`, () => {
         return HttpResponse.json({
           status: "success",
           data: {
@@ -401,7 +673,7 @@ describe("ListAccounts", () => {
 
   test("successfully ejects account and shows success toast", async () => {
     server.use(
-      http.post(`${config.ApiUrl}/accounts/:accountId/eject`, () => {
+      http.post(`${getConfig().ApiUrl}/accounts/:accountId/eject`, () => {
         return HttpResponse.json({
           status: "success",
           data: {},
@@ -445,7 +717,7 @@ describe("ListAccounts", () => {
 
   test("handles eject account failure and shows error", async () => {
     server.use(
-      http.post(`${config.ApiUrl}/accounts/:accountId/eject`, () => {
+      http.post(`${getConfig().ApiUrl}/accounts/:accountId/eject`, () => {
         return HttpResponse.json(
           {
             status: "error",
@@ -492,12 +764,15 @@ describe("ListAccounts", () => {
 
   test("successfully retries cleanup and shows success", async () => {
     server.use(
-      http.post(`${config.ApiUrl}/accounts/:accountId/retryCleanup`, () => {
-        return HttpResponse.json({
-          status: "success",
-          data: {},
-        });
-      }),
+      http.post(
+        `${getConfig().ApiUrl}/accounts/:accountId/retryCleanup`,
+        () => {
+          return HttpResponse.json({
+            status: "success",
+            data: {},
+          });
+        },
+      ),
     );
 
     renderComponent();
@@ -540,17 +815,128 @@ describe("ListAccounts", () => {
     });
   });
 
-  test("handles cleanup failure and shows error", async () => {
+  test("opens quarantine modal with warning copy when 'Quarantine account' is selected", async () => {
+    renderComponent();
+    const user = userEvent.setup();
+
+    const account = mockAccounts.find((a) => a.status === "Available");
+    await screen.findByText(account!.awsAccountId);
+
+    const row = screen.getByText(account!.awsAccountId).closest("tr");
+    const checkbox = within(row!).getByRole("checkbox");
+    await user.click(checkbox);
+
+    const actionsButton = screen.getByText("Actions");
+    await user.click(actionsButton);
+
+    const quarantineOption = await screen.findByText("Quarantine account");
+    await user.click(quarantineOption);
+
+    const modal = screen.getByRole("dialog");
+    await waitFor(() => expect(modal).toBeInTheDocument());
+
+    const modalContent = within(modal);
+    expect(
+      modalContent.getByText(
+        "Are you sure you want to quarantine the selected account(s)?",
+        { exact: false },
+      ),
+    ).toBeInTheDocument();
+    expect(
+      modalContent.getByText("1 account(s) to quarantine"),
+    ).toBeInTheDocument();
+    expect(modalContent.getByText(account!.awsAccountId)).toBeInTheDocument();
+  });
+
+  test("successfully quarantines an account", async () => {
+    let postCount = 0;
     server.use(
-      http.post(`${config.ApiUrl}/accounts/:accountId/retryCleanup`, () => {
+      http.post(`${getConfig().ApiUrl}/accounts/:accountId/quarantine`, () => {
+        postCount++;
+        return HttpResponse.json({ status: "success", data: {} });
+      }),
+    );
+
+    renderComponent();
+    const user = userEvent.setup();
+
+    const account = mockAccounts.find((a) => a.status === "Available");
+    await screen.findByText(account!.awsAccountId);
+
+    const row = screen.getByText(account!.awsAccountId).closest("tr");
+    const checkbox = within(row!).getByRole("checkbox");
+    await user.click(checkbox);
+
+    const actionsButton = screen.getByText("Actions");
+    await user.click(actionsButton);
+
+    const quarantineOption = await screen.findByText("Quarantine account");
+    await user.click(quarantineOption);
+
+    const modal = screen.getByRole("dialog");
+    await waitFor(() => expect(modal).toBeInTheDocument());
+
+    const submitButton = within(modal).getByRole("button", {
+      name: /Submit/i,
+    });
+    await user.click(submitButton);
+
+    await waitFor(() => expect(postCount).toBe(1));
+  });
+
+  test("handles quarantine failure and shows error", async () => {
+    server.use(
+      http.post(`${getConfig().ApiUrl}/accounts/:accountId/quarantine`, () => {
         return HttpResponse.json(
-          {
-            status: "error",
-            message: "Failed to cleanup account",
-          },
+          { status: "error", message: "Failed to quarantine account" },
           { status: 500 },
         );
       }),
+    );
+
+    renderComponent();
+    const user = userEvent.setup();
+
+    const account = mockAccounts.find((a) => a.status === "Available");
+    await screen.findByText(account!.awsAccountId);
+
+    const row = screen.getByText(account!.awsAccountId).closest("tr");
+    const checkbox = within(row!).getByRole("checkbox");
+    await user.click(checkbox);
+
+    const actionsButton = screen.getByText("Actions");
+    await user.click(actionsButton);
+
+    const quarantineOption = await screen.findByText("Quarantine account");
+    await user.click(quarantineOption);
+
+    const modal = screen.getByRole("dialog");
+    await waitFor(() => expect(modal).toBeInTheDocument());
+
+    const submitButton = within(modal).getByRole("button", {
+      name: /Submit/i,
+    });
+    await user.click(submitButton);
+
+    await waitFor(() => {
+      expect(screen.getByText("Failed")).toBeInTheDocument();
+    });
+  });
+
+  test("handles cleanup failure and shows error", async () => {
+    server.use(
+      http.post(
+        `${getConfig().ApiUrl}/accounts/:accountId/retryCleanup`,
+        () => {
+          return HttpResponse.json(
+            {
+              status: "error",
+              message: "Failed to cleanup account",
+            },
+            { status: 500 },
+          );
+        },
+      ),
     );
 
     renderComponent();

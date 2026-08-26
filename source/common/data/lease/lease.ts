@@ -7,6 +7,8 @@ import {
   createItemWithMetadataSchema,
   createVersionRangeSchema,
 } from "@amzn/innovation-sandbox-commons/data/metadata.js";
+import { IdcPrincipalIdSchema } from "@amzn/innovation-sandbox-commons/data/principal/principal.js";
+import { ResourceLockSchema } from "@amzn/innovation-sandbox-commons/data/resource-lock.js";
 import {
   AwsAccountIdSchema,
   enumErrorMap,
@@ -14,7 +16,89 @@ import {
 } from "@amzn/innovation-sandbox-commons/utils/zod.js";
 
 // IMPORTANT -- this value must be updated whenever the schema changes.
-export const LeaseSchemaVersion = 3; //v1.2.0 - Added Provisioning and ProvisioningFailed statuses
+export const LeaseSchemaVersion = 4; // Target: ISB v1.3.0
+
+// Intents that can override a non-critical lock (security-critical operations)
+export const CriticalLockIntents = ["TERMINATE", "FREEZE"] as const;
+
+// Intents that CAN be overridden by critical operations
+export const OverridableLockIntents = [
+  "UPDATE",
+  "PUBLISH",
+  "UNFREEZE",
+] as const;
+
+// Lease-specific lock meta: constrains the generic ResourceLock.meta to valid lock operations
+export const LeaseLockIntentSchema = z.enum([
+  ...CriticalLockIntents,
+  ...OverridableLockIntents,
+]);
+
+export const LeaseLockMetaSchema = z
+  .object({
+    intent: LeaseLockIntentSchema,
+  })
+  .strict();
+
+export type LeaseLockMeta = z.infer<typeof LeaseLockMetaSchema>;
+export type LeaseLockIntent = z.infer<typeof LeaseLockIntentSchema>;
+
+/**
+ * Held intents that block a critical intent from acquiring the lock; it preempts
+ * anything outside its list. Non-critical intents are not keyed here and preempt
+ * nothing, so any live lock blocks them.
+ *
+ * TERMINATE: blocked only by TERMINATE (preempts FREEZE and all non-critical)
+ * FREEZE:    blocked by TERMINATE or FREEZE (preempts all non-critical)
+ * UPDATE/PUBLISH/UNFREEZE: blocked by any live lock (no entry = no override)
+ */
+export const BlockingLockIntents = {
+  TERMINATE: ["TERMINATE"],
+  FREEZE: ["TERMINATE", "FREEZE"],
+} as const satisfies Record<
+  (typeof CriticalLockIntents)[number],
+  readonly LeaseLockIntent[]
+>;
+
+// Lease-specific ResourceLock with typed meta field
+export const LeaseResourceLockSchema = ResourceLockSchema.omit({
+  meta: true,
+})
+  .extend({
+    meta: LeaseLockMetaSchema.optional(),
+  })
+  .strict();
+
+export type LeaseResourceLock = z.infer<typeof LeaseResourceLockSchema>;
+
+export const DesiredAssignmentSchema = z.object({
+  principalId: IdcPrincipalIdSchema,
+  principalType: z.enum(["USER", "GROUP"]),
+});
+export type DesiredAssignment = z.infer<typeof DesiredAssignmentSchema>;
+
+/**
+ * Maximum number of principals that can be assigned to a lease, including
+ * the owner. The owner always occupies one slot, leaving
+ * MAX_USER_MANAGED_ASSIGNMENTS slots for additional users/groups.
+ */
+export const MAX_ASSIGNMENTS = 20;
+
+/**
+ * Maximum number of principals a caller can supply in a PUT or POST request.
+ * The owner is auto-injected server-side so this is MAX_ASSIGNMENTS minus the
+ * implicit owner slot.
+ */
+export const MAX_USER_MANAGED_ASSIGNMENTS = MAX_ASSIGNMENTS - 1;
+
+export const DesiredAssignmentWithDisplaySchema =
+  DesiredAssignmentSchema.extend({
+    displayName: z.string().optional(),
+    email: z.email().optional(),
+  });
+export type DesiredAssignmentWithDisplay = z.infer<
+  typeof DesiredAssignmentWithDisplaySchema
+>;
 
 // Define supported version range for backwards compatibility
 const LeaseSupportedVersionsSchema = createVersionRangeSchema(
@@ -42,7 +126,7 @@ export const ApprovalDeniedLeaseStatusSchema = z.literal("ApprovalDenied");
 export const MonitoredLeaseStatusSchema = z.enum(
   ["Active", "Frozen", "Provisioning"],
   {
-    errorMap: enumErrorMap,
+    error: enumErrorMap,
   },
 );
 
@@ -52,12 +136,13 @@ export const ExpiredLeaseStatusSchema = z.enum(
     "Expired",
     "BudgetExceeded",
     "ManuallyTerminated",
+    "UserTerminated",
     "AccountQuarantined",
     "Ejected",
     "ProvisioningFailed",
   ],
   {
-    errorMap: enumErrorMap,
+    error: enumErrorMap,
   },
 );
 
@@ -69,13 +154,13 @@ export const AllLeaseStatusSchema = z.enum(
     ...ExpiredLeaseStatusSchema.options,
   ],
   {
-    errorMap: enumErrorMap,
+    error: enumErrorMap,
   },
 );
 
 export const LeaseKeySchema = z.object({
-  userEmail: z.string().email(),
-  uuid: z.string().uuid(),
+  userEmail: z.email(),
+  uuid: z.uuid(),
 });
 
 export const PendingLeaseSchema = LeaseKeySchema.extend({
@@ -83,9 +168,12 @@ export const PendingLeaseSchema = LeaseKeySchema.extend({
   originalLeaseTemplateUuid: LeaseTemplateSchema.shape.uuid,
   originalLeaseTemplateName: LeaseTemplateSchema.shape.name,
   comments: FreeTextSchema.optional(),
-  createdBy: z.string().email().optional(),
-  blueprintId: z.string().uuid().nullable().optional(), // Copied from template for blueprint deployment
+  createdBy: z.email().optional(),
+  blueprintId: z.uuid().nullable().optional(), // Copied from template for blueprint deployment
   blueprintName: z.string().nullable().optional(), // Copied from blueprint for display/logging
+  allowOwnerToShareLease: z.boolean().optional(), // Denormalized from lease template for multi-user leases
+  desiredAssignments: z.array(DesiredAssignmentWithDisplaySchema).optional(), // Declarative model: desired principal assignments
+  resourceLock: LeaseResourceLockSchema.nullable().optional(), // Concurrency lock for assignment operations
 }).merge(
   LeaseTemplateSchema.pick({
     maxSpend: true,
@@ -107,7 +195,7 @@ export const ApprovalDeniedLeaseSchema = PendingLeaseSchema.extend({
 });
 
 export const ApprovedBySchema = z.union([
-  z.string().email(),
+  z.email(),
   z.literal("AUTO_APPROVED"),
 ]);
 
@@ -117,9 +205,9 @@ export const MonitoredLeaseSchema = PendingLeaseSchema.extend({
   //extra values
   awsAccountId: AwsAccountIdSchema,
   approvedBy: ApprovedBySchema,
-  startDate: z.string().datetime(), // ISO 8601 -- https://zod.dev/?id=datetimes
-  expirationDate: z.string().datetime().optional(), // ISO 8601 -- https://zod.dev/?id=datetimes
-  lastCheckedDate: z.string().datetime(), // ISO 8601 -- https://zod.dev/?id=datetimes
+  startDate: z.iso.datetime(), // ISO 8601 -- https://zod.dev/?id=datetimes
+  expirationDate: z.iso.datetime().optional(), // ISO 8601 -- https://zod.dev/?id=datetimes
+  lastCheckedDate: z.iso.datetime(), // ISO 8601 -- https://zod.dev/?id=datetimes
   totalCostAccrued: z.number(),
 });
 
@@ -127,7 +215,7 @@ export const ExpiredLeaseSchema = MonitoredLeaseSchema.extend({
   //overrides
   status: ExpiredLeaseStatusSchema,
   //extra values
-  endDate: z.string().datetime(),
+  endDate: z.iso.datetime(),
   ttl: TtlSchema,
 });
 
@@ -180,3 +268,8 @@ export function isFrozenLease(lease: Lease): lease is MonitoredLease {
 export function isExpiredLease(lease: Lease): lease is ExpiredLease {
   return ExpiredLeaseStatusSchema.safeParse(lease.status).success;
 }
+
+// Shared so the frontend can match this specific 409 and skip it in a batch
+// review, without drifting from the message the handler returns.
+export const LEASE_NOT_PENDING_REVIEW_ERROR =
+  "Only leases in a pending state can be approved/denied.";

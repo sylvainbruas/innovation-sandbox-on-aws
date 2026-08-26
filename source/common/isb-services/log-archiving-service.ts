@@ -7,6 +7,7 @@ import { Logger } from "@aws-lambda-powertools/logger";
 import {
   CloudWatchLogsClient,
   CreateExportTaskCommand,
+  DescribeExportTasksCommand,
 } from "@aws-sdk/client-cloudwatch-logs";
 import {
   GetObjectCommand,
@@ -14,7 +15,7 @@ import {
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
-import { DateTime } from "luxon";
+import { DateTime, Duration } from "luxon";
 
 export interface LogArchivingServiceProps {
   logger: Logger;
@@ -77,7 +78,7 @@ export class LogArchivingService {
     fromTime: DateTime;
     toTime: DateTime;
     currentExportTS: string;
-  }): Promise<void> {
+  }): Promise<string> {
     const { fromTime, toTime, currentExportTS } = props;
 
     const safeTimestamp = currentExportTS.replace(/[:.]/g, "-");
@@ -111,15 +112,13 @@ export class LogArchivingService {
           message: `Created export task for log group`,
           taskId: response.taskId,
         });
-      } else {
-        this.logger.error({
-          message: "Failed to get taskId for log export",
-          response,
-        });
-        throw new Error(
-          `Failed to get taskId for ${this.logGroupName} export.`,
-        );
+        return response.taskId;
       }
+      this.logger.error({
+        message: "Failed to get taskId for log export",
+        response,
+      });
+      throw new Error(`Failed to get taskId for ${this.logGroupName} export.`);
     } catch (error) {
       this.logger.error({
         message: "Error creating export task",
@@ -129,6 +128,43 @@ export class LogArchivingService {
         `Exception creating export task for ${this.logGroupName}.`,
         error as Error,
       );
+    }
+  }
+
+  /**
+   * Polls DescribeExportTasks until the task reaches a terminal state
+   * (COMPLETED, FAILED, or CANCELLED). Bounded so the Lambda cannot exceed its
+   * timeout. Returns the final status code; throws if the bound is hit.
+   */
+  async waitForExportTask(
+    taskId: string,
+    opts: { pollInterval?: Duration; maxWait?: Duration } = {},
+  ): Promise<string> {
+    const pollInterval =
+      opts.pollInterval ?? Duration.fromObject({ seconds: 10 });
+    const maxWait = opts.maxWait ?? Duration.fromObject({ minutes: 12 }); // under 15-min Lambda cap
+    const terminal = new Set(["COMPLETED", "FAILED", "CANCELLED"]);
+    const deadline = DateTime.utc().plus(maxWait);
+
+    while (true) {
+      const response = await this.logsClient.send(
+        new DescribeExportTasksCommand({ taskId }),
+      );
+      const status = response.exportTasks?.[0]?.status?.code;
+      if (status && terminal.has(status)) {
+        this.logger.info({
+          message: "Export task reached terminal state",
+          taskId,
+          status,
+        });
+        return status;
+      }
+      if (DateTime.utc() >= deadline) {
+        throw new Error(
+          `Export task ${taskId} for ${this.logGroupName} did not finish within ${maxWait.toHuman()} (last status: ${status ?? "unknown"})`,
+        );
+      }
+      await new Promise((r) => setTimeout(r, pollInterval.toMillis()));
     }
   }
 

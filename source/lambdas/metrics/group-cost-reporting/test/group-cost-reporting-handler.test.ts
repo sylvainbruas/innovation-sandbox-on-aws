@@ -40,6 +40,7 @@ const mockEventBridgeClient = {
 
 const mockS3Send = vi.fn();
 const mockCollect = vi.fn();
+const mockStream = vi.fn();
 const mockBackOff = vi.fn();
 
 const mockMonitoredLease = {
@@ -108,7 +109,7 @@ beforeAll(async () => {
 
   vi.doMock("@amzn/innovation-sandbox-commons/data/utils.js", () => ({
     collect: mockCollect,
-    stream: vi.fn().mockReturnValue([]),
+    stream: mockStream,
   }));
 
   // Import the handler after mocking dependencies
@@ -145,6 +146,7 @@ describe("group-cost-reporting-handler", () => {
     // Reset mocks with default successful behavior
     mockBackOff.mockImplementation((fn) => fn());
     mockCollect.mockResolvedValue([mockMonitoredLease, mockExpiredLease]);
+    mockStream.mockReturnValue([]);
     mockLeaseStore.findByStatus.mockReturnValue([]);
     mockCostExplorerService.getDailyCostsByAccount.mockResolvedValue(
       mockDailyCosts,
@@ -239,6 +241,15 @@ describe("group-cost-reporting-handler", () => {
       expect(mockEventBridgeClient.sendIsbEvent).toHaveBeenCalled();
     });
 
+    it("should query UserTerminated leases when fetching for the report", async () => {
+      await generateReport(scheduleEvent, mockedContext);
+
+      const queriedStatuses = mockStream.mock.calls.map(
+        ([, , filter]) => filter.status,
+      );
+      expect(queriedStatuses).toContain("UserTerminated");
+    });
+
     it("should send failure event when cost explorer fails", async () => {
       const error = new Error("Cost Explorer error");
       mockCostExplorerService.getDailyCostsByAccount.mockRejectedValue(error);
@@ -282,8 +293,8 @@ describe("group-cost-reporting-handler", () => {
 
       await generateReport(scheduleEvent, mockedContext);
 
-      // Verify backOff was called for each lease status (7 statuses)
-      expect(mockBackOff).toHaveBeenCalledTimes(7);
+      // Verify backOff was called for each lease status (8 statuses)
+      expect(mockBackOff).toHaveBeenCalledTimes(8);
     });
 
     it.each([

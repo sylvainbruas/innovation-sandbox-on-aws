@@ -24,6 +24,48 @@
       }
     },
     {
+      "Sid": "ProtectIsbResourceExplorerIndex",
+      "Effect": "Deny",
+      "Action": [
+        "resource-explorer-2:DeleteIndex",
+        "resource-explorer-2:UpdateIndexType",
+        "resource-explorer-2:AssociateDefaultView",
+        "resource-explorer-2:DisassociateDefaultView"
+      ],
+      "Resource": ["*"],
+      "Condition": {
+        "ArnNotLike": {
+          "aws:PrincipalARN": [
+            "arn:aws:iam::*:role/InnovationSandbox-${namespace}*",
+            "arn:aws:iam::*:role/aws-reserved/sso.amazonaws.com/*AWSReservedSSO_${namespace}_IsbAdmins*",
+            "arn:aws:iam::*:role/stacksets-exec-*",
+            "arn:aws:iam::*:role/AWSControlTowerExecution"
+          ]
+        }
+      }
+    },
+    {
+      "Sid": "ProtectIsbResourceExplorerValidatorView",
+      "Effect": "Deny",
+      "Action": [
+        "resource-explorer-2:DeleteView",
+        "resource-explorer-2:UpdateView"
+      ],
+      "Resource": [
+        "arn:aws:resource-explorer-2:*:*:view/isb-post-cleanup-validator/*"
+      ],
+      "Condition": {
+        "ArnNotLike": {
+          "aws:PrincipalARN": [
+            "arn:aws:iam::*:role/InnovationSandbox-${namespace}*",
+            "arn:aws:iam::*:role/aws-reserved/sso.amazonaws.com/*AWSReservedSSO_${namespace}_IsbAdmins*",
+            "arn:aws:iam::*:role/stacksets-exec-*",
+            "arn:aws:iam::*:role/AWSControlTowerExecution"
+          ]
+        }
+      }
+    },
+    {
       "Condition": {
         "ArnNotLike": {
           "aws:PrincipalARN": [

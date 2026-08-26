@@ -12,7 +12,7 @@ import DateTimeField from "@amzn/innovation-sandbox-frontend/components/FormFiel
 import { DateTime } from "luxon";
 
 const TestSchema = z.object({
-  expirationDate: z.string().datetime(),
+  expirationDate: z.iso.datetime(),
 });
 
 type TestFormValues = z.infer<typeof TestSchema>;
@@ -144,7 +144,7 @@ describe("DateTimeField", () => {
   it("displays validation errors", async () => {
     const RequiredSchema = z.object({
       expirationDate: z
-        .string({ required_error: "Expiration date is required" })
+        .string({ error: "Expiration date is required" })
         .datetime(),
     });
 

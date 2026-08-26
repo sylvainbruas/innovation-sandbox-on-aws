@@ -9,9 +9,8 @@ import path from "path";
 import { LeaseLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/lease-lambda-environment.js";
 import {
   RestApi,
-  RestApiResourceProps,
+  RestApiProps,
 } from "@amzn/innovation-sandbox-infrastructure/components/api/rest-api-all";
-import { addAppConfigExtensionLayer } from "@amzn/innovation-sandbox-infrastructure/components/config/app-config-lambda-extension";
 import { IsbLambdaFunction } from "@amzn/innovation-sandbox-infrastructure/components/isb-lambda-function";
 import { IsbKmsKeys } from "@amzn/innovation-sandbox-infrastructure/components/kms";
 import {
@@ -22,22 +21,23 @@ import {
 } from "@amzn/innovation-sandbox-infrastructure/helpers/isb-roles";
 import {
   grantCfnStackSetCleanupPermissions,
-  grantIsbAppConfigRead,
+  grantIsbDbReadOnly,
   grantIsbDbReadWrite,
   grantIsbSsmParameterRead,
 } from "@amzn/innovation-sandbox-infrastructure/helpers/policy-generators";
 import { IsbComputeStack } from "@amzn/innovation-sandbox-infrastructure/isb-compute-stack";
 
 export class LeasesApi {
-  constructor(restApi: RestApi, scope: Construct, props: RestApiResourceProps) {
+  constructor(restApi: RestApi, scope: Construct, props: RestApiProps) {
+    const { namespace } = props;
     const {
-      configApplicationId,
-      configEnvironmentId,
-      globalConfigConfigurationProfileId,
-      reportingConfigConfigurationProfileId,
+      configTableName,
       leaseTemplateTable,
       leaseTable,
       accountTable,
+      principalTable,
+      cognitoUserPoolId,
+      cognitoAppClientId,
     } = IsbComputeStack.sharedSpokeConfig.data;
 
     const leasesLambdaFunction = new IsbLambdaFunction(
@@ -59,33 +59,29 @@ export class LeasesApi {
           "leases-handler.ts",
         ),
         handler: "handler",
-        namespace: props.namespace,
+        namespace: namespace,
         environment: {
-          JWT_SECRET_NAME: props.jwtSecret.secretName,
-          APP_CONFIG_APPLICATION_ID: configApplicationId,
-          APP_CONFIG_PROFILE_ID: globalConfigConfigurationProfileId,
-          REPORTING_CONFIG_PROFILE_ID: reportingConfigConfigurationProfileId,
-          APP_CONFIG_ENVIRONMENT_ID: configEnvironmentId,
-          AWS_APPCONFIG_EXTENSION_PREFETCH_LIST: `/applications/${configApplicationId}/environments/${configEnvironmentId}/configurations/${globalConfigConfigurationProfileId},/applications/${configApplicationId}/environments/${configEnvironmentId}/configurations/${reportingConfigConfigurationProfileId},`,
-          ISB_NAMESPACE: props.namespace,
+          CONFIG_TABLE_NAME: configTableName,
+          ISB_NAMESPACE: namespace,
           ACCOUNT_TABLE_NAME: accountTable,
           LEASE_TABLE_NAME: leaseTable,
           LEASE_TEMPLATE_TABLE_NAME: leaseTemplateTable,
+          PRINCIPAL_TABLE_NAME: principalTable,
           ISB_EVENT_BUS: props.isbEventBus.eventBusName,
           INTERMEDIATE_ROLE_ARN: IntermediateRole.getRoleArn(),
           IDC_ROLE_ARN: getIdcRoleArn(
             scope,
-            props.namespace,
+            namespace,
             props.idcAccountId,
           ),
           ORG_MGT_ROLE_ARN: getOrgMgtRoleArn(
             scope,
-            props.namespace,
+            namespace,
             props.orgMgtAccountId,
           ),
           BLUEPRINT_TABLE_NAME:
             IsbComputeStack.sharedSpokeConfig.data.blueprintTable,
-          SANDBOX_ACCOUNT_ROLE_NAME: getSandboxAccountRoleName(props.namespace),
+          SANDBOX_ACCOUNT_ROLE_NAME: getSandboxAccountRoleName(namespace),
           ACCOUNT_POOL_CONFIG_PARAM_ARN:
             IsbComputeStack.sharedSpokeConfig.parameterArns
               .accountPoolConfigParamArn,
@@ -93,6 +89,8 @@ export class LeasesApi {
             IsbComputeStack.sharedSpokeConfig.parameterArns.idcConfigParamArn,
           ORG_MGT_ACCOUNT_ID: props.orgMgtAccountId,
           HUB_ACCOUNT_ID: Aws.ACCOUNT_ID,
+          COGNITO_USER_POOL_ID: cognitoUserPoolId,
+          COGNITO_APP_CLIENT_ID: cognitoAppClientId,
         },
         logGroup: restApi.logGroup,
         envSchema: LeaseLambdaEnvironmentSchema,
@@ -114,18 +112,9 @@ export class LeasesApi {
       leaseTemplateTable,
       accountTable,
       IsbComputeStack.sharedSpokeConfig.data.blueprintTable,
+      principalTable,
     );
-    grantIsbAppConfigRead(
-      scope,
-      leasesLambdaFunction,
-      globalConfigConfigurationProfileId,
-    );
-    grantIsbAppConfigRead(
-      scope,
-      leasesLambdaFunction,
-      reportingConfigConfigurationProfileId,
-    );
-    addAppConfigExtensionLayer(leasesLambdaFunction);
+    grantIsbDbReadOnly(scope, leasesLambdaFunction, configTableName);
 
     props.isbEventBus.grantPutEventsTo(leasesLambdaFunction.lambdaFunction);
 
@@ -144,8 +133,7 @@ export class LeasesApi {
       }),
     );
 
-    props.jwtSecret.grantRead(leasesLambdaFunction.lambdaFunction);
-    IsbKmsKeys.get(scope, props.namespace).grantEncryptDecrypt(
+    IsbKmsKeys.get(scope, namespace).grantEncryptDecrypt(
       leasesLambdaFunction.lambdaFunction,
     );
 
@@ -186,5 +174,12 @@ export class LeasesApi {
 
     const leaseTerminateResource = leaseIdResource.addResource("terminate");
     leaseTerminateResource.addMethod("POST");
+
+    const leaseAssignmentsResource = leaseIdResource.addResource("assignments");
+    leaseAssignmentsResource.addMethod("GET");
+    leaseAssignmentsResource.addMethod("PUT");
+
+    const leaseSharedResource = leasesResource.addResource("shared");
+    leaseSharedResource.addMethod("GET");
   }
 }

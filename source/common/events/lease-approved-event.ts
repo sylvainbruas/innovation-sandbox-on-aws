@@ -9,7 +9,7 @@ import { IsbEvent } from "@amzn/innovation-sandbox-commons/sdk-clients/event-bri
 export const LeaseApprovedEventSchema = z.object({
   leaseId: z.string(),
   approvedBy: ApprovedBySchema,
-  userEmail: z.string().email(),
+  userEmail: z.email(),
 });
 
 export class LeaseApprovedEvent implements IsbEvent {

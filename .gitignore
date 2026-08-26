@@ -26,8 +26,18 @@ temp/
 scratch/
 
 # Kiro
-.kiro/specs/
 .kiro/reviews/
+.kiro/specs/tmp-*
+.kiro/.solnexus-installed-skills
+.kiro/hooks/solnexus-skill-aware-subagent.kiro.hook
+# AIM-managed agents (synced by setup-kiro-ide.sh from SolNexusAICapabilities)
+# Only ISB-specific agents should be committed (isb-* prefix)
+.kiro/agents/solnexus-*.md
+# AIM-managed skills (synced from SolNexusAICapabilities)
+# Only ISB-specific skills (isb-* prefix) are committed
+.kiro/skills/*
+!.kiro/skills/isb-*/
+!.kiro/skills/README.md
 
 ### VisualStudioCode ###
 .vscode
@@ -36,3 +46,7 @@ scratch/
 .DS_Store
 
 .idea
+CLAUDE.md
+
+# security scanner artifacts
+.security-scan/

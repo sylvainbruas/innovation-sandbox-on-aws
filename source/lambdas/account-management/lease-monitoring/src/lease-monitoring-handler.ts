@@ -19,7 +19,10 @@ import { LeaseBudgetThresholdBreachedAlert } from "@amzn/innovation-sandbox-comm
 import { LeaseDurationThresholdBreachedAlert } from "@amzn/innovation-sandbox-commons/events/lease-duration-threshold-breached-alert.js";
 import { LeaseExpiredAlert } from "@amzn/innovation-sandbox-commons/events/lease-expired-alert.js";
 import { LeaseFreezingThresholdBreachedAlert } from "@amzn/innovation-sandbox-commons/events/lease-freezing-threshold-breached-alert.js";
-import { AccountsCostReport } from "@amzn/innovation-sandbox-commons/isb-services/cost-explorer-service.js";
+import {
+  AccountsCostReport,
+  CostExplorerService,
+} from "@amzn/innovation-sandbox-commons/isb-services/cost-explorer-service.js";
 import { IsbServices } from "@amzn/innovation-sandbox-commons/isb-services/index.js";
 import {
   LeaseMonitoringEnvironment,
@@ -66,12 +69,6 @@ export async function performAccountMonitoringScan(
       }),
     )),
   ] as MonitoredLease[];
-  const accountsWithStartDates = Object.fromEntries(
-    monitoredLeases.map((lease) => [
-      lease.awsAccountId,
-      DateTime.fromISO(lease.startDate, { zone: "utc" }),
-    ]),
-  ) as Record<string, DateTime>;
   logger.debug(
     `Running cost monitoring for ${JSON.stringify(
       monitoredLeases.map((lease) => [lease.awsAccountId, lease.uuid]),
@@ -79,8 +76,9 @@ export async function performAccountMonitoringScan(
   );
 
   const currentDateTime = now();
-  const latestCostReport = await costExplorerService.getCostForLeases(
-    accountsWithStartDates,
+  const latestCostReport = await getLatestCostReport(
+    costExplorerService,
+    monitoredLeases,
     currentDateTime,
   );
 
@@ -114,6 +112,72 @@ export async function performAccountMonitoringScan(
   }
 
   return `completed lease monitoring scan for ${monitoredLeases.length} leases and generated ${eventsToSend.length} events`;
+}
+
+/**
+ * Queries `getCostForLeasesByTag` for the lease-tagged spend, then routes any leases
+ * absent from the tag report to the legacy `getCostForLeases` fallback. The
+ * tag report is keyed by lease UUID; the merged report is keyed by AWS
+ * account ID so the existing `determineLeaseEvents` and DB-update code can
+ * look up cost by `lease.awsAccountId` unchanged.
+ **/
+async function getLatestCostReport(
+  costExplorerService: CostExplorerService,
+  monitoredLeases: MonitoredLease[],
+  currentDateTime: DateTime<true>,
+): Promise<AccountsCostReport> {
+  if (monitoredLeases.length === 0) {
+    return new AccountsCostReport();
+  }
+
+  const earliestStart = monitoredLeases
+    .map((l) => DateTime.fromISO(l.startDate, { zone: "utc" }))
+    .reduce((a, b) => (a < b ? a : b), DateTime.fromISO(monitoredLeases[0]!.startDate, { zone: "utc" }));
+
+  const tagReport = await costExplorerService.getCostForLeasesByTag(
+    monitoredLeases.map((l) => l.uuid),
+    earliestStart,
+    currentDateTime,
+  );
+
+  const fallbackLeases = monitoredLeases.filter(
+    (l) => !(l.uuid in tagReport.costMap),
+  );
+
+  // Tag-only path: every lease covered by the tag report. One CE call total.
+  if (fallbackLeases.length === 0) {
+    const accountKeyed = new AccountsCostReport();
+    for (const lease of monitoredLeases) {
+      accountKeyed.addCost(lease.awsAccountId, tagReport.getCost(lease.uuid));
+    }
+    return accountKeyed;
+  }
+
+  const fallbackReport = await costExplorerService.getCostForLeases(
+    Object.fromEntries(
+      fallbackLeases.map((l) => [
+        l.awsAccountId,
+        DateTime.fromISO(l.startDate, { zone: "utc" }),
+      ]),
+    ),
+    currentDateTime,
+  );
+
+  // Fallback-only path: no tag coverage at all. Return the fallback report
+  // directly so it preserves identity for legacy callers/tests.
+  if (Object.keys(tagReport.costMap).length === 0) {
+    return fallbackReport;
+  }
+
+  // Mixed path: rekey tag report from lease UUID → account ID, then merge.
+  const merged = new AccountsCostReport();
+  for (const lease of monitoredLeases) {
+    if (lease.uuid in tagReport.costMap) {
+      merged.addCost(lease.awsAccountId, tagReport.getCost(lease.uuid));
+    }
+  }
+  merged.merge(fallbackReport);
+  return merged;
 }
 
 function determineLeaseEvents(props: {
@@ -367,14 +431,16 @@ function detectNewlyBreachedDurationThresholds(
 
 function getLargestBudgetThreshold(budgetThresholds: BudgetThreshold[]) {
   if (budgetThresholds.length == 0) return undefined;
-  return budgetThresholds.reduce((prev, current) =>
-    prev.dollarsSpent > current.dollarsSpent ? prev : current,
+  return budgetThresholds.reduce(
+    (prev, current) => (prev.dollarsSpent > current.dollarsSpent ? prev : current),
+    budgetThresholds[0]!,
   );
 }
 
 function getLatestDurationThreshold(durationThresholds: DurationThreshold[]) {
   if (durationThresholds.length == 0) return undefined;
-  return durationThresholds.reduce((prev, current) =>
-    prev.hoursRemaining < current.hoursRemaining ? prev : current,
+  return durationThresholds.reduce(
+    (prev, current) => (prev.hoursRemaining < current.hoursRemaining ? prev : current),
+    durationThresholds[0]!,
   );
 }

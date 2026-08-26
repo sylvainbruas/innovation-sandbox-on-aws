@@ -12,7 +12,7 @@ import {
 export function createBlueprint(overrides?: Partial<Blueprint>): Blueprint {
   const now = new Date().toISOString();
   return {
-    blueprintId: "12345678-1234-1234-1234-123456789012",
+    blueprintId: "12345678-1234-4234-8234-123456789012",
     name: "Test-Blueprint",
     tags: { environment: "test", team: "platform" },
     createdBy: "admin@example.com",
@@ -37,8 +37,8 @@ export function createStackSetConfig(
 ): StackSetConfig {
   const now = new Date().toISOString();
   return {
-    blueprintId: "12345678-1234-1234-1234-123456789012",
-    stackSetId: "12345678-1234-1234-1234-123456789013",
+    blueprintId: "12345678-1234-4234-8234-123456789012",
+    stackSetId: "12345678-1234-4234-8234-123456789013",
     administrationRoleArn:
       "arn:aws:iam::123456789012:role/AWSCloudFormationStackSetAdministrationRole",
     executionRoleName: "AWSCloudFormationStackSetExecutionRole",
@@ -67,11 +67,11 @@ export function createDeploymentHistory(
 ): DeploymentHistory {
   const now = new Date().toISOString();
   return {
-    stackSetId: "12345678-1234-1234-1234-123456789013",
-    leaseId: "12345678-1234-1234-1234-123456789014",
+    stackSetId: "12345678-1234-4234-8234-123456789013",
+    leaseId: "12345678-1234-4234-8234-123456789014",
     accountId: "123456789012",
     status: "SUCCEEDED",
-    operationId: "12345678-1234-1234-1234-123456789015",
+    operationId: "12345678-1234-4234-8234-123456789015",
     deploymentStartedAt: now,
     deploymentCompletedAt: now,
     duration: 300,
@@ -104,7 +104,7 @@ export function createBlueprintWithStackSets(
 export function createStackSet(overrides?: Partial<StackSet>): StackSet {
   return {
     stackSetName: "TestStackSet",
-    stackSetId: "12345678-1234-1234-1234-123456789013",
+    stackSetId: "12345678-1234-4234-8234-123456789013",
     description: "Test StackSet for blueprints",
     status: "ACTIVE",
     permissionModel: "SELF_MANAGED",

@@ -13,8 +13,10 @@ Update the template's name, description, visibility, and approval requirements.
 
 **Requires Approval**: When enabled, managers must approve each lease request.
 
+**Allow owner to share lease**: When enabled, future lease owners can add or remove user and group assignments. This setting is only visible when global lease sharing is enabled.
+
 ---
 
 _Note: Changes take effect immediately for new leases. Existing leases are not affected._
 
-For more information, see [Creating and managing lease templates](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/manager-guide.html#creating-managing-lease-templates) in the implementation guide.
+For more information, see [Creating and managing lease templates](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/manager-guide.html#creating-lease-templates) in the implementation guide.

@@ -6,9 +6,9 @@ Create a lease template that defines conditions for sandbox account usage.
 
 ---
 
-## Wizard Steps
+## Wizard steps
 
-**Basic Details**: Template name, description, visibility (Public/Private), and approval requirements.
+**Basic Details**: Template name, description, visibility (Public/Private), approval requirements, and sharing options.
 
 **Blueprint Selection**: Select a blueprint to automatically deploy infrastructure. Adds 5-30 minutes to provisioning.
 
@@ -24,4 +24,4 @@ Create a lease template that defines conditions for sandbox account usage.
 
 _Note: Template changes only affect new leases._
 
-For more information, see [Creating and managing lease templates](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/manager-guide.html#creating-managing-lease-templates) in the implementation guide.
+For more information, see [Creating and managing lease templates](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/manager-guide.html#creating-lease-templates) in the implementation guide.

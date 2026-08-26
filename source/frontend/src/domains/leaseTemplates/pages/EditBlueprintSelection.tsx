@@ -40,7 +40,7 @@ export const EditBlueprintSelection = () => {
   const setBreadcrumb = useBreadcrumb();
   const { setTools } = useAppLayoutContext();
 
-  const query = useGetLeaseTemplateById(uuid!);
+  const query = useGetLeaseTemplateById(uuid);
   const { data: leaseTemplate, isLoading, isError, refetch, error } = query;
 
   const { mutateAsync: updateLeaseTemplate, isPending: isUpdating } =

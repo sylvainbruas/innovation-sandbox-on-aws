@@ -12,7 +12,7 @@ import {
   showSuccessToast,
 } from "@amzn/innovation-sandbox-frontend/components/Toast";
 import { AddAccounts } from "@amzn/innovation-sandbox-frontend/domains/accounts/pages/AddAccounts";
-import { config } from "@amzn/innovation-sandbox-frontend/helpers/config";
+import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import { ModalProvider } from "@amzn/innovation-sandbox-frontend/hooks/useModal";
 import { mockUnregisteredAccounts } from "@amzn/innovation-sandbox-frontend/mocks/factories/accountFactory";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
@@ -126,7 +126,7 @@ describe("AddAccounts", () => {
 
   test("displays error message on submission failure", async () => {
     server.use(
-      http.post(`${config.ApiUrl}/accounts`, () => {
+      http.post(`${getConfig().ApiUrl}/accounts`, () => {
         return HttpResponse.json(
           { status: "error", message: "Failed to add accounts" },
           { status: 500 },

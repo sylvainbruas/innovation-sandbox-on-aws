@@ -35,9 +35,28 @@ export abstract class LeaseTemplateStore {
 
   abstract delete(uuid: string): Promise<OptionalItem>;
 
+  /**
+   * Returns raw items with no visibility filtering, and a pagination token
+   * derived from DynamoDB's LastEvaluatedKey — which can point at a PRIVATE
+   * template. Do NOT use for user-facing/visibility-scoped reads; use
+   * findAllVisible instead. Intended for elevated or server-internal callers.
+   */
   abstract findAll(props?: {
     pageIdentifier?: string;
     pageSize?: number;
+  }): Promise<PaginatedQueryResult<LeaseTemplate>>;
+
+  /**
+   * Like findAll, but never discloses PRIVATE templates to non-elevated callers
+   * — neither in the result set nor via the pagination token. When
+   * includePrivate is false, only PUBLIC templates are returned and the
+   * nextPageIdentifier is derived from a PUBLIC item, so a PRIVATE template's
+   * key can never leak through the token.
+   */
+  abstract findAllVisible(props: {
+    pageIdentifier?: string;
+    pageSize?: number;
+    includePrivate: boolean;
   }): Promise<PaginatedQueryResult<LeaseTemplate>>;
 
   abstract get(uuid: string): Promise<SingleItemResult<LeaseTemplate>>;

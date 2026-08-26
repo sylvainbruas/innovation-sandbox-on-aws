@@ -8,6 +8,7 @@ import {
   APIGatewayProxyEventPathParameters,
   APIGatewayProxyResult,
 } from "aws-lambda";
+import { DateTime } from "luxon";
 import { z } from "zod";
 
 import { PaginatedQueryResult } from "@amzn/innovation-sandbox-commons/data/common-types.js";
@@ -15,23 +16,39 @@ import {
   base64DecodeCompositeKey,
   base64EncodeCompositeKey,
 } from "@amzn/innovation-sandbox-commons/data/encoding.js";
-import { UnknownItem } from "@amzn/innovation-sandbox-commons/data/errors.js";
+import {
+  ResourceLockConflictError,
+  UnknownItem,
+} from "@amzn/innovation-sandbox-commons/data/errors.js";
 import {
   validateLeaseCompliesWithGlobalConfig,
   ValidationException,
 } from "@amzn/innovation-sandbox-commons/data/global-config/global-config-utils.js";
+import { type GlobalConfig } from "@amzn/innovation-sandbox-commons/data/global-config/global-config.js";
 import { LeaseTemplateStore } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template-store.js";
 import {
+  DesiredAssignmentSchema,
+  isActiveLease,
   isFrozenLease,
   isMonitoredLease,
   isPendingLease,
   Lease,
+  LEASE_NOT_PENDING_REVIEW_ERROR,
   LeaseKeySchema,
+  MAX_USER_MANAGED_ASSIGNMENTS,
   MonitoredLeaseSchema,
   MonitoredLeaseStatusSchema,
   PendingLeaseSchema,
 } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
+import {
+  IdcPrincipalIdSchema,
+  PrincipalTypeSchema,
+} from "@amzn/innovation-sandbox-commons/data/principal/principal.js";
 import { validateCostReportGroup } from "@amzn/innovation-sandbox-commons/data/reporting-config/reporting-config-utils.js";
+import {
+  collect,
+  stream,
+} from "@amzn/innovation-sandbox-commons/data/utils.js";
 import {
   AccountNotInActiveError,
   AccountNotInFrozenError,
@@ -39,11 +56,19 @@ import {
   CouldNotRetrieveUserError,
   InnovationSandbox,
   IsbContext,
+  LeaseRequestRateLimitExceededError,
   MaxNumberOfLeasesExceededError,
   NoAccountsAvailableError,
 } from "@amzn/innovation-sandbox-commons/innovation-sandbox.js";
 import { IdcService } from "@amzn/innovation-sandbox-commons/isb-services/idc-service.js";
 import { IsbServices } from "@amzn/innovation-sandbox-commons/isb-services/index.js";
+import {
+  deriveAssignmentView,
+  getLeasesForUserDirect,
+  getLeasesForUserViaGroups,
+  MaxAssignmentsExceededError,
+  triggerAssignmentProcessing,
+} from "@amzn/innovation-sandbox-commons/isb-services/lease-assignment/index.js";
 import {
   LeaseLambdaEnvironment,
   LeaseLambdaEnvironmentSchema,
@@ -58,33 +83,39 @@ import {
 } from "@amzn/innovation-sandbox-commons/lambda/middleware/http-error-handler.js";
 import { httpJsonBodyParser } from "@amzn/innovation-sandbox-commons/lambda/middleware/http-json-body-parser.js";
 import {
-  ContextWithGlobalAndReportingConfig,
+  ContextWithConfig,
   isbConfigMiddleware,
-  isbReportingConfigMiddleware,
 } from "@amzn/innovation-sandbox-commons/lambda/middleware/isb-config-middleware.js";
+import { rejectIfAssigneeIsM2m } from "@amzn/innovation-sandbox-commons/lambda/middleware/m2m-guard.js";
 import { createPaginationQueryStringParametersSchema } from "@amzn/innovation-sandbox-commons/lambda/schemas.js";
 import {
-  AppInsightsLogPatterns,
+  LogPatterns,
+  logTaggingFailure,
   summarizeUpdate,
 } from "@amzn/innovation-sandbox-commons/observability/logging.js";
 import {
-  IsbRole,
-  IsbUser,
-} from "@amzn/innovation-sandbox-commons/types/isb-types.js";
+  type IsbUser,
+  getUserEmail,
+  isIdcUser,
+  isM2MUser,
+} from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
 import {
   fromTemporaryIsbIdcCredentials,
   fromTemporaryIsbOrgManagementCredentials,
 } from "@amzn/innovation-sandbox-commons/utils/cross-account-roles.js";
+import { NO_COST_REPORT_GROUP_TAG_VALUE } from "@amzn/innovation-sandbox-commons/utils/isb-account-tags.js";
 import { enumErrorMap } from "@amzn/innovation-sandbox-commons/utils/zod.js";
 
 const tracer = new Tracer();
 const logger = new Logger({ serviceName: "Leases" });
 
+let leaseRequestWindowCappedLogged = false;
+
 const middyFactory = middy<
   IsbApiEvent,
   any,
   Error,
-  ContextWithGlobalAndReportingConfig & IsbApiContext<LeaseLambdaEnvironment>
+  ContextWithConfig & IsbApiContext<LeaseLambdaEnvironment>
 >;
 
 const routes: Route<IsbApiEvent, APIGatewayProxyResult>[] = [
@@ -97,6 +128,11 @@ const routes: Route<IsbApiEvent, APIGatewayProxyResult>[] = [
     path: "/leases",
     method: "POST",
     handler: middyFactory().use(httpJsonBodyParser()).handler(postLeaseHandler),
+  },
+  {
+    path: "/leases/shared",
+    method: "GET",
+    handler: middyFactory().handler(getSharedLeasesHandler),
   },
   {
     path: "/leases/{leaseId}",
@@ -132,6 +168,18 @@ const routes: Route<IsbApiEvent, APIGatewayProxyResult>[] = [
     method: "POST",
     handler: middyFactory().handler(unfreezeLeaseHandler),
   },
+  {
+    path: "/leases/{leaseId}/assignments",
+    method: "GET",
+    handler: middyFactory().handler(getLeaseAssignmentsHandler),
+  },
+  {
+    path: "/leases/{leaseId}/assignments",
+    method: "PUT",
+    handler: middyFactory()
+      .use(httpJsonBodyParser())
+      .handler(putLeaseAssignmentsHandler),
+  },
 ];
 
 export const handler = apiMiddlewareBundle({
@@ -140,19 +188,17 @@ export const handler = apiMiddlewareBundle({
   environmentSchema: LeaseLambdaEnvironmentSchema,
 })
   .use(isbConfigMiddleware())
-  .use(isbReportingConfigMiddleware())
   .handler(httpRouterHandler(routes));
 
 async function getLeasesHandler(
   event: IsbApiEvent,
-  context: ContextWithGlobalAndReportingConfig &
-    IsbApiContext<LeaseLambdaEnvironment>,
+  context: ContextWithConfig & IsbApiContext<LeaseLambdaEnvironment>,
 ): Promise<APIGatewayProxyResult> {
   const leaseStore = IsbServices.leaseStore(context.env);
 
   const GetLeasesQueryParametersSchema =
     createPaginationQueryStringParametersSchema({ maxPageSize: 2000 }).extend({
-      userEmail: z.string().email().optional(),
+      userEmail: z.email().optional(),
     });
   const parsedGetLeasesQueryParametersResult =
     GetLeasesQueryParametersSchema.safeParse(event.queryStringParameters);
@@ -163,14 +209,17 @@ async function getLeasesHandler(
     );
   }
 
-  const { pageIdentifier, pageSize, userEmail } =
+  const { pageIdentifier, maxResults, userEmail } =
     parsedGetLeasesQueryParametersResult.data;
 
   let findLeasesResponse: PaginatedQueryResult<Lease>;
   if (userEmail !== undefined) {
-    if (isUserNotAllowedByEmail(context.user, userEmail)) {
+    if (
+      !isAdminOrManager(context.user) &&
+      getUserEmail(context.user) !== userEmail
+    ) {
       logger.warn(
-        `User ${context.user.email} not allowed to get leases of ${userEmail}`,
+        `User ${getUserEmail(context.user)} not allowed to get leases of ${userEmail}`,
       );
       throw createHttpJSendError({
         statusCode: 403,
@@ -186,10 +235,10 @@ async function getLeasesHandler(
     findLeasesResponse = await leaseStore.findByUserEmail({
       userEmail,
       pageIdentifier,
-      pageSize,
+      pageSize: maxResults,
     });
   } else {
-    if (isUserNotAllowedByAll(context.user)) {
+    if (!isAdminOrManager(context.user)) {
       throw createHttpJSendError({
         statusCode: 403,
         data: {
@@ -201,12 +250,15 @@ async function getLeasesHandler(
         },
       });
     }
-    findLeasesResponse = await leaseStore.findAll({ pageIdentifier, pageSize });
+    findLeasesResponse = await leaseStore.findAll({
+      pageIdentifier,
+      pageSize: maxResults,
+    });
   }
 
   if (findLeasesResponse.error) {
     logger.warn(
-      `${AppInsightsLogPatterns.DataValidationWarning.pattern}: Error finding leases - ${findLeasesResponse.error}`,
+      `${LogPatterns.DataValidationWarning.pattern}: Error finding leases - ${findLeasesResponse.error}`,
     );
   }
 
@@ -233,32 +285,9 @@ async function getLeasesHandler(
   };
 }
 
-/**
- * returns true if the user is not allowed to get leasesByEmail by checking the only role attached is "User"
- * and the email is not the same as the user's email
- * @param user
- * @param userEmail
- */
-function isUserNotAllowedByEmail(user: IsbUser, userEmail: string) {
-  return (
-    user.roles!.length === 1 &&
-    user.roles![0] === "User" &&
-    user.email !== userEmail
-  );
-}
-
-/**
- * returns true if the user has only "User" role thus not allowed to query all leases
- * @param user
- */
-function isUserNotAllowedByAll(user: IsbUser) {
-  return user.roles!.length === 1 && user.roles![0] === "User";
-}
-
 async function postLeaseHandler(
   event: IsbApiEvent,
-  context: ContextWithGlobalAndReportingConfig &
-    IsbApiContext<LeaseLambdaEnvironment>,
+  context: ContextWithConfig & IsbApiContext<LeaseLambdaEnvironment>,
 ): Promise<APIGatewayProxyResult> {
   const isbContext = {
     logger,
@@ -266,11 +295,16 @@ async function postLeaseHandler(
     leaseStore: IsbServices.leaseStore(context.env),
     leaseTemplateStore: IsbServices.leaseTemplateStore(context.env),
     sandboxAccountStore: IsbServices.sandboxAccountStore(context.env),
+    principalStore: IsbServices.principalStore(context.env),
     idcService: IsbServices.idcService(
       context.env,
       fromTemporaryIsbIdcCredentials(context.env),
     ),
     orgsService: IsbServices.orgsService(
+      context.env,
+      fromTemporaryIsbOrgManagementCredentials(context.env),
+    ),
+    organizationsTaggingService: IsbServices.organizationsTaggingService(
       context.env,
       fromTemporaryIsbOrgManagementCredentials(context.env),
     ),
@@ -287,6 +321,20 @@ async function postLeaseHandler(
     .extend({
       leaseTemplateUuid: PendingLeaseSchema.shape.originalLeaseTemplateUuid,
       userEmail: PendingLeaseSchema.shape.userEmail.optional(),
+      assignments: z
+        .array(DesiredAssignmentSchema.strict())
+        .max(MAX_USER_MANAGED_ASSIGNMENTS)
+        .refine(
+          (items) => {
+            const keys = items.map((i) => i.principalId);
+            return new Set(keys).size === keys.length;
+          },
+          {
+            message:
+              "Each principal can only appear once in the assignments list.",
+          },
+        )
+        .optional(),
     })
     .strict();
 
@@ -295,23 +343,76 @@ async function postLeaseHandler(
     throw createHttpJSendValidationError(leaseParseResponse.error);
   }
 
-  const { leaseTemplateUuid, userEmail, comments } = leaseParseResponse.data;
+  const { leaseTemplateUuid, userEmail, comments, assignments } =
+    leaseParseResponse.data;
+
+  // Resolve the assignee: an explicit userEmail (on-behalf) or the caller
+  // (self-request). A lease grants IDC console access to its assignee, and M2M
+  // identities have no IDC user, so refuse before any lookup or write.
+  const assigneeEmail = userEmail ?? getUserEmail(context.user);
+  rejectIfAssigneeIsM2m(assigneeEmail);
 
   const [leaseTemplate, targetUser] = await Promise.all([
     validateAndGetLeaseTemplate(leaseTemplateUuid, context.user, isbContext),
     resolveTargetUser(userEmail, context.user, isbContext),
   ]);
 
-  // userEmail being provided mean the request is an assignment and the createdBy field should be populated with the requester's email
-  const createdBy = userEmail ? context.user.email : undefined;
+  // A request is a cross-user assignment only when userEmail identifies a
+  // DIFFERENT user than the requester. A self-referential userEmail must be
+  // treated the same as an omitted one, otherwise a regular user could set
+  // createdBy (and thereby trigger auto-approval) on their own lease request.
+  const createdBy =
+    userEmail && userEmail !== getUserEmail(context.user)
+      ? getUserEmail(context.user)
+      : undefined;
+
+  const hasAssignments = assignments && assignments.length > 0;
+  if (
+    !context.globalConfig.leases.leaseSharingEnabled &&
+    hasAssignments &&
+    !isAdminOrManager(context.user)
+  ) {
+    throw createHttpJSendError({
+      statusCode: 400,
+      data: {
+        errors: [
+          {
+            message: "Lease sharing is not enabled.",
+          },
+        ],
+      },
+    });
+  }
+
+  if (
+    !leaseTemplate.allowOwnerToShareLease &&
+    hasAssignments &&
+    !isAdminOrManager(context.user)
+  ) {
+    throw createHttpJSendError({
+      statusCode: 403,
+      data: {
+        errors: [
+          { message: "Owner sharing is not enabled for this lease template." },
+        ],
+      },
+    });
+  }
 
   try {
+    await enforceLeaseRequestRateLimit({
+      context,
+      targetUserEmail: getUserEmail(targetUser),
+      leaseStore: isbContext.leaseStore,
+    });
+
     const newLease: Lease = await InnovationSandbox.requestLease(
       {
         leaseTemplate,
         targetUser: targetUser,
         createdBy,
         comments,
+        assignments,
       },
       isbContext,
     );
@@ -349,10 +450,103 @@ async function postLeaseHandler(
           ],
         },
       });
+    } else if (error instanceof LeaseRequestRateLimitExceededError) {
+      throw createHttpJSendError({
+        statusCode: 429,
+        data: {
+          errors: [{ message: error.message }],
+          retryAt: error.retryAt,
+        },
+      });
     } else {
       throw error;
     }
   }
+}
+
+async function enforceLeaseRequestRateLimit(props: {
+  context: ContextWithConfig & IsbApiContext<LeaseLambdaEnvironment>;
+  targetUserEmail: string;
+  leaseStore: ReturnType<typeof IsbServices.leaseStore>;
+}) {
+  const { context, targetUserEmail, leaseStore } = props;
+
+  // Admin/Manager callers are exempt from the rate limit.
+  if (isAdminOrManager(context.user)) {
+    return;
+  }
+
+  const { leaseRequestWindowHours, maxLeaseRequestsPerWindow, ttl } =
+    context.globalConfig.leases;
+  const ttlWindowHours = ttl * 24;
+  const effectiveWindowHours = Math.min(
+    leaseRequestWindowHours,
+    ttlWindowHours,
+  );
+  if (
+    leaseRequestWindowHours > ttlWindowHours &&
+    !leaseRequestWindowCappedLogged
+  ) {
+    leaseRequestWindowCappedLogged = true;
+    logger.warn("LeaseRequestWindowCapped", {
+      logDetailType: "LeaseRequestWindowCapped",
+      configuredWindowHours: leaseRequestWindowHours,
+      ttlWindowHours,
+      effectiveWindowHours,
+    });
+  }
+
+  const windowStart = DateTime.utc().minus({ hours: effectiveWindowHours });
+  const userLeases = await collect(
+    stream(leaseStore, leaseStore.findByUserEmail, {
+      userEmail: targetUserEmail,
+    }),
+  );
+
+  const leasesInWindow = userLeases.filter((lease) => {
+    if (
+      lease.status === "PendingApproval" ||
+      lease.status === "ApprovalDenied"
+    ) {
+      return false;
+    }
+    const createdTime = lease.meta?.createdTime;
+    if (!createdTime) {
+      return false;
+    }
+    return DateTime.fromISO(createdTime, { zone: "utc" }) >= windowStart;
+  });
+
+  if (leasesInWindow.length < maxLeaseRequestsPerWindow) {
+    return;
+  }
+
+  // When count > limit (e.g. admin assignments pushed the user above the
+  // limit), aging out only the earliest lease isn't enough to unblock.
+  // Pick the Nth-oldest such that enough leases age out to drop the count
+  // below the limit.
+  const sortedTimes = leasesInWindow
+    .map((lease) => lease.meta!.createdTime!)
+    .sort((a, b) => a.localeCompare(b));
+  const pivotIndex = leasesInWindow.length - maxLeaseRequestsPerWindow;
+  const retryAt = DateTime.fromISO(sortedTimes[pivotIndex]!, { zone: "utc" })
+    .plus({ hours: effectiveWindowHours })
+    .toISO()!;
+
+  logger.warn("LeaseRequestRateLimited", {
+    logDetailType: "LeaseRequestRateLimited",
+    targetUserEmail,
+    callerEmail: getUserEmail(context.user),
+    currentCount: leasesInWindow.length,
+    limit: maxLeaseRequestsPerWindow,
+    retryAt,
+    effectiveWindowHours,
+  });
+
+  throw new LeaseRequestRateLimitExceededError(
+    `You have reached the maximum number of lease requests allowed within the rolling window (${maxLeaseRequestsPerWindow}). Try again at ${retryAt}.`,
+    retryAt,
+  );
 }
 
 async function validateAndGetLeaseTemplate(
@@ -367,7 +561,7 @@ async function validateAndGetLeaseTemplate(
   if (
     !leaseTemplate ||
     (leaseTemplate.visibility === "PRIVATE" &&
-      !authorizedToLeaseFromPrivateLeaseTemplates(requestingUser))
+      !isAdminOrManager(requestingUser))
   ) {
     throw createHttpJSendError({
       statusCode: 404,
@@ -390,12 +584,12 @@ async function resolveTargetUser(
   isbContext: IsbContext<{ idcService: IdcService }>,
 ): Promise<IsbUser> {
   // If no userEmail provided, use the requesting user
-  if (!userEmail || userEmail === requestingUser.email) {
+  if (!userEmail || userEmail === getUserEmail(requestingUser)) {
     return requestingUser;
   }
 
   // Cross-user lease creation - validate permissions
-  if (!authorizedToLeaseFromPrivateLeaseTemplates(requestingUser)) {
+  if (!isAdminOrManager(requestingUser)) {
     throw createHttpJSendError({
       statusCode: 403,
       data: {
@@ -429,8 +623,7 @@ async function resolveTargetUser(
 
 async function getLeaseByIdHandler(
   event: IsbApiEvent,
-  context: ContextWithGlobalAndReportingConfig &
-    IsbApiContext<LeaseLambdaEnvironment>,
+  context: ContextWithConfig & IsbApiContext<LeaseLambdaEnvironment>,
 ): Promise<APIGatewayProxyResult> {
   const leaseStore = IsbServices.leaseStore(context.env);
 
@@ -442,29 +635,34 @@ async function getLeaseByIdHandler(
   const lease = leaseResponse.result;
   if (leaseResponse.error) {
     logger.warn(
-      `${AppInsightsLogPatterns.DataValidationWarning.pattern}: Error retrieving lease ${leaseCompositeKey}: ${leaseResponse.error}`,
+      `${LogPatterns.DataValidationWarning.pattern}: Error retrieving lease ${leaseCompositeKey}: ${leaseResponse.error}`,
     );
   }
 
-  if (!lease) {
+  const canRead =
+    !!lease &&
+    (await hasReadAccessForLease(context.user, lease, () =>
+      IsbServices.principalStore(context.env),
+    ));
+  if (!canRead) {
+    if (!isAdminOrManager(context.user)) {
+      throw createHttpJSendError({
+        statusCode: 403,
+        data: {
+          errors: [
+            {
+              message: `Active user is not authorized to view leases of requested user.`,
+            },
+          ],
+        },
+      });
+    }
     throw createHttpJSendError({
       statusCode: 404,
       data: {
         errors: [
           {
             message: `Lease not found.`,
-          },
-        ],
-      },
-    });
-  }
-  if (isUserNotAllowedByEmail(context.user, lease.userEmail)) {
-    throw createHttpJSendError({
-      statusCode: 403,
-      data: {
-        errors: [
-          {
-            message: `Active user is not authorized to view leases of requested user.`,
           },
         ],
       },
@@ -491,8 +689,7 @@ async function getLeaseByIdHandler(
 
 async function patchLeaseByIdHandler(
   event: IsbApiEvent,
-  context: ContextWithGlobalAndReportingConfig &
-    IsbApiContext<LeaseLambdaEnvironment>,
+  context: ContextWithConfig & IsbApiContext<LeaseLambdaEnvironment>,
 ): Promise<APIGatewayProxyResult> {
   const leaseStore = IsbServices.leaseStore(context.env);
 
@@ -502,6 +699,7 @@ async function patchLeaseByIdHandler(
     expirationDate: true,
     durationThresholds: true,
     costReportGroup: true,
+    allowOwnerToShareLease: true,
   })
     .extend({
       maxSpend: MonitoredLeaseSchema.shape.maxSpend.nullable(),
@@ -566,10 +764,13 @@ async function patchLeaseByIdHandler(
   };
 
   try {
-    validateLeaseCompliesWithGlobalConfig(updatedLease, context.globalConfig);
+    validateLeaseCompliesWithGlobalConfig(updatedLease, context.globalConfig, {
+      previous: existingLease,
+    });
     validateCostReportGroup(
       updatedLease.costReportGroup,
-      context.reportingConfig,
+      context.globalConfig.costReporting,
+      { previousCostReportGroup: existingLease.costReportGroup },
     );
   } catch (error) {
     if (error instanceof ValidationException) {
@@ -595,6 +796,27 @@ async function patchLeaseByIdHandler(
       `Updated Lease ${existingLease.uuid}`,
       summarizeUpdate(putResult),
     );
+
+    // Re-apply the CostReportGroup tag if it changed.
+    if (existingLease.costReportGroup !== updatedLease.costReportGroup) {
+      try {
+        const taggingService = IsbServices.organizationsTaggingService(
+          context.env,
+          fromTemporaryIsbOrgManagementCredentials(context.env),
+        );
+        await taggingService.tagAccount(updatedLease.awsAccountId, {
+          CostReportGroup:
+            updatedLease.costReportGroup ?? NO_COST_REPORT_GROUP_TAG_VALUE,
+        });
+      } catch (tagError) {
+        logTaggingFailure(
+          logger,
+          updatedLease.awsAccountId,
+          ["CostReportGroup"],
+          tagError,
+        );
+      }
+    }
 
     return {
       statusCode: 200,
@@ -626,19 +848,23 @@ async function patchLeaseByIdHandler(
 
 async function reviewLeaseHandler(
   event: IsbApiEvent,
-  context: ContextWithGlobalAndReportingConfig &
-    IsbApiContext<LeaseLambdaEnvironment>,
+  context: ContextWithConfig & IsbApiContext<LeaseLambdaEnvironment>,
 ) {
   const isbContext = {
     logger,
     tracer,
     leaseStore: IsbServices.leaseStore(context.env),
     sandboxAccountStore: IsbServices.sandboxAccountStore(context.env),
+    principalStore: IsbServices.principalStore(context.env),
     idcService: IsbServices.idcService(
       context.env,
       fromTemporaryIsbIdcCredentials(context.env),
     ),
     orgsService: IsbServices.orgsService(
+      context.env,
+      fromTemporaryIsbOrgManagementCredentials(context.env),
+    ),
+    organizationsTaggingService: IsbServices.organizationsTaggingService(
       context.env,
       fromTemporaryIsbOrgManagementCredentials(context.env),
     ),
@@ -654,7 +880,7 @@ async function reviewLeaseHandler(
   const ReviewLeaseBodySchema = z
     .object({
       action: z.enum(["Approve", "Deny"], {
-        errorMap: enumErrorMap,
+        error: enumErrorMap,
       }),
     })
     .strict();
@@ -693,7 +919,7 @@ async function reviewLeaseHandler(
       data: {
         errors: [
           {
-            message: `Only leases in a pending state can be approved/denied.`,
+            message: LEASE_NOT_PENDING_REVIEW_ERROR,
           },
         ],
       },
@@ -703,7 +929,7 @@ async function reviewLeaseHandler(
   if (parsedReviewLeaseBody.data.action == "Approve") {
     try {
       await InnovationSandbox.approveLease(
-        { lease, approver: context.user.email },
+        { lease, approver: getUserEmail(context.user) },
         isbContext,
       );
     } catch (error) {
@@ -743,8 +969,7 @@ async function reviewLeaseHandler(
 
 async function freezeLeaseHandler(
   event: IsbApiEvent,
-  context: ContextWithGlobalAndReportingConfig &
-    IsbApiContext<LeaseLambdaEnvironment>,
+  context: ContextWithConfig & IsbApiContext<LeaseLambdaEnvironment>,
 ) {
   const isbContext = {
     logger,
@@ -756,6 +981,10 @@ async function freezeLeaseHandler(
       fromTemporaryIsbIdcCredentials(context.env),
     ),
     orgsService: IsbServices.orgsService(
+      context.env,
+      fromTemporaryIsbOrgManagementCredentials(context.env),
+    ),
+    organizationsTaggingService: IsbServices.organizationsTaggingService(
       context.env,
       fromTemporaryIsbOrgManagementCredentials(context.env),
     ),
@@ -805,7 +1034,7 @@ async function freezeLeaseHandler(
         lease,
         reason: {
           type: "ManuallyFrozen",
-          comment: `Manually frozen by ${context.user.email}`,
+          comment: `Manually frozen by ${getUserEmail(context.user)}`,
         },
       },
       isbContext,
@@ -815,6 +1044,19 @@ async function freezeLeaseHandler(
       throw createHttpJSendError({
         statusCode: 409,
         data: { errors: [{ message: error.message }] },
+      });
+    } else if (error instanceof ResourceLockConflictError) {
+      // A competing critical operation holds the lock.
+      throw createHttpJSendError({
+        statusCode: 409,
+        data: {
+          errors: [
+            {
+              message:
+                "Another operation is currently being processed for this lease. Try again once it completes.",
+            },
+          ],
+        },
       });
     } else if (
       error instanceof CouldNotFindAccountError ||
@@ -840,10 +1082,61 @@ async function freezeLeaseHandler(
     },
   };
 }
+/**
+ * Throws 403 if a user-only caller is not permitted to terminate this lease.
+ * Run before the 404 check so existence isn't leaked to unauthorized callers.
+ */
+function authorizeTermination(
+  user: IsbUser,
+  lease: Lease | undefined,
+  globalConfig: GlobalConfig,
+): { isUserOnly: boolean } {
+  if (isAdminOrManager(user)) return { isUserOnly: false };
+
+  const forbidden = createHttpJSendError({
+    statusCode: 403,
+    data: {
+      errors: [{ message: "User is not authorized to terminate this lease." }],
+    },
+  });
+
+  if (globalConfig.leases.allowUserLeaseTermination !== true) throw forbidden;
+  if (lease?.userEmail !== getUserEmail(user)) throw forbidden;
+  if (lease.status === "Frozen" || lease.status === "Provisioning")
+    throw forbidden;
+
+  return { isUserOnly: true };
+}
+
+/** Maps known terminateLease errors to HTTP responses; rethrows the rest. */
+function mapTerminateError(error: unknown): never {
+  if (error instanceof ResourceLockConflictError) {
+    throw createHttpJSendError({
+      statusCode: 409,
+      data: {
+        errors: [
+          {
+            message: "A termination is already being processed for this lease.",
+          },
+        ],
+      },
+    });
+  }
+  if (
+    error instanceof CouldNotFindAccountError ||
+    error instanceof CouldNotRetrieveUserError
+  ) {
+    throw createHttpJSendError({
+      statusCode: 404,
+      data: { errors: [{ message: error.message }] },
+    });
+  }
+  throw error;
+}
+
 async function terminateLeaseHandler(
   event: IsbApiEvent,
-  context: ContextWithGlobalAndReportingConfig &
-    IsbApiContext<LeaseLambdaEnvironment>,
+  context: ContextWithConfig & IsbApiContext<LeaseLambdaEnvironment>,
 ): Promise<APIGatewayProxyResult> {
   const isbContext = {
     logger,
@@ -858,6 +1151,10 @@ async function terminateLeaseHandler(
       context.env,
       fromTemporaryIsbOrgManagementCredentials(context.env),
     ),
+    organizationsTaggingService: IsbServices.organizationsTaggingService(
+      context.env,
+      fromTemporaryIsbOrgManagementCredentials(context.env),
+    ),
     eventBridgeClient: IsbServices.isbEventBridge(context.env),
     globalConfig: context.globalConfig,
     blueprintStore: IsbServices.blueprintStore(context.env),
@@ -865,6 +1162,7 @@ async function terminateLeaseHandler(
       context.env,
     ),
   };
+
   const leaseCompositeKey = parseLeaseCompositeKeyFromPathParameters(
     event.pathParameters,
   );
@@ -876,16 +1174,16 @@ async function terminateLeaseHandler(
     );
   }
 
+  const { isUserOnly } = authorizeTermination(
+    context.user,
+    lease,
+    context.globalConfig,
+  );
+
   if (!lease) {
     throw createHttpJSendError({
       statusCode: 404,
-      data: {
-        errors: [
-          {
-            message: `Lease not found.`,
-          },
-        ],
-      },
+      data: { errors: [{ message: "Lease not found." }] },
     });
   }
 
@@ -904,21 +1202,14 @@ async function terminateLeaseHandler(
 
   try {
     await InnovationSandbox.terminateLease(
-      { lease, expiredStatus: "ManuallyTerminated" },
+      {
+        lease,
+        expiredStatus: isUserOnly ? "UserTerminated" : "ManuallyTerminated",
+      },
       isbContext,
     );
   } catch (error) {
-    if (
-      error instanceof CouldNotFindAccountError ||
-      error instanceof CouldNotRetrieveUserError
-    ) {
-      throw createHttpJSendError({
-        statusCode: 404,
-        data: { errors: [{ message: error.message }] },
-      });
-    } else {
-      throw error;
-    }
+    mapTerminateError(error);
   }
 
   return {
@@ -935,8 +1226,7 @@ async function terminateLeaseHandler(
 
 async function unfreezeLeaseHandler(
   event: IsbApiEvent,
-  context: ContextWithGlobalAndReportingConfig &
-    IsbApiContext<LeaseLambdaEnvironment>,
+  context: ContextWithConfig & IsbApiContext<LeaseLambdaEnvironment>,
 ): Promise<APIGatewayProxyResult> {
   const isbContext = {
     logger,
@@ -948,6 +1238,10 @@ async function unfreezeLeaseHandler(
       fromTemporaryIsbIdcCredentials(context.env),
     ),
     orgsService: IsbServices.orgsService(
+      context.env,
+      fromTemporaryIsbOrgManagementCredentials(context.env),
+    ),
+    organizationsTaggingService: IsbServices.organizationsTaggingService(
       context.env,
       fromTemporaryIsbOrgManagementCredentials(context.env),
     ),
@@ -1013,6 +1307,19 @@ async function unfreezeLeaseHandler(
         statusCode: 409,
         data: { errors: [{ message: error.message }] },
       });
+    } else if (error instanceof ResourceLockConflictError) {
+      // Unfreeze is non-critical, so any live lock rejects it.
+      throw createHttpJSendError({
+        statusCode: 409,
+        data: {
+          errors: [
+            {
+              message:
+                "Another operation is currently being processed for this lease. Try again once it completes.",
+            },
+          ],
+        },
+      });
     } else if (
       error instanceof CouldNotFindAccountError ||
       error instanceof CouldNotRetrieveUserError
@@ -1027,10 +1334,423 @@ async function unfreezeLeaseHandler(
   }
 }
 
+async function getLeaseAssignmentsHandler(
+  event: IsbApiEvent,
+  context: ContextWithConfig & IsbApiContext<LeaseLambdaEnvironment>,
+): Promise<APIGatewayProxyResult> {
+  const leaseStore = IsbServices.leaseStore(context.env);
+  const principalStore = IsbServices.principalStore(context.env);
+
+  const leaseCompositeKey = parseLeaseCompositeKeyFromPathParameters(
+    event.pathParameters,
+  );
+
+  // Fetch lease to validate existence and check ownership for authorization
+  const { result: lease } = await leaseStore.get(leaseCompositeKey);
+
+  // Admin/Manager can view any lease's assignments.
+  // Other users can only view their own — and get 403 even if lease doesn't exist.
+  if (
+    !isAdminOrManager(context.user) &&
+    (!lease || getUserEmail(context.user) !== lease.userEmail)
+  ) {
+    throw createHttpJSendError({
+      statusCode: 403,
+      data: {
+        errors: [
+          {
+            message:
+              "Active user is not authorized to view assignments for this lease.",
+          },
+        ],
+      },
+    });
+  } else if (!lease) {
+    throw createHttpJSendError({
+      statusCode: 404,
+      data: {
+        errors: [{ message: "Lease not found." }],
+      },
+    });
+  }
+
+  const assignments = await principalStore.getAssignmentsForLease({
+    leaseId: lease.uuid,
+  });
+
+  return {
+    statusCode: 200,
+    body: JSON.stringify({
+      status: "success",
+      data: deriveAssignmentView(lease, assignments.result),
+    }),
+    headers: {
+      "Content-Type": "application/json",
+    },
+  };
+}
+
+/**
+ * GET /leases/shared query parameters.
+ *
+ * Public `maxResults` is capped at 100 and maps to internal `pageSize`.
+ * Cursors are opaque strings consumed by the service layer; the handler does not introspect them.
+ * `.strict()` rejects unknown query params so typos surface as 400 rather
+ * than silently falling through to defaults.
+ */
+const GetSharedLeasesQueryParametersSchema =
+  createPaginationQueryStringParametersSchema({ maxPageSize: 100 })
+    .extend({
+      userId: IdcPrincipalIdSchema,
+      accessType: z.enum(["direct", "group"]),
+    })
+    .strict();
+
+async function getSharedLeasesHandler(
+  event: IsbApiEvent,
+  context: ContextWithConfig & IsbApiContext<LeaseLambdaEnvironment>,
+): Promise<APIGatewayProxyResult> {
+  const parsed = GetSharedLeasesQueryParametersSchema.safeParse(
+    event.queryStringParameters,
+  );
+  if (!parsed.success) {
+    throw createHttpJSendValidationError(parsed.error);
+  }
+  const { userId, accessType, pageIdentifier, maxResults } = parsed.data;
+
+  // Admin/Manager can query shared leases for any user. Other callers must
+  // be an IDC user querying their own userId — no cross-user observation.
+  // M2M callers without elevated roles cannot use this endpoint.
+  if (!isAdminOrManager(context.user)) {
+    if (isM2MUser(context.user)) {
+      throw createHttpJSendError({
+        statusCode: 403,
+        data: {
+          errors: [
+            {
+              message:
+                "Machine-to-machine clients without Admin/Manager role cannot query shared leases.",
+            },
+          ],
+        },
+      });
+    }
+    if (!isIdcUser(context.user) || context.user.userId !== userId) {
+      throw createHttpJSendError({
+        statusCode: 403,
+        data: {
+          errors: [
+            {
+              message:
+                "Caller is not authorized to query shared leases for this user.",
+            },
+          ],
+        },
+      });
+    }
+  }
+
+  const leaseStore = IsbServices.leaseStore(context.env);
+  const principalStore = IsbServices.principalStore(context.env);
+
+  const result =
+    accessType === "direct"
+      ? await getLeasesForUserDirect(
+          { userId, pageIdentifier, pageSize: maxResults },
+          { leaseStore, principalStore, logger },
+        )
+      : await getLeasesForUserViaGroups(
+          { userId, pageIdentifier, pageSize: maxResults },
+          {
+            leaseStore,
+            principalStore,
+            idcService: IsbServices.idcService(
+              context.env,
+              fromTemporaryIsbIdcCredentials(context.env),
+            ),
+            logger,
+          },
+        );
+
+  return {
+    statusCode: 200,
+    body: JSON.stringify({
+      status: "success",
+      data: {
+        result: result.result.map((lease) => ({
+          ...lease,
+          leaseId: base64EncodeCompositeKey({
+            userEmail: lease.userEmail,
+            uuid: lease.uuid,
+          }),
+        })),
+        nextPageIdentifier: result.nextPageIdentifier,
+        ...(result.error !== undefined ? { error: result.error } : {}),
+      },
+    }),
+    headers: {
+      "Content-Type": "application/json",
+    },
+  };
+}
+
+const PutLeaseAssignmentsBodySchema = z
+  .object({
+    assignments: z
+      .array(
+        z
+          .object({
+            principalId: IdcPrincipalIdSchema,
+            principalType: PrincipalTypeSchema,
+          })
+          .strict(),
+      )
+      .max(MAX_USER_MANAGED_ASSIGNMENTS)
+      .refine(
+        (items) => {
+          const keys = items.map((i) => i.principalId);
+          return new Set(keys).size === keys.length;
+        },
+        { message: "Duplicate assignments are not allowed." },
+      ),
+  })
+  .strict();
+
+async function putLeaseAssignmentsHandler(
+  event: IsbApiEvent,
+  context: ContextWithConfig & IsbApiContext<LeaseLambdaEnvironment>,
+): Promise<APIGatewayProxyResult> {
+  const leaseStore = IsbServices.leaseStore(context.env);
+
+  // Parse and validate the request body
+  const bodyParseResult = PutLeaseAssignmentsBodySchema.safeParse(event.body);
+  if (!bodyParseResult.success) {
+    throw createHttpJSendValidationError(bodyParseResult.error);
+  }
+
+  const { assignments: desiredAssignments } = bodyParseResult.data;
+
+  // Get the lease
+  const leaseCompositeKey = parseLeaseCompositeKeyFromPathParameters(
+    event.pathParameters,
+  );
+  const { result: lease } = await leaseStore.get(leaseCompositeKey);
+
+  // Admin/Manager can manage any lease's assignments.
+  // Other users can only manage their own — and get 403 even if the lease
+  // doesn't exist, so existence cannot be inferred from the status code.
+  if (
+    !isAdminOrManager(context.user) &&
+    getUserEmail(context.user) !== lease?.userEmail
+  ) {
+    throw createHttpJSendError({
+      statusCode: 403,
+      data: {
+        errors: [
+          {
+            message:
+              "Active user is not authorized to manage assignments for this lease.",
+          },
+        ],
+      },
+    });
+  } else if (!lease) {
+    throw createHttpJSendError({
+      statusCode: 404,
+      data: {
+        errors: [{ message: "Lease not found." }],
+      },
+    });
+  }
+
+  // Authorization check (global flag + owner sharing) for owner/elevated callers
+  assertCallerCanManageAssignments(context, lease);
+
+  // Lease must be Active
+  if (!isActiveLease(lease)) {
+    throw createHttpJSendError({
+      statusCode: 409,
+      data: {
+        errors: [{ message: "Lease is not in an active status." }],
+      },
+    });
+  }
+
+  // Delegate to service
+  const callerEmail = getUserEmail(context.user);
+  const principalStore = IsbServices.principalStore(context.env);
+
+  logger.info("Processing PUT assignments request", {
+    leaseId: lease.uuid,
+    callerEmail,
+    desiredCount: desiredAssignments.length,
+  });
+
+  try {
+    const { desiredCount } = await triggerAssignmentProcessing(
+      {
+        leaseId: lease.uuid,
+        userEmail: lease.userEmail,
+        intent: "UPDATE",
+        requestedBy: callerEmail,
+        desiredAssignments,
+      },
+      {
+        leaseStore: IsbServices.leaseStore(context.env),
+        eventBridgeClient: IsbServices.isbEventBridge(context.env),
+        principalStore,
+        idcService: IsbServices.idcService(
+          context.env,
+          fromTemporaryIsbIdcCredentials(context.env),
+        ),
+        tracer,
+        logger,
+      },
+    );
+
+    logger.info("Assignment update accepted", {
+      leaseId: lease.uuid,
+      desiredCount,
+      intent: "UPDATE",
+    });
+
+    return {
+      statusCode: 202,
+      body: JSON.stringify({
+        status: "success",
+        data: { desiredCount },
+      }),
+      headers: {
+        "Content-Type": "application/json",
+      },
+    };
+  } catch (error: unknown) {
+    if (error instanceof MaxAssignmentsExceededError) {
+      throw createHttpJSendError({
+        statusCode: 400,
+        data: { errors: [{ message: error.message }] },
+      });
+    }
+    if (error instanceof ResourceLockConflictError) {
+      throw createHttpJSendError({
+        statusCode: 409,
+        data: {
+          errors: [
+            {
+              message:
+                "Another operation is in progress on this lease. Please try again later.",
+            },
+          ],
+        },
+      });
+    }
+    throw error;
+  }
+}
+
+/**
+ * Returns true if the user has Admin or Manager role.
+ */
+function isAdminOrManager(user: IsbUser) {
+  return user.roles.includes("Admin") || user.roles.includes("Manager");
+}
+
+/**
+ * Returns true if the user has read access to a lease.
+ * Access is granted if the user is Admin/Manager, the lease owner,
+ * or has shared access via desiredAssignments (direct user or group membership).
+ */
+async function hasReadAccessForLease(
+  user: IsbUser,
+  lease: Lease,
+  getPrincipalStore: () => ReturnType<typeof IsbServices.principalStore>,
+): Promise<boolean> {
+  // Admin/Manager can view any lease
+  if (isAdminOrManager(user)) {
+    return true;
+  }
+
+  // Owner can view their own lease
+  if (getUserEmail(user) === lease.userEmail) {
+    return true;
+  }
+
+  // Check shared access via desiredAssignments
+  if (!isIdcUser(user) || !lease.desiredAssignments?.length) {
+    return false;
+  }
+
+  const userId = user.userId;
+
+  // Direct user assignment
+  if (
+    lease.desiredAssignments.some(
+      (a) => a.principalType === "USER" && a.principalId === userId,
+    )
+  ) {
+    return true;
+  }
+
+  // Group-based assignment via cached group memberships
+  const groupAssignments = lease.desiredAssignments.filter(
+    (a) => a.principalType === "GROUP",
+  );
+  if (groupAssignments.length === 0) {
+    return false;
+  }
+
+  const principalStore = getPrincipalStore();
+  const membershipCache = await principalStore.getGroupMembershipCache(userId);
+  const userGroupIds = membershipCache.result?.groupIds ?? [];
+  if (userGroupIds.length === 0) {
+    return false;
+  }
+
+  return groupAssignments.some((a) => userGroupIds.includes(a.principalId));
+}
+
+/**
+ * Asserts the caller has permission to manage assignments for a lease.
+ * Admin/Manager can always manage. Owner can manage only if lease sharing is
+ * enabled globally and allowOwnerToShareLease is set on the lease.
+ *
+ * Callers must already have confirmed the caller is elevated or the lease
+ * owner (see putLeaseAssignmentsHandler); this only enforces the sharing flags.
+ */
+function assertCallerCanManageAssignments(
+  context: ContextWithConfig & IsbApiContext<LeaseLambdaEnvironment>,
+  lease: Lease,
+): void {
+  // Admin/Manager always have access regardless of global flag
+  if (isAdminOrManager(context.user)) return;
+
+  // For non-elevated owners, check the global flag
+  if (!context.globalConfig.leases.leaseSharingEnabled) {
+    throw createHttpJSendError({
+      statusCode: 403,
+      data: {
+        errors: [{ message: "Lease sharing is not enabled." }],
+      },
+    });
+  }
+
+  if (!lease.allowOwnerToShareLease) {
+    throw createHttpJSendError({
+      statusCode: 403,
+      data: {
+        errors: [{ message: "Owner sharing is not enabled for this lease." }],
+      },
+    });
+  }
+}
+
 function parseLeaseCompositeKeyFromPathParameters(
   pathParameters: APIGatewayProxyEventPathParameters,
 ) {
-  const PathParametersSchema = z.object({ leaseId: z.string().base64() });
+  // leaseId is a base64url-encoded composite key (URL-safe alphabet, no padding).
+  const PathParametersSchema = z.object({
+    leaseId: z.string().regex(/^[A-Za-z0-9_-]+$/),
+  });
   const parsedPathParametersResponse =
     PathParametersSchema.safeParse(pathParameters);
   if (!parsedPathParametersResponse.success) {
@@ -1056,12 +1776,4 @@ function parseLeaseCompositeKeyFromPathParameters(
     throw createHttpJSendValidationError(leaseKeySchemaParseResponse.error);
 
   return leaseKeySchemaParseResponse.data;
-}
-
-function authorizedToLeaseFromPrivateLeaseTemplates(user: IsbUser) {
-  return (
-    user.roles?.some(
-      (role: IsbRole) => role === "Admin" || role === "Manager",
-    ) ?? false
-  );
 }

@@ -25,4 +25,4 @@ If deployment fails, the lease is automatically terminated.
 
 _Note: Changes only affect new leases. Existing leases keep their deployed resources._
 
-For more information, see [Creating and managing lease templates](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/manager-guide.html#creating-managing-lease-templates) in the implementation guide.
+For more information, see [Creating and managing lease templates](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/manager-guide.html#creating-lease-templates) in the implementation guide.

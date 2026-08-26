@@ -1,0 +1,43 @@
+// Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+// SPDX-License-Identifier: Apache-2.0
+export {
+  acquireAssignmentProcessingLock,
+  deriveAssignmentView,
+  enrichDesiredAssignments,
+  getLeasesForUserDirect,
+  getLeasesForUserViaGroups,
+  processAssignment,
+  publishAssignmentProcessingRequest,
+  releaseAssignmentProcessingLock,
+  resolveAssignmentAction,
+  triggerAssignmentProcessing,
+  validateAssignmentCount,
+} from "./lease-assignment.service.js";
+export { MaxAssignmentsExceededError } from "./lease-assignment.types.js";
+export type {
+  AssignmentAction,
+  AssignmentProcessingLock,
+  AssignmentSyncStatus,
+  AssignmentView,
+  DesiredAssignment,
+  EnrichDesiredAssignmentsServices,
+  EnrichedAssignment,
+  EnrichedGroupAssignment,
+  EnrichedUserAssignment,
+  GetLeasesForUserDirectServices,
+  GetLeasesForUserProps,
+  GetLeasesForUserViaGroupsServices,
+  LeaseAssignmentsView,
+  LeaseLockIntent,
+  ProcessAssignmentInput,
+  ProcessAssignmentResult,
+  ProcessAssignmentServices,
+  ResolveAssignmentActionInput,
+  ResolveAssignmentActionServices,
+  SharedLease,
+  SharedLeaseAccessType,
+  TriggerAssignmentProcessingProps,
+  TriggerAssignmentProcessingServices,
+  UpdateAssignmentsResult,
+  UpdateAssignmentsServices,
+} from "./lease-assignment.types.js";

@@ -10,6 +10,7 @@ import InputField from "@amzn/innovation-sandbox-frontend/components/FormFields/
 import SelectField from "@amzn/innovation-sandbox-frontend/components/FormFields/SelectField";
 import TextareaField from "@amzn/innovation-sandbox-frontend/components/FormFields/TextareaField";
 import ToggleField from "@amzn/innovation-sandbox-frontend/components/FormFields/ToggleField";
+import { SharingSettingsForm } from "@amzn/innovation-sandbox-frontend/components/Forms/SharingSettingsForm";
 
 export interface VisibilityOption {
   label: string;
@@ -36,13 +37,18 @@ export interface BasicDetailsFormValues {
   description?: string;
   requiresApproval: boolean;
   visibility: Visibility;
+  allowOwnerToShareLease: boolean;
 }
 
 /**
  * Form component for lease template basic details.
  * Uses FormContext from parent - no internal state management.
  */
-export function BasicDetailsForm() {
+export function BasicDetailsForm({
+  leaseSharingEnabled = false,
+}: {
+  leaseSharingEnabled?: boolean;
+}) {
   // Get control from form context
   const { control } = useFormContext<BasicDetailsFormValues>();
 
@@ -79,18 +85,6 @@ export function BasicDetailsForm() {
         }}
       />
 
-      <ToggleField
-        controllerProps={{ control, name: "requiresApproval" }}
-        formFieldProps={{
-          label: "Requires Approval",
-          description:
-            "When enabled, lease requests using this template must be approved by a manager before the sandbox is provisioned",
-        }}
-        toggleProps={{
-          children: requiresApproval ? "Approval required" : "Auto-approved",
-        }}
-      />
-
       <SelectField
         controllerProps={{ control, name: "visibility" }}
         formFieldProps={{
@@ -105,6 +99,20 @@ export function BasicDetailsForm() {
           optionToValue: getVisibilityValue,
         }}
       />
+
+      <ToggleField
+        controllerProps={{ control, name: "requiresApproval" }}
+        formFieldProps={{
+          label: "Requires Approval",
+          description:
+            "When enabled, lease requests using this template must be approved by a manager before the sandbox is provisioned",
+        }}
+        toggleProps={{
+          children: requiresApproval ? "Approval required" : "Auto-approved",
+        }}
+      />
+
+      <SharingSettingsForm leaseSharingEnabled={leaseSharingEnabled} />
     </SpaceBetween>
   );
 }

@@ -18,7 +18,7 @@ import {
   RegisterBlueprintRequest,
   UpdateBlueprintRequest,
 } from "@amzn/innovation-sandbox-frontend/domains/blueprints/types";
-import { config } from "@amzn/innovation-sandbox-frontend/helpers/config";
+import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import {
   createBlueprint,
   createBlueprintWithStackSets,
@@ -27,19 +27,32 @@ import {
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
 import { createQueryClientWrapper } from "@amzn/innovation-sandbox-frontend/setupTests";
 
-vi.mock("@amzn/innovation-sandbox-frontend/helpers/AuthService", () => ({
-  AuthService: {
-    getCurrentUser: vi.fn().mockResolvedValue({ email: "test@example.com" }),
-    getAccessToken: vi.fn().mockReturnValue("mocked-access-token"),
+vi.mock(
+  "@amzn/innovation-sandbox-frontend/helpers/CognitoAuthService",
+  async () => {
+    const [{ authenticated }, { buildCognitoAuthServiceMock }] =
+      await Promise.all([
+        import(
+          "@amzn/innovation-sandbox-frontend-test/utils/cognitoFixtures"
+        ),
+        import(
+          "@amzn/innovation-sandbox-frontend-test/utils/cognitoServiceMock"
+        ),
+      ]);
+    return {
+      CognitoAuthService: buildCognitoAuthServiceMock({
+        getCurrentUser: vi.fn().mockResolvedValue(authenticated()),
+      }),
+    };
   },
-}));
+);
 
 describe("Blueprint hooks", () => {
   describe("useGetBlueprints", () => {
     it("should fetch blueprints successfully", async () => {
       const mockBlueprint = createBlueprintWithStackSets();
       server.use(
-        http.get(`${config.ApiUrl}/blueprints`, () => {
+        http.get(`${getConfig().ApiUrl}/blueprints`, () => {
           return HttpResponse.json({
             status: "success",
             data: {
@@ -64,7 +77,7 @@ describe("Blueprint hooks", () => {
 
     it("should handle error when fetching blueprints fails", async () => {
       server.use(
-        http.get(`${config.ApiUrl}/blueprints`, () => {
+        http.get(`${getConfig().ApiUrl}/blueprints`, () => {
           return HttpResponse.json(
             { status: "error", message: "Failed to fetch blueprints" },
             { status: 500 },
@@ -88,7 +101,7 @@ describe("Blueprint hooks", () => {
       const blueprintId = mockBlueprint.blueprintId;
 
       server.use(
-        http.get(`${config.ApiUrl}/blueprints/${blueprintId}`, () => {
+        http.get(`${getConfig().ApiUrl}/blueprints/${blueprintId}`, () => {
           return HttpResponse.json({
             status: "success",
             data: {
@@ -122,7 +135,7 @@ describe("Blueprint hooks", () => {
       const blueprintId = "650e8400-e29b-41d4-a716-446655440001";
 
       server.use(
-        http.get(`${config.ApiUrl}/blueprints/${blueprintId}`, () => {
+        http.get(`${getConfig().ApiUrl}/blueprints/${blueprintId}`, () => {
           return HttpResponse.json(
             { status: "error", message: "Blueprint not found" },
             { status: 404 },
@@ -156,7 +169,7 @@ describe("Blueprint hooks", () => {
 
       let apiCallMade = false;
       server.use(
-        http.post(`${config.ApiUrl}/blueprints`, async ({ request }) => {
+        http.post(`${getConfig().ApiUrl}/blueprints`, async ({ request }) => {
           const body = await request.json();
           expect(body).toEqual(newBlueprintRequest);
           apiCallMade = true;
@@ -185,7 +198,7 @@ describe("Blueprint hooks", () => {
 
     it("should handle error when registering blueprint fails", async () => {
       server.use(
-        http.post(`${config.ApiUrl}/blueprints`, () => {
+        http.post(`${getConfig().ApiUrl}/blueprints`, () => {
           return HttpResponse.json(
             { status: "error", message: "Failed to register blueprint" },
             { status: 500 },
@@ -228,7 +241,7 @@ describe("Blueprint hooks", () => {
       let apiCallMade = false;
       server.use(
         http.put(
-          `${config.ApiUrl}/blueprints/${blueprintId}`,
+          `${getConfig().ApiUrl}/blueprints/${blueprintId}`,
           async ({ request }) => {
             const body = await request.json();
             expect(body).toEqual(updates);
@@ -265,7 +278,7 @@ describe("Blueprint hooks", () => {
       };
 
       server.use(
-        http.put(`${config.ApiUrl}/blueprints/${blueprintId}`, () => {
+        http.put(`${getConfig().ApiUrl}/blueprints/${blueprintId}`, () => {
           return HttpResponse.json(
             { status: "error", message: "Failed to update blueprint" },
             { status: 500 },
@@ -296,7 +309,7 @@ describe("Blueprint hooks", () => {
 
       let apiCallMade = false;
       server.use(
-        http.delete(`${config.ApiUrl}/blueprints/${blueprintId}`, () => {
+        http.delete(`${getConfig().ApiUrl}/blueprints/${blueprintId}`, () => {
           apiCallMade = true;
           return HttpResponse.json({ status: "success" }, { status: 200 });
         }),
@@ -320,7 +333,7 @@ describe("Blueprint hooks", () => {
         "650e8400-e29b-41d4-a716-44665544000145678-1234-1234-1234-123456789012";
 
       server.use(
-        http.delete(`${config.ApiUrl}/blueprints/${blueprintId}`, () => {
+        http.delete(`${getConfig().ApiUrl}/blueprints/${blueprintId}`, () => {
           return HttpResponse.json(
             {
               status: "error",
@@ -356,7 +369,7 @@ describe("Blueprint hooks", () => {
 
       let apiCallCount = 0;
       server.use(
-        http.delete(`${config.ApiUrl}/blueprints/:id`, () => {
+        http.delete(`${getConfig().ApiUrl}/blueprints/:id`, () => {
           apiCallCount++;
           return HttpResponse.json({ status: "success" }, { status: 200 });
         }),
@@ -382,7 +395,7 @@ describe("Blueprint hooks", () => {
       ];
 
       server.use(
-        http.delete(`${config.ApiUrl}/blueprints/:id`, () => {
+        http.delete(`${getConfig().ApiUrl}/blueprints/:id`, () => {
           return HttpResponse.json(
             {
               status: "error",
@@ -416,7 +429,7 @@ describe("Blueprint hooks", () => {
       ];
 
       server.use(
-        http.get(`${config.ApiUrl}/blueprints/stacksets`, () => {
+        http.get(`${getConfig().ApiUrl}/blueprints/stacksets`, () => {
           return HttpResponse.json({
             status: "success",
             data: {
@@ -441,20 +454,23 @@ describe("Blueprint hooks", () => {
 
     it("should list stacksets with pagination parameters", async () => {
       const mockStackSets = [createStackSet()];
-      const params = { pageIdentifier: "next-page", pageSize: 10 };
+      const params = { pageIdentifier: "next-page", maxResults: 10 };
 
       let requestUrl = "";
       server.use(
-        http.get(`${config.ApiUrl}/blueprints/stacksets`, ({ request }) => {
-          requestUrl = request.url;
-          return HttpResponse.json({
-            status: "success",
-            data: {
-              result: mockStackSets,
-              nextPageIdentifier: null,
-            },
-          });
-        }),
+        http.get(
+          `${getConfig().ApiUrl}/blueprints/stacksets`,
+          ({ request }) => {
+            requestUrl = request.url;
+            return HttpResponse.json({
+              status: "success",
+              data: {
+                result: mockStackSets,
+                nextPageIdentifier: null,
+              },
+            });
+          },
+        ),
       );
 
       const { result } = renderHook(() => useListStackSets(params), {
@@ -464,12 +480,12 @@ describe("Blueprint hooks", () => {
       await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
       expect(requestUrl).toContain("pageIdentifier=next-page");
-      expect(requestUrl).toContain("pageSize=10");
+      expect(requestUrl).toContain("maxResults=10");
     });
 
     it("should handle error when listing stacksets fails", async () => {
       server.use(
-        http.get(`${config.ApiUrl}/blueprints/stacksets`, () => {
+        http.get(`${getConfig().ApiUrl}/blueprints/stacksets`, () => {
           return HttpResponse.json(
             { status: "error", message: "Failed to list stacksets" },
             { status: 500 },

@@ -12,7 +12,7 @@ import {
   showSuccessToast,
 } from "@amzn/innovation-sandbox-frontend/components/Toast";
 import { EditBlueprintDeploymentConfig } from "@amzn/innovation-sandbox-frontend/domains/blueprints/pages/EditBlueprintDeploymentConfig";
-import { config } from "@amzn/innovation-sandbox-frontend/helpers/config";
+import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import { createBlueprintWithStackSets } from "@amzn/innovation-sandbox-frontend/mocks/factories/blueprintFactory";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
 import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
@@ -78,7 +78,7 @@ describe("EditBlueprintDeploymentConfig", () => {
     const submitSpy = vi.fn();
     server.use(
       http.put(
-        `${config.ApiUrl}/blueprints/${mockBlueprintId}`,
+        `${getConfig().ApiUrl}/blueprints/${mockBlueprintId}`,
         async ({ request }) => {
           const data = await request.json();
           submitSpy(data);
@@ -121,7 +121,7 @@ describe("EditBlueprintDeploymentConfig", () => {
 
   test("displays error toast on submission failure", async () => {
     server.use(
-      http.put(`${config.ApiUrl}/blueprints/${mockBlueprintId}`, () => {
+      http.put(`${getConfig().ApiUrl}/blueprints/${mockBlueprintId}`, () => {
         return HttpResponse.json(
           { status: "error", message: "Update failed" },
           { status: 500 },
@@ -164,7 +164,7 @@ describe("EditBlueprintDeploymentConfig", () => {
 
   test("displays error panel when blueprint fails to load", async () => {
     server.use(
-      http.get(`${config.ApiUrl}/blueprints/${mockBlueprintId}`, () => {
+      http.get(`${getConfig().ApiUrl}/blueprints/${mockBlueprintId}`, () => {
         return HttpResponse.json(
           { status: "error", message: "Not found" },
           { status: 404 },

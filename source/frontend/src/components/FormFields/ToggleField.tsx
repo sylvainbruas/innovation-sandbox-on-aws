@@ -21,6 +21,13 @@ export interface ToggleFieldProps<
   formFieldProps?: Omit<FormFieldProps, "errorText">;
   /** Toggle component props and event handlers */
   toggleProps?: Omit<ToggleProps, "checked">;
+  /**
+   * When true, renders a live "Enabled"/"Disabled" label beside the toggle,
+   * derived from the current value — matching the app convention of showing a
+   * toggle's state inline. Ignored if an explicit `toggleProps.children` is
+   * given (that takes precedence).
+   */
+  stateLabel?: boolean;
 }
 
 export default function ToggleField<
@@ -30,6 +37,7 @@ export default function ToggleField<
   controllerProps,
   formFieldProps,
   toggleProps,
+  stateLabel,
 }: ToggleFieldProps<TFieldValues, TName>) {
   const {
     field: {
@@ -49,6 +57,11 @@ export default function ToggleField<
     ...restToggleProps
   } = toggleProps || {};
 
+  // An explicit `children` always wins; otherwise `stateLabel` renders a live
+  // "Enabled"/"Disabled" label from the current value.
+  const label =
+    children ?? (stateLabel ? (fieldValue ? "Enabled" : "Disabled") : undefined);
+
   return (
     <FormField {...formFieldProps} errorText={fieldError?.message}>
       <Toggle
@@ -65,7 +78,7 @@ export default function ToggleField<
           customOnBlur?.(event);
         }}
       >
-        {children}
+        {label}
       </Toggle>
     </FormField>
   );

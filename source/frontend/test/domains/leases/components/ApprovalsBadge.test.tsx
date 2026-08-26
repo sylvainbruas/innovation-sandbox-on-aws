@@ -4,10 +4,10 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { screen, waitFor } from "@testing-library/react";
 import { http, HttpResponse } from "msw";
-import { describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, test } from "vitest";
 
 import { ApprovalsBadge } from "@amzn/innovation-sandbox-frontend/domains/leases/components/ApprovalsBadge";
-import { config } from "@amzn/innovation-sandbox-frontend/helpers/config";
+import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import {
   createActiveLease,
   createExpiredLease,
@@ -24,6 +24,10 @@ describe("ApprovalsBadge", () => {
         retry: false,
       },
     },
+  });
+
+  beforeEach(() => {
+    queryClient.clear();
   });
 
   const renderComponent = () =>
@@ -59,7 +63,7 @@ describe("ApprovalsBadge", () => {
 
   test("handles error when fetching leases fails", async () => {
     server.use(
-      http.get(`${config.ApiUrl}/leases`, () => {
+      http.get(`${getConfig().ApiUrl}/leases`, () => {
         return HttpResponse.json(
           { status: "error", message: "Failed to fetch leases" },
           { status: 500 },
@@ -79,7 +83,7 @@ describe("ApprovalsBadge", () => {
     mockLeaseApi.returns(initialPendingLeases);
     server.use(mockLeaseApi.getHandler());
 
-    const { rerender } = renderComponent();
+    renderComponent();
 
     await waitFor(() => {
       expect(screen.getByText("2")).toBeInTheDocument();
@@ -89,11 +93,8 @@ describe("ApprovalsBadge", () => {
     mockLeaseApi.returns(updatedPendingLeases);
     server.use(mockLeaseApi.getHandler());
 
-    rerender(
-      <QueryClientProvider client={queryClient}>
-        <ApprovalsBadge />
-      </QueryClientProvider>,
-    );
+    // Invalidate the cache to trigger a refetch with the new mock data
+    await queryClient.invalidateQueries({ queryKey: ["leases"] });
 
     await waitFor(() => {
       expect(screen.getByText("1")).toBeInTheDocument();

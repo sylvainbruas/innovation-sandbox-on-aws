@@ -89,7 +89,7 @@ export const useUnregisterBlueprints = (options?: {
 
 export const useListStackSets = (params?: {
   pageIdentifier?: string;
-  pageSize?: number;
+  maxResults?: number;
 }) => {
   return useQuery({
     queryKey: ["stacksets", params],

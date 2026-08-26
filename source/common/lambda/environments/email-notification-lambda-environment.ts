@@ -7,14 +7,12 @@ import { BaseLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/la
 export const EmailNotificationEnvironmentSchema =
   BaseLambdaEnvironmentSchema.extend({
     ISB_EVENT_BUS: z.string(),
-    APP_CONFIG_APPLICATION_ID: z.string(),
-    APP_CONFIG_PROFILE_ID: z.string(),
-    APP_CONFIG_ENVIRONMENT_ID: z.string(),
+    CONFIG_TABLE_NAME: z.string(),
     ISB_NAMESPACE: z.string(),
     INTERMEDIATE_ROLE_ARN: z.string(),
     IDC_ROLE_ARN: z.string(),
-    AWS_APPCONFIG_EXTENSION_PREFETCH_LIST: z.string(),
     IDC_CONFIG_PARAM_ARN: z.string(),
+    WEB_APP_URL: z.string(),
   });
 
 export type EmailNotificationEnvironment = z.infer<

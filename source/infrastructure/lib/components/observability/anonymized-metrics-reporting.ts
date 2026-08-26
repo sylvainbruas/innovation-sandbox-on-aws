@@ -14,6 +14,7 @@ export type AnonymizedMetricsProps = {
   hubAccountId: string;
   orgManagementAccountId: string;
   isStableTaggingEnabled: string;
+  wafWebAclName: string;
 };
 
 export class AnonymizedMetricsReporting extends Construct {

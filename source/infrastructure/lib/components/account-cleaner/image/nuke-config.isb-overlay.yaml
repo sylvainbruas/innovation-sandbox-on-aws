@@ -1,0 +1,97 @@
+# ISB-managed aws-nuke configuration.
+#
+# These entries are REQUIRED by the solution. They are kept out of the shipped
+# nuke config (nuke-config.yaml) because that file becomes an AppConfig hosted
+# configuration that customers are expected to customize — any release that
+# modified it would supersede their edits. Instead, this overlay is merged into
+# the customer's config at cleanup time by isb-prepare-nuke-config.sh.
+#
+# This file is COPYed into the account-cleaner image and lives beside the aws-nuke
+# binary on purpose: the keys below are aws-nuke resource-type identifiers, so they
+# must stay in lockstep with the Nuke version that consumes them. Editing this file
+# therefore requires rebuilding and republishing the cleanup image.
+#
+# Merge semantics (yq `*+` deep merge, then de-duplicate sequences):
+#   - maps merge recursively
+#   - sequences append, then duplicates are removed
+#   - the customer's own values are always preserved alongside these
+#
+# Because the merge is structural, it is independent of the customer's
+# formatting and indentation.
+
+settings:
+  CloudFormationStack:
+    # Delete stacks using the ISB spoke role. Without this, Nuke may attempt the
+    # deletion with a role that ISB's SCPs block.
+    UseCurrentRoleToDeleteStack: true
+
+resource-types:
+  excludes:
+    # Post-cleanup validation depends on Resource Explorer being present. There is
+    # one index per region and it has no user-specified name, so it can only be
+    # protected at the type level.
+    - ResourceExplorer2Index
+    # Cannot be deleted directly; auto-deletes when its parent AgentRuntime is removed.
+    - BedrockAgentCoreWorkloadIdentity
+
+# The hub account must never be a Nuke target. Restated here as a safety net in
+# case the customer removes it from their copy.
+blocklist:
+  - "%HUB_ACCOUNT_ID%"
+
+accounts:
+  # Placeholder is substituted with the target account ID by isb-prepare-nuke-config.
+  "%CLEANUP_ACCOUNT_ID%":
+    filters:
+      # ISB's own stack set instance. Deleting it removes the sandbox account's
+      # ISB infrastructure.
+      CloudFormationStack:
+        - type: glob
+          value: StackSet-Isb-*
+      # The cleanup role Nuke is currently running as, and the Organizations
+      # access role. Deleting either mid-execution breaks cleanup outright —
+      # OrganizationAccountAccessRole cannot be recreated from outside the account.
+      IAMRole:
+        - type: exact
+          value: "%CLEANUP_ROLE_NAME%"
+        - type: exact
+          value: OrganizationAccountAccessRole
+      # Policies and attachments for the two roles above; protecting the roles
+      # without their policies would leave them present but powerless.
+      IAMRolePolicy:
+        - property: "role:RoleName"
+          type: exact
+          value: "%CLEANUP_ROLE_NAME%"
+        - property: "role:RoleName"
+          type: exact
+          value: OrganizationAccountAccessRole
+      IAMRolePolicyAttachment:
+        - property: RoleName
+          type: exact
+          value: "%CLEANUP_ROLE_NAME%"
+        - property: RoleName
+          type: exact
+          value: OrganizationAccountAccessRole
+      # Managed by AWS Security Incident Response; cannot be deleted via the
+      # DeleteRule API.
+      CloudWatchEventsRule:
+        - property: Name
+          type: exact
+          value: SIRGuardDutyRule
+        - property: Name
+          type: exact
+          value: SIRSecurityHubRule
+      # Targets attached to the SIR-managed rules likewise cannot be removed.
+      CloudWatchEventsTarget:
+        - property: Name
+          type: exact
+          value: SIRGuardDutyRule
+        - property: Name
+          type: exact
+          value: SIRSecurityHubRule
+      # ISB's own Resource Explorer view must survive cleanup for post-cleanup
+      # validation to work. Scoped by exact name so that views created by the
+      # sandbox user are still treated as user resources and cleaned up.
+      ResourceExplorer2View:
+        - type: exact
+          value: isb-post-cleanup-validator

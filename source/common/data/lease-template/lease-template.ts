@@ -12,7 +12,7 @@ import {
 } from "@amzn/innovation-sandbox-commons/utils/zod.js";
 
 // IMPORTANT -- this value must be updated whenever the schema changes.
-export const LeaseTemplateSchemaVersion = 3; // v1.2.0 - Added blueprintId support
+export const LeaseTemplateSchemaVersion = 4; // v1.3.0 - Added allowOwnerToShareLease for multi-user leases
 
 // Define supported version range for backwards compatibility
 const LeaseTemplateSupportedVersionsSchema = createVersionRangeSchema(
@@ -26,57 +26,48 @@ const LeaseTemplateItemWithMetadataSchema = createItemWithMetadataSchema(
 );
 
 export const ThresholdActionSchema = z.enum(["ALERT", "FREEZE_ACCOUNT"], {
-  errorMap: enumErrorMap,
+  error: enumErrorMap,
 });
 
 export const VisibilitySchema = z.enum(["PUBLIC", "PRIVATE"], {
-  errorMap: enumErrorMap,
+  error: enumErrorMap,
 });
 
-export const BudgetThresholdSchema = z
-  .object({
-    dollarsSpent: z.number().gt(0),
-    action: ThresholdActionSchema,
-  })
-  .strict();
+export const BudgetThresholdSchema = z.strictObject({
+  dollarsSpent: z.number().gt(0),
+  action: ThresholdActionSchema,
+});
 
-export const BudgetConfigSchema = z
-  .object({
-    maxSpend: z.number().gt(0).optional(),
-    budgetThresholds: z.array(BudgetThresholdSchema).optional(),
-  })
-  .strict();
+export const BudgetConfigSchema = z.strictObject({
+  maxSpend: z.number().gt(0).optional(),
+  budgetThresholds: z.array(BudgetThresholdSchema).optional(),
+});
 
-export const DurationThresholdSchema = z
-  .object({
-    hoursRemaining: z.number().gt(0),
-    action: ThresholdActionSchema,
-  })
-  .strict();
+export const DurationThresholdSchema = z.strictObject({
+  hoursRemaining: z.number().gt(0),
+  action: ThresholdActionSchema,
+});
 
-export const DurationConfigSchema = z
-  .object({
-    leaseDurationInHours: z.number().gt(0).optional(),
-    durationThresholds: z.array(DurationThresholdSchema).optional(),
-  })
-  .strict();
+export const DurationConfigSchema = z.strictObject({
+  leaseDurationInHours: z.number().gt(0).optional(),
+  durationThresholds: z.array(DurationThresholdSchema).optional(),
+});
 
-export const LeaseTemplateSchema = z
-  .object({
-    uuid: z.string().uuid(),
-    name: z.string().max(50).min(1),
-    description: FreeTextSchema.optional(),
-    requiresApproval: z.boolean(),
-    createdBy: z.string().email(),
-    visibility: VisibilitySchema.default("PUBLIC"),
-    costReportGroup: z.string().min(1).max(50).optional(),
-    blueprintId: z.string().uuid().nullable().optional(), // References attached blueprint (null = no blueprint, undefined = field removed by DynamoDB transformation)
-    blueprintName: z.string().nullable().optional(), // Resolved from blueprint store on create/update (not client-provided)
-  })
-  .merge(BudgetConfigSchema)
-  .merge(DurationConfigSchema)
-  .merge(LeaseTemplateItemWithMetadataSchema)
-  .strict();
+export const LeaseTemplateSchema = z.strictObject({
+  uuid: z.uuid(),
+  name: z.string().max(50).min(1),
+  description: FreeTextSchema.optional(),
+  requiresApproval: z.boolean(),
+  createdBy: z.email(),
+  visibility: VisibilitySchema.default("PUBLIC"),
+  costReportGroup: z.string().min(1).max(50).optional(),
+  blueprintId: z.uuid().nullable().optional(), // References attached blueprint (null = no blueprint, undefined = field removed by DynamoDB transformation)
+  blueprintName: z.string().nullable().optional(), // Resolved from blueprint store on create/update (not client-provided)
+  allowOwnerToShareLease: z.boolean().default(false), // Controls whether lease owners can manage additional users
+  ...BudgetConfigSchema.shape,
+  ...DurationConfigSchema.shape,
+  ...LeaseTemplateItemWithMetadataSchema.shape,
+});
 
 export type ThresholdAction = z.infer<typeof ThresholdActionSchema>;
 export type BudgetThreshold = z.infer<typeof BudgetThresholdSchema>;

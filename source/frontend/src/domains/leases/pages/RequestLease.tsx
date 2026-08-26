@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { zodResolver } from "@hookform/resolvers/zod";
+import { DateTime } from "luxon";
 import { useEffect, useState } from "react";
 import { FormProvider, useForm } from "react-hook-form";
 import { useNavigate } from "react-router-dom";
@@ -14,29 +15,39 @@ import {
   WizardProps,
 } from "@cloudscape-design/components";
 
+import { getUserEmail } from "@amzn/innovation-sandbox-commons/utils/auth-utils";
 import { useAppLayoutContext } from "@amzn/innovation-sandbox-frontend/components/AppLayout/AppLayoutContext";
 import { ContentLayout } from "@amzn/innovation-sandbox-frontend/components/ContentLayout";
 import TextareaField from "@amzn/innovation-sandbox-frontend/components/FormFields/TextareaField";
+import { Loader } from "@amzn/innovation-sandbox-frontend/components/Loader";
 import { Markdown } from "@amzn/innovation-sandbox-frontend/components/Markdown";
 import {
   showErrorToast,
   showSuccessToast,
 } from "@amzn/innovation-sandbox-frontend/components/Toast";
+import { AssignmentsForm } from "@amzn/innovation-sandbox-frontend/domains/leases/components/AssignmentsForm";
+import { PendingAssignmentsList } from "@amzn/innovation-sandbox-frontend/domains/leases/components/PendingAssignmentsList";
 import { ReviewForm } from "@amzn/innovation-sandbox-frontend/domains/leases/components/ReviewForm";
 import { TemplateSelectionForm } from "@amzn/innovation-sandbox-frontend/domains/leases/components/TemplateSelectionForm";
 import { TermsOfServiceForm } from "@amzn/innovation-sandbox-frontend/domains/leases/components/TermsOfServiceForm";
+import { toAssignmentRefs } from "@amzn/innovation-sandbox-frontend/domains/leases/helpers";
 import { useRequestNewLease } from "@amzn/innovation-sandbox-frontend/domains/leases/hooks";
 import { NewLeaseRequest } from "@amzn/innovation-sandbox-frontend/domains/leases/types";
 import {
   RequestLeaseFormValues,
   RequestLeaseValidationSchema,
 } from "@amzn/innovation-sandbox-frontend/domains/leases/validation";
+import { useGetLeaseTemplateById } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/hooks";
+import { useGetConfigurations } from "@amzn/innovation-sandbox-frontend/domains/settings/hooks";
+import { ApiError } from "@amzn/innovation-sandbox-frontend/helpers/ApiProxy";
 import { useBreadcrumb } from "@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb";
+import { useUser } from "@amzn/innovation-sandbox-frontend/hooks/useUser";
 
 export const RequestLease = () => {
   const navigate = useNavigate();
   const setBreadcrumb = useBreadcrumb();
   const { setTools } = useAppLayoutContext();
+  const { user } = useUser();
 
   const { mutateAsync: requestNewLease, isPending: isSubmitting } =
     useRequestNewLease();
@@ -54,14 +65,40 @@ export const RequestLease = () => {
 
   const { trigger, clearErrors, getFieldState, watch } = methods;
 
-  // Reset acceptTerms when template changes
+  // Reset acceptTerms whenever the request changes
   const leaseTemplateUuid = watch("leaseTemplateUuid");
+  const assignmentsKey = (watch("assignments") ?? [])
+    .map((a) => a.principalId)
+    // Opaque IDC principal IDs: sort by code point for a deterministic,
+    // locale-independent key. This value only feeds the effect dependency
+    // below, so stable ordering matters, not human-readable collation.
+    .sort((a, b) => Number(a > b) - Number(a < b))
+    .join(",");
   useEffect(() => {
     methods.resetField("acceptTerms");
-  }, [leaseTemplateUuid, methods]);
+  }, [leaseTemplateUuid, assignmentsKey, methods]);
+
+  // The "Share access" step is conditional on the global feature flag AND
+  // the selected template's allowOwnerToShareLease. We fetch both lazily —
+  // the template lookup only fires once a template is picked.
+  const { data: globalConfig } = useGetConfigurations();
+  const { data: selectedTemplate, isLoading: isTemplateLoading } =
+    useGetLeaseTemplateById(leaseTemplateUuid || undefined);
+  const showAssignmentsStep =
+    !!globalConfig?.leases?.leaseSharingEnabled &&
+    !!selectedTemplate?.allowOwnerToShareLease;
 
   // Track active wizard step
   const [activeStepIndex, setActiveStepIndex] = useState(0);
+
+  const stepFields: Array<Array<keyof RequestLeaseFormValues>> = [
+    ["leaseTemplateUuid"], // Template selection
+    ...(showAssignmentsStep
+      ? [["assignments"] as Array<keyof RequestLeaseFormValues>]
+      : []),
+    ["acceptTerms"], // Terms of service
+    [], // Review step has no fields to validate
+  ];
 
   useEffect(() => {
     setBreadcrumb([
@@ -82,13 +119,6 @@ export const RequestLease = () => {
 
     // Only validate when moving forward
     if (requestedStepIndex > activeStepIndex) {
-      // Check if current step has errors
-      const stepFields: Array<Array<keyof RequestLeaseFormValues>> = [
-        ["leaseTemplateUuid"], // Template selection
-        ["acceptTerms"], // Terms of service
-        [], // Review step has no fields to validate
-      ];
-
       const currentStepFields = stepFields[activeStepIndex];
       const currentStepHasErrors = currentStepFields.some(
         (field) => getFieldState(field).error !== undefined,
@@ -104,12 +134,45 @@ export const RequestLease = () => {
     setActiveStepIndex(requestedStepIndex);
   };
 
+  const showSubmitErrorToast = (error: unknown) => {
+    if (error instanceof ApiError && error.statusCode === 429) {
+      // The per-user lease rate limit returns a computed retryAt; AWS SDK
+      // throttles (mapped to 429 by the API error handler) do not. Only the
+      // former should show the lease-limit wording.
+      const retryAt = error.data?.retryAt
+        ? DateTime.fromISO(error.data.retryAt)
+        : undefined;
+
+      if (!retryAt) {
+        // No retryAt: a transient throttle, not the user's limit. Surface the
+        // server's own message instead of mislabeling it as the lease limit.
+        showErrorToast(error.message);
+        return;
+      }
+
+      showErrorToast(
+        retryAt.isValid
+          ? `You've reached the lease request limit. You can request another lease after ${retryAt.toLocaleString(
+              DateTime.DATETIME_SHORT,
+            )}.`
+          : "You've reached the lease request limit. Try again later.",
+      );
+      return;
+    }
+
+    const errorMessage =
+      error instanceof Error
+        ? error.message
+        : "An unexpected error occurred while submitting the lease request.";
+    showErrorToast(`Failed to submit lease request: ${errorMessage}`);
+  };
+
   const handleSubmit = async () => {
     const isValid = await trigger();
     if (!isValid) {
-      // Navigate to ToS step — the only validation that can fail at submit time
-      // (template selection and email have inline validation that blocks forward navigation)
-      setActiveStepIndex(1);
+      // ToS is always the second-to-last step (Review is last). Deriving
+      // from stepFields.length keeps this correct if new steps are added.
+      setActiveStepIndex(stepFields.length - 2);
       showErrorToast(
         "Please correct the validation errors before submitting.",
         "Validation Failed",
@@ -120,20 +183,21 @@ export const RequestLease = () => {
     try {
       const values = methods.getValues();
 
+      const assignments = showAssignmentsStep
+        ? toAssignmentRefs(values.assignments)
+        : undefined;
+
       const request: NewLeaseRequest = {
         leaseTemplateUuid: values.leaseTemplateUuid,
         comments: values.comments,
+        ...(assignments ? { assignments } : {}),
       };
 
       await requestNewLease(request);
       navigate("/");
       showSuccessToast("Your request for a new lease has been submitted.");
     } catch (error) {
-      const errorMessage =
-        error instanceof Error
-          ? error.message
-          : "An unexpected error occurred while submitting the lease request.";
-      showErrorToast(`Failed to submit lease request: ${errorMessage}`);
+      showSubmitErrorToast(error);
     }
   };
 
@@ -159,18 +223,39 @@ export const RequestLease = () => {
               title: "Select lease template",
               content: <TemplateSelectionForm />,
             },
+            ...(showAssignmentsStep
+              ? [
+                  {
+                    title: "Share access",
+                    isOptional: true,
+                    content: (
+                      <AssignmentsForm
+                        enablePrincipalSearch={
+                          globalConfig?.leases?.enablePrincipalSearch ?? false
+                        }
+                        ownerEmail={user ? getUserEmail(user) : undefined}
+                      />
+                    ),
+                  },
+                ]
+              : []),
             {
               title: "Terms of Service",
               content: <TermsOfServiceForm />,
             },
             {
               title: "Review & Submit",
-              content: (
+              content: isTemplateLoading ? (
+                <Loader label="Loading review..." />
+              ) : (
                 <SpaceBetween direction="vertical" size="l">
                   <ReviewForm
                     data={{
                       leaseTemplateUuid: methods.watch("leaseTemplateUuid"),
                     }}
+                  />
+                  <PendingAssignmentsList
+                    desiredAssignments={methods.watch("assignments")}
                   />
                   <Container>
                     <TextareaField

@@ -16,14 +16,14 @@ export const PublishResultActionInputSchema = z.object({
   action: z.literal("PUBLISH_RESULT"),
   // Note: Step Function uses flat leaseId structure for simplicity.
   // This action transforms it to composite LeaseKey structure for events.
-  leaseId: z.string().uuid(),
-  userEmail: z.string().email(),
-  blueprintId: z.string().uuid(),
+  leaseId: z.uuid(),
+  userEmail: z.email(),
+  blueprintId: z.uuid(),
   blueprintName: z.string().min(1),
   accountId: AwsAccountIdSchema,
   operationId: z.string().min(1),
   status: z.enum(["SUCCEEDED", "FAILED"], {
-    errorMap: enumErrorMap,
+    error: enumErrorMap,
   }),
   errorMessage: z.string().optional(),
 });

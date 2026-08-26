@@ -6,7 +6,7 @@ Lease templates define conditions for sandbox account usage including approval r
 
 ---
 
-## Template Visibility
+## Template visibility
 
 **Public**: Visible to all users for self-service lease requests
 
@@ -14,22 +14,22 @@ Lease templates define conditions for sandbox account usage including approval r
 
 ---
 
-## Add New Template
+## Add new template
 
 Create templates with settings for basic details, blueprint selection, budget limits, duration limits, and cost reporting.
 
 Choose **Add lease template** to start the wizard.
 
-For more information, see [Creating and managing lease templates](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/manager-guide.html#creating-managing-lease-templates).
+For more information, see [Creating and managing lease templates](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/manager-guide.html#creating-lease-templates).
 
 ---
 
-## Update Templates
+## Update templates
 
 Select a template name to edit its settings. Changes only affect new leases.
 
 ---
 
-## Delete Templates
+## Delete templates
 
 Deleting a template removes it from the list. Users can no longer request leases from it, but existing leases are not affected.

@@ -12,7 +12,6 @@ import {
 
 import { DynamoBlueprintStore } from "@amzn/innovation-sandbox-commons/data/blueprint/dynamo-blueprint-store.js";
 import { UnknownItem } from "@amzn/innovation-sandbox-commons/data/errors.js";
-import { GlobalConfigSchema } from "@amzn/innovation-sandbox-commons/data/global-config/global-config.js";
 import { DynamoLeaseTemplateStore } from "@amzn/innovation-sandbox-commons/data/lease-template/dynamo-lease-template-store.js";
 import {
   LeaseTemplate,
@@ -27,17 +26,13 @@ import {
   isbAuthorizedUser,
   isbAuthorizedUserUserRoleOnly,
   mockAuthorizedContext,
+  mockGlobalConfig,
   responseHeaders,
 } from "@amzn/innovation-sandbox-commons/test/lambdas/fixtures.js";
 import {
   bulkStubEnv,
   mockAppConfigMiddleware,
 } from "@amzn/innovation-sandbox-commons/test/lambdas/utils.js";
-import {
-  GetSecretValueCommand,
-  SecretsManagerClient,
-} from "@aws-sdk/client-secrets-manager";
-import { mockClient } from "aws-sdk-client-mock";
 import { randomUUID } from "crypto";
 
 const mockUuid = "00000000-0000-0000-0000-000000000000";
@@ -45,16 +40,11 @@ vi.mock("uuid", () => ({
   v4: vi.fn().mockReturnValue(mockUuid),
 }));
 
-const secretsManagerMock = mockClient(SecretsManagerClient);
 const testEnv = generateSchemaData(LeaseTemplateLambdaEnvironmentSchema);
-const mockedGlobalConfig = {
-  ...generateSchemaData(GlobalConfigSchema),
-  leases: {
-    ...generateSchemaData(GlobalConfigSchema).leases,
-    maxBudget: 100,
-    maxDurationHours: 100,
-  },
-};
+const mockedGlobalConfig = mockGlobalConfig();
+mockedGlobalConfig.leases.maxBudget = 100;
+mockedGlobalConfig.leases.maxDurationHours = 100;
+mockedGlobalConfig.leases.leaseSharingEnabled = true;
 const mockedReportingConfig = {
   costReportGroups: [],
   requireCostReportGroup: false,
@@ -81,17 +71,11 @@ beforeAll(async () => {
 beforeEach(() => {
   bulkStubEnv(testEnv);
   mockAppConfigMiddleware(mockedGlobalConfig, mockedReportingConfig);
-
-  // Mock Secrets Manager to return JWT secret
-  secretsManagerMock.on(GetSecretValueCommand).resolves({
-    SecretString: "testSecret",
-  });
 });
 
 afterEach(() => {
   vi.resetAllMocks();
   vi.unstubAllEnvs();
-  secretsManagerMock.reset();
 });
 
 describe("handler", async () => {
@@ -103,8 +87,8 @@ describe("handler", async () => {
       path: "/leasesTemplates",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${isbAuthorizedUser.token}`,
       },
+      isbUser: isbAuthorizedUser.user,
     });
     expect(
       await handler(event, mockAuthorizedContext(testEnv, mockedGlobalConfig)),
@@ -122,19 +106,18 @@ describe("handler", async () => {
         generateSchemaData(LeaseTemplateSchema),
       ];
 
-      vi.spyOn(DynamoLeaseTemplateStore.prototype, "findAll").mockResolvedValue(
-        {
-          result: leaseTemplates,
-          nextPageIdentifier: null,
-        },
-      );
+      vi.spyOn(
+        DynamoLeaseTemplateStore.prototype,
+        "findAllVisible",
+      ).mockResolvedValue({
+        result: leaseTemplates,
+        nextPageIdentifier: null,
+      });
 
       const event = createAPIGatewayProxyEvent({
         httpMethod: "GET",
         path: "/leaseTemplates",
-        headers: {
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
-        },
+        isbUser: isbAuthorizedUser.user,
       });
 
       expect(
@@ -154,26 +137,25 @@ describe("handler", async () => {
         headers: responseHeaders,
       });
     });
-    it("should return 200 response with all lease templates even when error is set", async () => {
+    it("should return 200 without leaking the validation error to the caller", async () => {
       const leaseTemplates: LeaseTemplate[] = [
         generateSchemaData(LeaseTemplateSchema),
         generateSchemaData(LeaseTemplateSchema),
       ];
 
-      vi.spyOn(DynamoLeaseTemplateStore.prototype, "findAll").mockResolvedValue(
-        {
-          result: leaseTemplates,
-          nextPageIdentifier: null,
-          error: "Some validation error",
-        },
-      );
+      vi.spyOn(
+        DynamoLeaseTemplateStore.prototype,
+        "findAllVisible",
+      ).mockResolvedValue({
+        result: leaseTemplates,
+        nextPageIdentifier: null,
+        error: "Some validation error",
+      });
 
       const event = createAPIGatewayProxyEvent({
         httpMethod: "GET",
         path: "/leaseTemplates",
-        headers: {
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
-        },
+        isbUser: isbAuthorizedUser.user,
       });
 
       expect(
@@ -188,7 +170,6 @@ describe("handler", async () => {
           data: {
             result: leaseTemplates,
             nextPageIdentifier: null,
-            error: "Some validation error",
           },
         }),
         headers: responseHeaders,
@@ -201,8 +182,8 @@ describe("handler", async () => {
         generateSchemaData(LeaseTemplateSchema),
       ];
 
-      const findAllMethod = vi
-        .spyOn(DynamoLeaseTemplateStore.prototype, "findAll")
+      const findAllVisibleMethod = vi
+        .spyOn(DynamoLeaseTemplateStore.prototype, "findAllVisible")
         .mockReturnValue(
           Promise.resolve({
             result: leaseTemplates,
@@ -211,18 +192,16 @@ describe("handler", async () => {
         );
 
       const pageIdentifier = "eyAidGVzdCI6ICJ0ZXN0IiB9";
-      const pageSize = "2";
+      const maxResults = "2";
 
       const event = createAPIGatewayProxyEvent({
         httpMethod: "GET",
         path: "/leaseTemplates",
         queryStringParameters: {
           pageIdentifier,
-          pageSize,
+          maxResults,
         },
-        headers: {
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
-        },
+        isbUser: isbAuthorizedUser.user,
       });
 
       expect(
@@ -241,11 +220,12 @@ describe("handler", async () => {
         }),
         headers: responseHeaders,
       });
-      expect(findAllMethod.mock.calls).toHaveLength(1);
-      expect(findAllMethod.mock.calls[0]).toEqual([
+      expect(findAllVisibleMethod.mock.calls).toHaveLength(1);
+      expect(findAllVisibleMethod.mock.calls[0]).toEqual([
         {
           pageIdentifier: pageIdentifier,
-          pageSize: Number(pageSize),
+          pageSize: Number(maxResults),
+          includePrivate: true,
         },
       ]);
     });
@@ -255,8 +235,8 @@ describe("handler", async () => {
         generateSchemaData(LeaseTemplateSchema),
       ];
 
-      const findAllMethod = vi
-        .spyOn(DynamoLeaseTemplateStore.prototype, "findAll")
+      const findAllVisibleMethod = vi
+        .spyOn(DynamoLeaseTemplateStore.prototype, "findAllVisible")
         .mockReturnValue(
           Promise.resolve({
             result: leaseTemplates,
@@ -265,18 +245,16 @@ describe("handler", async () => {
         );
 
       const pageIdentifier = "eyAidGVzdCI6ICJ0ZXN0IiB9";
-      const pageSize = "NaN";
+      const maxResults = "NaN";
 
       const event = createAPIGatewayProxyEvent({
         httpMethod: "GET",
         path: "/leaseTemplates",
         queryStringParameters: {
           pageIdentifier,
-          pageSize,
+          maxResults,
         },
-        headers: {
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
-        },
+        isbUser: isbAuthorizedUser.user,
       });
 
       expect(
@@ -287,17 +265,17 @@ describe("handler", async () => {
       ).toEqual({
         statusCode: 400,
         body: createFailureResponseBody({
-          field: "pageSize",
-          message: "Expected number, received nan",
+          field: "maxResults",
+          message: "Invalid input: expected number, received NaN",
         }),
         headers: responseHeaders,
       });
-      expect(findAllMethod.mock.calls).toHaveLength(0);
+      expect(findAllVisibleMethod.mock.calls).toHaveLength(0);
     });
     it("should return 500 response when db call throws unexpected error", async () => {
       vi.spyOn(
         DynamoLeaseTemplateStore.prototype,
-        "findAll",
+        "findAllVisible",
       ).mockImplementation(() => {
         throw new Error();
       });
@@ -305,9 +283,7 @@ describe("handler", async () => {
       const event = createAPIGatewayProxyEvent({
         httpMethod: "GET",
         path: "/leaseTemplates",
-        headers: {
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
-        },
+        isbUser: isbAuthorizedUser.user,
       });
 
       expect(
@@ -331,19 +307,18 @@ describe("handler", async () => {
       });
       const leaseTemplates = [publicTemplate, privateTemplate];
 
-      vi.spyOn(DynamoLeaseTemplateStore.prototype, "findAll").mockResolvedValue(
-        {
-          result: leaseTemplates,
-          nextPageIdentifier: null,
-        },
-      );
+      vi.spyOn(
+        DynamoLeaseTemplateStore.prototype,
+        "findAllVisible",
+      ).mockResolvedValue({
+        result: leaseTemplates,
+        nextPageIdentifier: null,
+      });
 
       const event = createAPIGatewayProxyEvent({
         httpMethod: "GET",
         path: "/leaseTemplates",
-        headers: {
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
-        },
+        isbUser: isbAuthorizedUser.user,
       });
 
       const response = await handler(
@@ -364,28 +339,25 @@ describe("handler", async () => {
       });
     });
 
-    it("should filter out PRIVATE templates for User-only role", async () => {
+    it("should request only visible templates (includePrivate false) for User-only role", async () => {
+      // Visibility filtering now happens in the store (findAllVisible), so the
+      // handler must ask for the non-privileged view. The store's own tests
+      // verify PRIVATE templates never appear in the result or the token.
       const publicTemplate = generateSchemaData(LeaseTemplateSchema, {
         visibility: "PUBLIC",
       });
-      const privateTemplate = generateSchemaData(LeaseTemplateSchema, {
-        visibility: "PRIVATE",
-      });
-      const leaseTemplates = [publicTemplate, privateTemplate];
 
-      vi.spyOn(DynamoLeaseTemplateStore.prototype, "findAll").mockResolvedValue(
-        {
-          result: leaseTemplates,
+      const findAllVisibleMethod = vi
+        .spyOn(DynamoLeaseTemplateStore.prototype, "findAllVisible")
+        .mockResolvedValue({
+          result: [publicTemplate],
           nextPageIdentifier: null,
-        },
-      );
+        });
 
       const event = createAPIGatewayProxyEvent({
         httpMethod: "GET",
         path: "/leaseTemplates",
-        headers: {
-          Authorization: `Bearer ${isbAuthorizedUserUserRoleOnly.token}`,
-        },
+        isbUser: isbAuthorizedUserUserRoleOnly.user,
       });
 
       // Create context with User-only role
@@ -401,56 +373,57 @@ describe("handler", async () => {
         body: JSON.stringify({
           status: "success",
           data: {
-            result: [publicTemplate], // Only public template should be returned
+            result: [publicTemplate],
             nextPageIdentifier: null,
           },
         }),
         headers: responseHeaders,
       });
+      expect(findAllVisibleMethod).toHaveBeenCalledWith(
+        expect.objectContaining({ includePrivate: false }),
+      );
     });
 
-    it("should return empty array when User-only role and all templates are PRIVATE", async () => {
-      const privateTemplate1 = generateSchemaData(LeaseTemplateSchema, {
+    it("should request all templates (includePrivate true) for Admin/Manager role", async () => {
+      const publicTemplate = generateSchemaData(LeaseTemplateSchema, {
+        visibility: "PUBLIC",
+      });
+      const privateTemplate = generateSchemaData(LeaseTemplateSchema, {
         visibility: "PRIVATE",
       });
-      const privateTemplate2 = generateSchemaData(LeaseTemplateSchema, {
-        visibility: "PRIVATE",
-      });
-      const leaseTemplates = [privateTemplate1, privateTemplate2];
 
-      vi.spyOn(DynamoLeaseTemplateStore.prototype, "findAll").mockResolvedValue(
-        {
-          result: leaseTemplates,
+      const findAllVisibleMethod = vi
+        .spyOn(DynamoLeaseTemplateStore.prototype, "findAllVisible")
+        .mockResolvedValue({
+          result: [publicTemplate, privateTemplate],
           nextPageIdentifier: null,
-        },
-      );
+        });
 
       const event = createAPIGatewayProxyEvent({
         httpMethod: "GET",
         path: "/leaseTemplates",
-        headers: {
-          Authorization: `Bearer ${isbAuthorizedUserUserRoleOnly.token}`,
-        },
+        isbUser: isbAuthorizedUser.user,
       });
 
-      const userOnlyContext = {
-        ...mockAuthorizedContext(testEnv, mockedGlobalConfig),
-        user: isbAuthorizedUserUserRoleOnly.user,
-      };
-
-      const response = await handler(event, userOnlyContext);
+      const response = await handler(
+        event,
+        mockAuthorizedContext(testEnv, mockedGlobalConfig),
+      );
 
       expect(response).toEqual({
         statusCode: 200,
         body: JSON.stringify({
           status: "success",
           data: {
-            result: [], // No templates should be returned
+            result: [publicTemplate, privateTemplate],
             nextPageIdentifier: null,
           },
         }),
         headers: responseHeaders,
       });
+      expect(findAllVisibleMethod).toHaveBeenCalledWith(
+        expect.objectContaining({ includePrivate: true }),
+      );
     });
   });
 
@@ -461,6 +434,7 @@ describe("handler", async () => {
           uuid: true,
           createdBy: true,
           blueprintName: true,
+          meta: true,
         }),
         {
           maxSpend: 50,
@@ -474,8 +448,8 @@ describe("handler", async () => {
         path: "/leaseTemplates",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
         body: JSON.stringify(leaseTemplate),
       });
 
@@ -505,14 +479,49 @@ describe("handler", async () => {
         headers: responseHeaders,
       });
     });
+    it("should reject a client-supplied meta field (server-owned)", async () => {
+      // meta (createdTime/lastEditTime/schemaVersion) is server-owned. A client
+      // must not be able to forge it, so meta is omitted from the accepted
+      // schema and a body containing it is rejected outright.
+      const body = {
+        name: "forged-template",
+        requiresApproval: false,
+        visibility: "PUBLIC",
+        allowOwnerToShareLease: false,
+        maxSpend: 50,
+        leaseDurationInHours: 24,
+        meta: { createdTime: "2019-01-01T00:00:00.000Z", schemaVersion: 4 },
+      };
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "POST",
+        path: "/leaseTemplates",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        isbUser: isbAuthorizedUser.user,
+        body: JSON.stringify(body),
+      });
+
+      const createSpy = vi
+        .spyOn(DynamoLeaseTemplateStore.prototype, "create")
+        .mockResolvedValue({ ...body, uuid: mockUuid } as never);
+
+      const response = await handler(
+        event,
+        mockAuthorizedContext(testEnv, mockedGlobalConfig),
+      );
+
+      expect(response.statusCode).toBe(400);
+      expect(createSpy).not.toHaveBeenCalled();
+    });
     it("should return 400 response when body is missing", async () => {
       const event = createAPIGatewayProxyEvent({
         httpMethod: "POST",
         path: "/leaseTemplates",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
       });
 
       expect(
@@ -533,8 +542,8 @@ describe("handler", async () => {
         body: "not-a-json",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
       });
 
       expect(
@@ -556,6 +565,7 @@ describe("handler", async () => {
         uuid: undefined,
         name: undefined,
         blueprintName: undefined,
+        meta: undefined,
         maxSpend: 50,
         leaseDurationInHours: 24,
       });
@@ -566,8 +576,8 @@ describe("handler", async () => {
         body: JSON.stringify(leaseTemplate),
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
       });
 
       vi.spyOn(DynamoLeaseTemplateStore.prototype, "create").mockResolvedValue({
@@ -583,10 +593,13 @@ describe("handler", async () => {
       ).toEqual({
         statusCode: 400,
         body: createFailureResponseBody(
-          { field: "name", message: "Required" },
+          {
+            field: "name",
+            message: "Invalid input: expected string, received undefined",
+          },
           {
             field: "input",
-            message: "Unrecognized key(s) in object: 'createdBy'",
+            message: 'Unrecognized key: "createdBy"',
           },
         ),
         headers: responseHeaders,
@@ -616,6 +629,7 @@ describe("handler", async () => {
             uuid: true,
             createdBy: true,
             blueprintName: true,
+            meta: true,
           }),
           {
             maxSpend,
@@ -629,8 +643,8 @@ describe("handler", async () => {
           body: JSON.stringify(leaseTemplate),
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${isbAuthorizedUser.token}`,
           },
+          isbUser: isbAuthorizedUser.user,
         });
 
         expect(
@@ -669,6 +683,7 @@ describe("handler", async () => {
             uuid: true,
             createdBy: true,
             blueprintName: true,
+            meta: true,
           }),
           {
             maxSpend: 50,
@@ -683,14 +698,14 @@ describe("handler", async () => {
           body: JSON.stringify(leaseTemplate),
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${isbAuthorizedUser.token}`,
           },
+          isbUser: isbAuthorizedUser.user,
         });
 
         expect(
           await handler(
             event,
-            mockAuthorizedContext(testEnv, mockedGlobalConfig, reportingConfig),
+            mockAuthorizedContext(testEnv, mockedGlobalConfig),
           ),
         ).toEqual({
           statusCode: 400,
@@ -718,16 +733,12 @@ describe("handler", async () => {
     ])(
       `should return 400 when unlimited budget/spend is provided when not enabled in AppConfig`,
       async ({ maxSpend, leaseDurationInHours, expectedErrorMessage }) => {
-        const mockedGlobalConfig = {
-          ...generateSchemaData(GlobalConfigSchema),
-          leases: {
-            ...generateSchemaData(GlobalConfigSchema).leases,
-            maxSpend: 500,
-            maxDurationHours: 500,
-            requireMaxBudget: true,
-            requireMaxDuration: true,
-          },
-        };
+        const mockedGlobalConfig = mockGlobalConfig();
+        mockedGlobalConfig.leases.maxBudget = 500;
+        mockedGlobalConfig.leases.maxDurationHours = 500;
+        mockedGlobalConfig.leases.requireMaxBudget = true;
+        mockedGlobalConfig.leases.requireMaxDuration = true;
+        mockedGlobalConfig.leases.leaseSharingEnabled = true;
 
         mockAppConfigMiddleware(mockedGlobalConfig, mockedReportingConfig);
 
@@ -736,6 +747,7 @@ describe("handler", async () => {
             uuid: true,
             createdBy: true,
             blueprintName: true,
+            meta: true,
           }),
           {
             maxSpend,
@@ -749,8 +761,8 @@ describe("handler", async () => {
           body: JSON.stringify(leaseTemplate),
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${isbAuthorizedUser.token}`,
           },
+          isbUser: isbAuthorizedUser.user,
         });
 
         expect(
@@ -772,6 +784,7 @@ describe("handler", async () => {
           uuid: true,
           createdBy: true,
           blueprintName: true,
+          meta: true,
         }),
         {
           maxSpend: 50,
@@ -797,8 +810,8 @@ describe("handler", async () => {
         path: "/leaseTemplates",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
         body: JSON.stringify(leaseTemplate),
       });
 
@@ -823,6 +836,7 @@ describe("handler", async () => {
           uuid: true,
           createdBy: true,
           blueprintName: true,
+          meta: true,
         }),
         {
           maxSpend: 50,
@@ -848,8 +862,8 @@ describe("handler", async () => {
         path: "/leaseTemplates",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
         body: JSON.stringify(leaseTemplate),
       });
 
@@ -875,6 +889,7 @@ describe("handler", async () => {
           createdBy: true,
           visibility: true,
           blueprintName: true,
+          meta: true,
         }),
         {
           maxSpend: 50,
@@ -900,8 +915,8 @@ describe("handler", async () => {
         path: "/leaseTemplates",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
         body: JSON.stringify(leaseTemplate),
       });
 
@@ -926,6 +941,7 @@ describe("handler", async () => {
           uuid: true,
           createdBy: true,
           blueprintName: true,
+          meta: true,
         }),
         {
           maxSpend: 50,
@@ -941,8 +957,8 @@ describe("handler", async () => {
         body: JSON.stringify(leaseTemplate),
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
       });
 
       vi.spyOn(DynamoLeaseTemplateStore.prototype, "update").mockImplementation(
@@ -970,6 +986,7 @@ describe("handler", async () => {
           uuid: true,
           createdBy: true,
           blueprintName: true,
+          meta: true,
         }),
         {
           maxSpend: 50,
@@ -1000,8 +1017,8 @@ describe("handler", async () => {
         path: "/leaseTemplates",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
         body: JSON.stringify(leaseTemplate),
       });
 
@@ -1025,6 +1042,7 @@ describe("handler", async () => {
           uuid: true,
           createdBy: true,
           blueprintName: true,
+          meta: true,
         }),
         {
           maxSpend: 50,
@@ -1043,8 +1061,8 @@ describe("handler", async () => {
         path: "/leaseTemplates",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
         body: JSON.stringify(leaseTemplate),
       });
 
@@ -1068,6 +1086,7 @@ describe("handler", async () => {
           uuid: true,
           createdBy: true,
           blueprintName: true,
+          meta: true,
         }),
         {
           maxSpend: 50,
@@ -1091,8 +1110,8 @@ describe("handler", async () => {
         path: "/leaseTemplates",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
         body: JSON.stringify(leaseTemplate),
       });
 
@@ -1109,6 +1128,57 @@ describe("handler", async () => {
       );
       expect(DynamoBlueprintStore.prototype.get).not.toHaveBeenCalled();
     });
+
+    it("should return 400 when allowOwnerToShareLease is true and leaseSharingEnabled is false", async () => {
+      const disabledSharingConfig = {
+        ...mockedGlobalConfig,
+        leases: {
+          ...mockedGlobalConfig.leases,
+          leaseSharingEnabled: false,
+        },
+      };
+      mockAppConfigMiddleware(disabledSharingConfig, mockedReportingConfig);
+
+      const leaseTemplate = generateSchemaData(
+        LeaseTemplateSchema.omit({
+          uuid: true,
+          createdBy: true,
+          blueprintName: true,
+          meta: true,
+        }),
+        {
+          maxSpend: 50,
+          leaseDurationInHours: 24,
+          costReportGroup: undefined,
+          blueprintId: undefined,
+          allowOwnerToShareLease: true,
+        },
+      );
+
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "POST",
+        path: "/leaseTemplates",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        isbUser: isbAuthorizedUser.user,
+        body: JSON.stringify(leaseTemplate),
+      });
+
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(testEnv, disabledSharingConfig),
+        ),
+      ).toEqual({
+        statusCode: 400,
+        body: createFailureResponseBody({
+          message:
+            "Cannot enable allowOwnerToShareLease because lease sharing is not available.",
+        }),
+        headers: responseHeaders,
+      });
+    });
   });
 
   describe("GET /leaseTemplates/{leaseTemplateId}", () => {
@@ -1119,9 +1189,7 @@ describe("handler", async () => {
         pathParameters: {
           leaseTemplateId: mockUuid,
         },
-        headers: {
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
-        },
+        isbUser: isbAuthorizedUser.user,
       });
 
       const leaseTemplate = generateSchemaData(LeaseTemplateSchema);
@@ -1162,9 +1230,7 @@ describe("handler", async () => {
         pathParameters: {
           leaseTemplateId: privateTemplate.uuid,
         },
-        headers: {
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
-        },
+        isbUser: isbAuthorizedUser.user,
       });
 
       const response = await handler(
@@ -1197,9 +1263,7 @@ describe("handler", async () => {
         pathParameters: {
           leaseTemplateId: privateTemplate.uuid,
         },
-        headers: {
-          Authorization: `Bearer ${isbAuthorizedUserUserRoleOnly.token}`,
-        },
+        isbUser: isbAuthorizedUserUserRoleOnly.user,
       });
 
       const userOnlyContext = {
@@ -1233,9 +1297,7 @@ describe("handler", async () => {
         pathParameters: {
           leaseTemplateId: publicTemplate.uuid,
         },
-        headers: {
-          Authorization: `Bearer ${isbAuthorizedUserUserRoleOnly.token}`,
-        },
+        isbUser: isbAuthorizedUserUserRoleOnly.user,
       });
 
       const userOnlyContext = {
@@ -1262,9 +1324,7 @@ describe("handler", async () => {
         pathParameters: {
           leaseTemplateId: mockUuid,
         },
-        headers: {
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
-        },
+        isbUser: isbAuthorizedUser.user,
       });
 
       vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockReturnValue(
@@ -1296,9 +1356,7 @@ describe("handler", async () => {
       const event = createAPIGatewayProxyEvent({
         httpMethod: "GET",
         path: "/leaseTemplates/{leaseTemplateId}",
-        headers: {
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
-        },
+        isbUser: isbAuthorizedUser.user,
       });
 
       expect(
@@ -1315,10 +1373,29 @@ describe("handler", async () => {
   });
 
   describe("PUT /leaseTemplates/{leaseTemplateId}", () => {
+    beforeEach(() => {
+      // The PUT handler fetches the existing template to make config-compliance
+      // validation change-aware (cost report group, max budget, duration).
+      // Default to an existing template with no cost report group; individual
+      // tests override as needed.
+      vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockResolvedValue({
+        result: generateSchemaData(LeaseTemplateSchema, {
+          uuid: mockUuid,
+          costReportGroup: undefined,
+        }),
+      });
+    });
+
     it("should return 200 response with updated data", async () => {
-      const oldLeaseTemplate = generateSchemaData(LeaseTemplateSchema);
+      const oldLeaseTemplate = generateSchemaData(LeaseTemplateSchema, {
+        uuid: mockUuid,
+      });
       const newLeaseTemplateJsonBody = generateSchemaData(
-        LeaseTemplateSchema.omit({ uuid: true, blueprintName: true }),
+        LeaseTemplateSchema.omit({
+          uuid: true,
+          createdBy: true,
+          blueprintName: true,
+        }),
         {
           maxSpend: 50,
           leaseDurationInHours: 24,
@@ -1335,13 +1412,18 @@ describe("handler", async () => {
         body: JSON.stringify(newLeaseTemplateJsonBody),
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
       });
 
+      const updatedItem = {
+        ...newLeaseTemplateJsonBody,
+        uuid: oldLeaseTemplate.uuid,
+        createdBy: oldLeaseTemplate.createdBy,
+      };
       vi.spyOn(DynamoLeaseTemplateStore.prototype, "update").mockReturnValue(
         Promise.resolve({
-          newItem: { ...newLeaseTemplateJsonBody, uuid: oldLeaseTemplate.uuid },
+          newItem: updatedItem,
           oldItem: oldLeaseTemplate,
         }),
       );
@@ -1355,11 +1437,133 @@ describe("handler", async () => {
         statusCode: 200,
         body: JSON.stringify({
           status: "success",
-          data: { ...newLeaseTemplateJsonBody, uuid: oldLeaseTemplate.uuid },
+          data: updatedItem,
         }),
         headers: responseHeaders,
       });
     });
+
+    it("allows updating other fields when a required cost report group is already missing", async () => {
+      // Existing template has no cost report group and one is now required.
+      // Editing an unrelated field (maxSpend) must still succeed.
+      mockAppConfigMiddleware(mockedGlobalConfig, testReportingConfigRequired);
+      vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockResolvedValue({
+        result: generateSchemaData(LeaseTemplateSchema, {
+          uuid: mockUuid,
+          costReportGroup: undefined,
+        }),
+      });
+
+      const newLeaseTemplateJsonBody = generateSchemaData(
+        LeaseTemplateSchema.omit({
+          uuid: true,
+          createdBy: true,
+          blueprintName: true,
+        }),
+        {
+          maxSpend: 75,
+          leaseDurationInHours: 24,
+          costReportGroup: undefined,
+          blueprintId: undefined,
+        },
+      );
+
+      vi.spyOn(DynamoLeaseTemplateStore.prototype, "update").mockResolvedValue({
+        newItem: {
+          ...newLeaseTemplateJsonBody,
+          uuid: mockUuid,
+          createdBy: "original.author@example.com",
+        },
+        oldItem: generateSchemaData(LeaseTemplateSchema, { uuid: mockUuid }),
+      });
+
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "PUT",
+        path: "/leaseTemplates/{leaseTemplateId}",
+        pathParameters: {
+          leaseTemplateId: mockUuid,
+        },
+        body: JSON.stringify(newLeaseTemplateJsonBody),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        isbUser: isbAuthorizedUser.user,
+      });
+
+      const response = await handler(
+        event,
+        mockAuthorizedContext(testEnv, mockedGlobalConfig),
+      );
+
+      expect(response.statusCode).toEqual(200);
+    });
+
+    it("allows updating other fields when a required duration/budget is already missing", async () => {
+      // Existing template predates the requirement: no maxSpend / duration.
+      // Budget and duration are now required. Editing an unrelated field
+      // (costReportGroup) must still succeed, leaving the missing fields as-is.
+      const requiredConfig = mockGlobalConfig();
+      requiredConfig.leases.maxBudget = 500;
+      requiredConfig.leases.maxDurationHours = 500;
+      requiredConfig.leases.requireMaxBudget = true;
+      requiredConfig.leases.requireMaxDuration = true;
+      requiredConfig.leases.leaseSharingEnabled = true;
+      mockAppConfigMiddleware(requiredConfig, testReportingConfig);
+
+      vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockResolvedValue({
+        result: generateSchemaData(LeaseTemplateSchema, {
+          uuid: mockUuid,
+          maxSpend: undefined,
+          leaseDurationInHours: undefined,
+          costReportGroup: undefined,
+        }),
+      });
+
+      const newLeaseTemplateJsonBody = generateSchemaData(
+        LeaseTemplateSchema.omit({
+          uuid: true,
+          createdBy: true,
+          blueprintName: true,
+        }),
+        {
+          maxSpend: undefined,
+          leaseDurationInHours: undefined,
+          costReportGroup: "valid-group-1",
+          allowOwnerToShareLease: false,
+          blueprintId: undefined,
+        },
+      );
+
+      vi.spyOn(DynamoLeaseTemplateStore.prototype, "update").mockResolvedValue({
+        newItem: {
+          ...newLeaseTemplateJsonBody,
+          uuid: mockUuid,
+          createdBy: "original.author@example.com",
+        },
+        oldItem: generateSchemaData(LeaseTemplateSchema, { uuid: mockUuid }),
+      });
+
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "PUT",
+        path: "/leaseTemplates/{leaseTemplateId}",
+        pathParameters: {
+          leaseTemplateId: mockUuid,
+        },
+        body: JSON.stringify(newLeaseTemplateJsonBody),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        isbUser: isbAuthorizedUser.user,
+      });
+
+      const response = await handler(
+        event,
+        mockAuthorizedContext(testEnv, requiredConfig),
+      );
+
+      expect(response.statusCode).toEqual(200);
+    });
+
     it("should return 400 response when body is missing", async () => {
       const event = createAPIGatewayProxyEvent({
         httpMethod: "PUT",
@@ -1369,8 +1573,8 @@ describe("handler", async () => {
         },
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
       });
 
       vi.spyOn(DynamoLeaseTemplateStore.prototype, "update").mockReturnValue(
@@ -1401,8 +1605,8 @@ describe("handler", async () => {
         body: "not-a-json",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
       });
 
       vi.spyOn(DynamoLeaseTemplateStore.prototype, "update").mockReturnValue(
@@ -1441,8 +1645,8 @@ describe("handler", async () => {
         body: JSON.stringify(leaseTemplate),
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
       });
 
       vi.spyOn(DynamoLeaseTemplateStore.prototype, "update").mockReturnValue(
@@ -1461,7 +1665,7 @@ describe("handler", async () => {
         statusCode: 400,
         body: createFailureResponseBody({
           field: "input",
-          message: "Unrecognized key(s) in object: 'uuid'",
+          message: 'Unrecognized keys: "uuid", "createdBy"',
         }),
         headers: responseHeaders,
       });
@@ -1485,7 +1689,11 @@ describe("handler", async () => {
       `should return 400 when lease template values exceed global configuration: $expectedErrorMessage`,
       async ({ maxSpend, leaseDurationInHours, expectedErrorMessage }) => {
         const leaseTemplate = generateSchemaData(
-          LeaseTemplateSchema.omit({ uuid: true, blueprintName: true }),
+          LeaseTemplateSchema.omit({
+            uuid: true,
+            createdBy: true,
+            blueprintName: true,
+          }),
           {
             maxSpend,
             leaseDurationInHours,
@@ -1501,8 +1709,8 @@ describe("handler", async () => {
           body: JSON.stringify(leaseTemplate),
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${isbAuthorizedUser.token}`,
           },
+          isbUser: isbAuthorizedUser.user,
         });
 
         expect(
@@ -1521,11 +1729,14 @@ describe("handler", async () => {
     it.each([
       {
         costReportGroup: "invalid-group",
+        previousCostReportGroup: undefined,
         reportingConfig: testReportingConfig,
         expectedError: "Invalid cost report group",
       },
       {
+        // Clearing a previously-set group when one is required is still blocked.
         costReportGroup: undefined,
+        previousCostReportGroup: "valid-group-1",
         blueprintId: undefined,
         reportingConfig: testReportingConfigRequired,
         expectedError:
@@ -1533,11 +1744,27 @@ describe("handler", async () => {
       },
     ])(
       "should return 400 when lease template update violates cost reporting constraints",
-      async ({ costReportGroup, reportingConfig, expectedError }) => {
+      async ({
+        costReportGroup,
+        previousCostReportGroup,
+        reportingConfig,
+        expectedError,
+      }) => {
         mockAppConfigMiddleware(mockedGlobalConfig, reportingConfig);
 
+        vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockResolvedValue({
+          result: generateSchemaData(LeaseTemplateSchema, {
+            uuid: mockUuid,
+            costReportGroup: previousCostReportGroup,
+          }),
+        });
+
         const leaseTemplate = generateSchemaData(
-          LeaseTemplateSchema.omit({ uuid: true, blueprintName: true }),
+          LeaseTemplateSchema.omit({
+            uuid: true,
+            createdBy: true,
+            blueprintName: true,
+          }),
           {
             maxSpend: 50,
             leaseDurationInHours: 24,
@@ -1554,14 +1781,14 @@ describe("handler", async () => {
           body: JSON.stringify(leaseTemplate),
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${isbAuthorizedUser.token}`,
           },
+          isbUser: isbAuthorizedUser.user,
         });
 
         expect(
           await handler(
             event,
-            mockAuthorizedContext(testEnv, mockedGlobalConfig, reportingConfig),
+            mockAuthorizedContext(testEnv, mockedGlobalConfig),
           ),
         ).toEqual({
           statusCode: 400,
@@ -1589,24 +1816,40 @@ describe("handler", async () => {
     ])(
       `should return 400 when unlimited budget/spend is provided when not enabled in AppConfig`,
       async ({ maxSpend, leaseDurationInHours, expectedErrorMessage }) => {
-        const mockedGlobalConfig = {
-          ...generateSchemaData(GlobalConfigSchema),
-          leases: {
-            ...generateSchemaData(GlobalConfigSchema).leases,
-            maxSpend: 500,
-            maxDurationHours: 500,
-            requireMaxBudget: true,
-            requireMaxDuration: true,
-          },
-        };
+        const mockedGlobalConfig = mockGlobalConfig();
+        mockedGlobalConfig.leases.maxBudget = 500;
+        mockedGlobalConfig.leases.maxDurationHours = 500;
+        mockedGlobalConfig.leases.requireMaxBudget = true;
+        mockedGlobalConfig.leases.requireMaxDuration = true;
+        mockedGlobalConfig.leases.leaseSharingEnabled = true;
 
         mockAppConfigMiddleware(mockedGlobalConfig, mockedReportingConfig);
 
+        // Existing template HAS budget + duration set, so submitting an
+        // unlimited (missing) value is a genuine change and must be rejected —
+        // not treated as an unchanged pre-existing gap. (Pin both so the
+        // change-aware validation is deterministic.)
+        vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockResolvedValue({
+          result: generateSchemaData(LeaseTemplateSchema, {
+            uuid: mockUuid,
+            maxSpend: 100,
+            leaseDurationInHours: 50,
+            costReportGroup: undefined,
+          }),
+        });
+
         const leaseTemplate = generateSchemaData(
-          LeaseTemplateSchema.omit({ uuid: true, blueprintName: true }),
+          LeaseTemplateSchema.omit({
+            uuid: true,
+            createdBy: true,
+            blueprintName: true,
+          }),
           {
             maxSpend,
             leaseDurationInHours,
+            // Pin so the (randomly generated) group can't trip the cost-report
+            // validation before the budget/duration check under test.
+            costReportGroup: undefined,
           },
         );
 
@@ -1619,8 +1862,8 @@ describe("handler", async () => {
           body: JSON.stringify(leaseTemplate),
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${isbAuthorizedUser.token}`,
           },
+          isbUser: isbAuthorizedUser.user,
         });
 
         expect(
@@ -1638,7 +1881,11 @@ describe("handler", async () => {
 
     it("should return 500 response when db call throws unexpected error", async () => {
       const leaseTemplate = generateSchemaData(
-        LeaseTemplateSchema.omit({ uuid: true, blueprintName: true }),
+        LeaseTemplateSchema.omit({
+          uuid: true,
+          createdBy: true,
+          blueprintName: true,
+        }),
         {
           maxSpend: 50,
           leaseDurationInHours: 24,
@@ -1655,8 +1902,8 @@ describe("handler", async () => {
         body: JSON.stringify(leaseTemplate),
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
       });
 
       vi.spyOn(DynamoLeaseTemplateStore.prototype, "update").mockImplementation(
@@ -1683,7 +1930,11 @@ describe("handler", async () => {
       });
 
       const updatedTemplate = generateSchemaData(
-        LeaseTemplateSchema.omit({ uuid: true, blueprintName: true }),
+        LeaseTemplateSchema.omit({
+          uuid: true,
+          createdBy: true,
+          blueprintName: true,
+        }),
         {
           maxSpend: 50,
           leaseDurationInHours: 24,
@@ -1696,6 +1947,7 @@ describe("handler", async () => {
       const resultTemplate = {
         ...updatedTemplate,
         uuid: oldTemplate.uuid,
+        createdBy: oldTemplate.createdBy,
       };
 
       vi.spyOn(DynamoLeaseTemplateStore.prototype, "update").mockResolvedValue({
@@ -1712,8 +1964,8 @@ describe("handler", async () => {
         body: JSON.stringify(updatedTemplate),
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
       });
 
       const response = await handler(
@@ -1731,13 +1983,210 @@ describe("handler", async () => {
       });
     });
 
+    it("rejects a request body that tries to set createdBy", async () => {
+      // createdBy is server-owned and immutable after create, so the strict
+      // schema rejects it outright rather than silently ignoring it.
+      const body = {
+        ...generateSchemaData(
+          LeaseTemplateSchema.omit({
+            uuid: true,
+            createdBy: true,
+            blueprintName: true,
+          }),
+          {
+            maxSpend: 50,
+            leaseDurationInHours: 24,
+            costReportGroup: undefined,
+            blueprintId: undefined,
+          },
+        ),
+        createdBy: "attacker@example.com",
+      };
+
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "PUT",
+        path: "/leaseTemplates/{leaseTemplateId}",
+        pathParameters: { leaseTemplateId: mockUuid },
+        body: JSON.stringify(body),
+        headers: { "Content-Type": "application/json" },
+        isbUser: isbAuthorizedUser.user,
+      });
+
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(testEnv, mockedGlobalConfig),
+        ),
+      ).toEqual({
+        statusCode: 400,
+        body: createFailureResponseBody({
+          field: "input",
+          message: 'Unrecognized key: "createdBy"',
+        }),
+        headers: responseHeaders,
+      });
+    });
+
+    it("persists the original createdBy from the existing record", async () => {
+      // Even though the body can no longer carry createdBy, the handler must
+      // still put the ORIGINAL creator on the updated record (not drop it, and
+      // not substitute the caller's identity).
+      const originalCreatedBy = "original.author@example.com";
+      const persisted = generateSchemaData(LeaseTemplateSchema, {
+        uuid: mockUuid,
+        createdBy: originalCreatedBy,
+        costReportGroup: undefined,
+      });
+      vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockResolvedValue({
+        result: persisted,
+      });
+
+      const body = generateSchemaData(
+        LeaseTemplateSchema.omit({
+          uuid: true,
+          createdBy: true,
+          blueprintName: true,
+        }),
+        {
+          maxSpend: 50,
+          leaseDurationInHours: 24,
+          costReportGroup: undefined,
+          blueprintId: undefined,
+        },
+      );
+
+      // Echo back exactly what the handler handed the store, so the assertion
+      // reflects the handler's own output rather than the DAO's safety net.
+      const updateSpy = vi
+        .spyOn(DynamoLeaseTemplateStore.prototype, "update")
+        .mockImplementation(async (template) => ({
+          newItem: template,
+          oldItem: persisted,
+        }));
+
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "PUT",
+        path: "/leaseTemplates/{leaseTemplateId}",
+        pathParameters: { leaseTemplateId: mockUuid },
+        body: JSON.stringify(body),
+        headers: { "Content-Type": "application/json" },
+        isbUser: isbAuthorizedUser.user,
+      });
+
+      const response = await handler(
+        event,
+        mockAuthorizedContext(testEnv, mockedGlobalConfig),
+      );
+
+      expect(response.statusCode).toBe(200);
+      expect(updateSpy).toHaveBeenCalledTimes(1);
+      expect(updateSpy.mock.calls[0]![0].createdBy).toBe(originalCreatedBy);
+      expect(JSON.parse(response.body).data.createdBy).toBe(originalCreatedBy);
+    });
+
+    it("returns 404 for a missing template even when the body would also fail validation", async () => {
+      // The existence check must run before blueprint resolution and config
+      // validation, otherwise a bad blueprintId masks the real 404 with a
+      // "Referenced blueprint not found." 400.
+      vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockResolvedValue({
+        result: undefined,
+      });
+      const blueprintGet = vi
+        .spyOn(DynamoBlueprintStore.prototype, "get")
+        .mockResolvedValue({ result: undefined } as any);
+
+      const body = generateSchemaData(
+        LeaseTemplateSchema.omit({
+          uuid: true,
+          createdBy: true,
+          blueprintName: true,
+        }),
+        {
+          maxSpend: 50,
+          leaseDurationInHours: 24,
+          costReportGroup: undefined,
+          blueprintId: "550e8400-e29b-41d4-a716-446655440000",
+        },
+      );
+
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "PUT",
+        path: "/leaseTemplates/{leaseTemplateId}",
+        pathParameters: { leaseTemplateId: mockUuid },
+        body: JSON.stringify(body),
+        headers: { "Content-Type": "application/json" },
+        isbUser: isbAuthorizedUser.user,
+      });
+
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(testEnv, mockedGlobalConfig),
+        ),
+      ).toEqual({
+        statusCode: 404,
+        body: createFailureResponseBody({
+          message: "Lease Template not found.",
+        }),
+        headers: responseHeaders,
+      });
+      // Bailing early also avoids the needless blueprint lookup.
+      expect(blueprintGet).not.toHaveBeenCalled();
+    });
+
+    it("returns 404 when updating a template that does not exist", async () => {
+      vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockResolvedValue({
+        result: undefined,
+      });
+
+      const body = generateSchemaData(
+        LeaseTemplateSchema.omit({
+          uuid: true,
+          createdBy: true,
+          blueprintName: true,
+        }),
+        {
+          maxSpend: 50,
+          leaseDurationInHours: 24,
+          costReportGroup: undefined,
+          blueprintId: undefined,
+        },
+      );
+
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "PUT",
+        path: "/leaseTemplates/{leaseTemplateId}",
+        pathParameters: { leaseTemplateId: mockUuid },
+        body: JSON.stringify(body),
+        headers: { "Content-Type": "application/json" },
+        isbUser: isbAuthorizedUser.user,
+      });
+
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(testEnv, mockedGlobalConfig),
+        ),
+      ).toEqual({
+        statusCode: 404,
+        body: createFailureResponseBody({
+          message: "Lease Template not found.",
+        }),
+        headers: responseHeaders,
+      });
+    });
+
     it("should return 200 and update lease template visibility from PRIVATE to PUBLIC", async () => {
       const oldTemplate = generateSchemaData(LeaseTemplateSchema, {
         visibility: "PRIVATE",
       });
 
       const updatedTemplate = generateSchemaData(
-        LeaseTemplateSchema.omit({ uuid: true, blueprintName: true }),
+        LeaseTemplateSchema.omit({
+          uuid: true,
+          createdBy: true,
+          blueprintName: true,
+        }),
         {
           maxSpend: 50,
           leaseDurationInHours: 24,
@@ -1750,6 +2199,7 @@ describe("handler", async () => {
       const resultTemplate = {
         ...updatedTemplate,
         uuid: oldTemplate.uuid,
+        createdBy: oldTemplate.createdBy,
       };
 
       vi.spyOn(DynamoLeaseTemplateStore.prototype, "update").mockResolvedValue({
@@ -1766,8 +2216,8 @@ describe("handler", async () => {
         body: JSON.stringify(updatedTemplate),
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
       });
 
       const response = await handler(
@@ -1785,9 +2235,13 @@ describe("handler", async () => {
       });
     });
 
-    it("should return 404 response when item doesn't exist", async () => {
+    it("should return 404 response when the item is deleted between read and write", async () => {
       const leaseTemplate = generateSchemaData(
-        LeaseTemplateSchema.omit({ uuid: true, blueprintName: true }),
+        LeaseTemplateSchema.omit({
+          uuid: true,
+          createdBy: true,
+          blueprintName: true,
+        }),
         {
           maxSpend: 50,
           leaseDurationInHours: 24,
@@ -1804,10 +2258,13 @@ describe("handler", async () => {
         body: JSON.stringify(leaseTemplate),
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
       });
 
+      // Existence is already checked before this point, so this covers the
+      // residual race: the row is deleted between that read and the write, and
+      // update() surfaces UnknownItem, which maps to a 404.
       vi.spyOn(DynamoLeaseTemplateStore.prototype, "update").mockImplementation(
         () => {
           throw new UnknownItem("Lease template not found.");
@@ -1831,7 +2288,11 @@ describe("handler", async () => {
     it("should resolve blueprintName when blueprintId is provided on update", async () => {
       const blueprintId = "550e8400-e29b-41d4-a716-446655440000";
       const leaseTemplate = generateSchemaData(
-        LeaseTemplateSchema.omit({ uuid: true, blueprintName: true }),
+        LeaseTemplateSchema.omit({
+          uuid: true,
+          createdBy: true,
+          blueprintName: true,
+        }),
         {
           maxSpend: 50,
           leaseDurationInHours: 24,
@@ -1854,6 +2315,7 @@ describe("handler", async () => {
           newItem: {
             ...leaseTemplate,
             uuid: mockUuid,
+            createdBy: "original.author@example.com",
             blueprintName: "Resolved-Blueprint",
           },
         });
@@ -1864,8 +2326,8 @@ describe("handler", async () => {
         pathParameters: { leaseTemplateId: mockUuid },
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
         body: JSON.stringify(leaseTemplate),
       });
 
@@ -1885,7 +2347,11 @@ describe("handler", async () => {
 
     it("should return 400 when blueprintId references non-existent blueprint on update", async () => {
       const leaseTemplate = generateSchemaData(
-        LeaseTemplateSchema.omit({ uuid: true, blueprintName: true }),
+        LeaseTemplateSchema.omit({
+          uuid: true,
+          createdBy: true,
+          blueprintName: true,
+        }),
         {
           maxSpend: 50,
           leaseDurationInHours: 24,
@@ -1904,8 +2370,8 @@ describe("handler", async () => {
         pathParameters: { leaseTemplateId: mockUuid },
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
         },
+        isbUser: isbAuthorizedUser.user,
         body: JSON.stringify(leaseTemplate),
       });
 
@@ -1922,6 +2388,57 @@ describe("handler", async () => {
         headers: responseHeaders,
       });
     });
+
+    it("should return 400 when allowOwnerToShareLease is true and leaseSharingEnabled is false", async () => {
+      const disabledSharingConfig = {
+        ...mockedGlobalConfig,
+        leases: {
+          ...mockedGlobalConfig.leases,
+          leaseSharingEnabled: false,
+        },
+      };
+      mockAppConfigMiddleware(disabledSharingConfig, mockedReportingConfig);
+
+      const leaseTemplate = generateSchemaData(
+        LeaseTemplateSchema.omit({
+          uuid: true,
+          createdBy: true,
+          blueprintName: true,
+        }),
+        {
+          maxSpend: 50,
+          leaseDurationInHours: 24,
+          costReportGroup: undefined,
+          blueprintId: undefined,
+          allowOwnerToShareLease: true,
+        },
+      );
+
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "PUT",
+        path: "/leaseTemplates/{leaseTemplateId}",
+        pathParameters: { leaseTemplateId: mockUuid },
+        headers: {
+          "Content-Type": "application/json",
+        },
+        isbUser: isbAuthorizedUser.user,
+        body: JSON.stringify(leaseTemplate),
+      });
+
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(testEnv, disabledSharingConfig),
+        ),
+      ).toEqual({
+        statusCode: 400,
+        body: createFailureResponseBody({
+          message:
+            "Cannot enable allowOwnerToShareLease because lease sharing is not available.",
+        }),
+        headers: responseHeaders,
+      });
+    });
   });
 
   describe("DELETE /leaseTemplates/{leaseTemplateId}", () => {
@@ -1932,9 +2449,7 @@ describe("handler", async () => {
         pathParameters: {
           leaseTemplateId: mockUuid,
         },
-        headers: {
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
-        },
+        isbUser: isbAuthorizedUser.user,
       });
 
       vi.spyOn(DynamoLeaseTemplateStore.prototype, "delete").mockReturnValue(
@@ -1967,9 +2482,7 @@ describe("handler", async () => {
       const event = createAPIGatewayProxyEvent({
         httpMethod: "DELETE",
         path: "/leaseTemplates/{leaseTemplateId}",
-        headers: {
-          Authorization: `Bearer ${isbAuthorizedUser.token}`,
-        },
+        isbUser: isbAuthorizedUser.user,
       });
 
       expect(

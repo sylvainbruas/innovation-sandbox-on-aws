@@ -7,7 +7,7 @@ import { http, HttpResponse } from "msw";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { RegisterBlueprintWizard } from "@amzn/innovation-sandbox-frontend/domains/blueprints/pages/RegisterBlueprintWizard";
-import { config } from "@amzn/innovation-sandbox-frontend/helpers/config";
+import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
 import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
 
@@ -33,13 +33,13 @@ describe("RegisterBlueprintWizard Integration", () => {
       const user = userEvent.setup();
 
       server.use(
-        http.get(`${config.ApiUrl}/blueprints/stacksets`, () => {
+        http.get(`${getConfig().ApiUrl}/blueprints/stacksets`, () => {
           return HttpResponse.json({
             status: "success",
             data: { result: [] },
           });
         }),
-        http.get(`${config.ApiUrl}/configurations`, () => {
+        http.get(`${getConfig().ApiUrl}/configurations`, () => {
           return HttpResponse.json({
             status: "success",
             data: { isbManagedRegions: ["us-east-1"] },
@@ -80,13 +80,13 @@ describe("RegisterBlueprintWizard Integration", () => {
       const user = userEvent.setup();
 
       server.use(
-        http.get(`${config.ApiUrl}/blueprints/stacksets`, () => {
+        http.get(`${getConfig().ApiUrl}/blueprints/stacksets`, () => {
           return HttpResponse.json({
             status: "success",
             data: { result: [] },
           });
         }),
-        http.get(`${config.ApiUrl}/configurations`, () => {
+        http.get(`${getConfig().ApiUrl}/configurations`, () => {
           return HttpResponse.json({
             status: "success",
             data: { isbManagedRegions: ["us-east-1"] },
@@ -124,7 +124,7 @@ describe("RegisterBlueprintWizard Integration", () => {
       const user = userEvent.setup();
 
       server.use(
-        http.get(`${config.ApiUrl}/blueprints/stacksets`, () => {
+        http.get(`${getConfig().ApiUrl}/blueprints/stacksets`, () => {
           return HttpResponse.json({
             status: "success",
             data: {
@@ -139,7 +139,7 @@ describe("RegisterBlueprintWizard Integration", () => {
             },
           });
         }),
-        http.get(`${config.ApiUrl}/configurations`, () => {
+        http.get(`${getConfig().ApiUrl}/configurations`, () => {
           return HttpResponse.json({
             status: "success",
             data: { isbManagedRegions: ["us-east-1"] },
@@ -188,7 +188,7 @@ describe("RegisterBlueprintWizard Integration", () => {
       const user = userEvent.setup();
 
       server.use(
-        http.get(`${config.ApiUrl}/blueprints/stacksets`, () => {
+        http.get(`${getConfig().ApiUrl}/blueprints/stacksets`, () => {
           return HttpResponse.json({
             status: "success",
             data: {
@@ -203,7 +203,7 @@ describe("RegisterBlueprintWizard Integration", () => {
             },
           });
         }),
-        http.get(`${config.ApiUrl}/configurations`, () => {
+        http.get(`${getConfig().ApiUrl}/configurations`, () => {
           return HttpResponse.json({
             status: "success",
             data: { isbManagedRegions: ["us-east-1", "us-west-2"] },
@@ -260,7 +260,7 @@ describe("RegisterBlueprintWizard Integration", () => {
       const user = userEvent.setup();
 
       server.use(
-        http.get(`${config.ApiUrl}/blueprints/stacksets`, () => {
+        http.get(`${getConfig().ApiUrl}/blueprints/stacksets`, () => {
           return HttpResponse.json({
             status: "success",
             data: {
@@ -275,7 +275,7 @@ describe("RegisterBlueprintWizard Integration", () => {
             },
           });
         }),
-        http.get(`${config.ApiUrl}/configurations`, () => {
+        http.get(`${getConfig().ApiUrl}/configurations`, () => {
           return HttpResponse.json({
             status: "success",
             data: { isbManagedRegions: ["us-east-1"] },
@@ -329,7 +329,7 @@ describe("RegisterBlueprintWizard Integration", () => {
     // Mock API responses
     server.use(
       // Mock StackSets list
-      http.get(`${config.ApiUrl}/blueprints/stacksets`, () => {
+      http.get(`${getConfig().ApiUrl}/blueprints/stacksets`, () => {
         return HttpResponse.json({
           status: "success",
           data: {
@@ -346,7 +346,7 @@ describe("RegisterBlueprintWizard Integration", () => {
         });
       }),
       // Mock configurations
-      http.get(`${config.ApiUrl}/configurations`, () => {
+      http.get(`${getConfig().ApiUrl}/configurations`, () => {
         return HttpResponse.json({
           status: "success",
           data: {
@@ -355,7 +355,7 @@ describe("RegisterBlueprintWizard Integration", () => {
         });
       }),
       // Mock blueprint registration
-      http.post(`${config.ApiUrl}/blueprints`, async ({ request }) => {
+      http.post(`${getConfig().ApiUrl}/blueprints`, async ({ request }) => {
         const body = (await request.json()) as any;
         return HttpResponse.json({
           status: "success",
@@ -431,7 +431,9 @@ describe("RegisterBlueprintWizard Integration", () => {
 
     // Wait for regions to appear
     await waitFor(() => {
-      expect(screen.getByText("us-east-1")).toBeInTheDocument();
+      expect(
+        screen.getByText("US East (N. Virginia) (us-east-1)"),
+      ).toBeInTheDocument();
     });
 
     // Verify default is selected by default
@@ -467,7 +469,7 @@ describe("RegisterBlueprintWizard Integration", () => {
     const user = userEvent.setup();
 
     server.use(
-      http.get(`${config.ApiUrl}/blueprints/stacksets`, () => {
+      http.get(`${getConfig().ApiUrl}/blueprints/stacksets`, () => {
         return HttpResponse.json({
           status: "success",
           data: {
@@ -482,7 +484,7 @@ describe("RegisterBlueprintWizard Integration", () => {
           },
         });
       }),
-      http.get(`${config.ApiUrl}/configurations`, () => {
+      http.get(`${getConfig().ApiUrl}/configurations`, () => {
         return HttpResponse.json({
           status: "success",
           data: {
@@ -490,7 +492,7 @@ describe("RegisterBlueprintWizard Integration", () => {
           },
         });
       }),
-      http.post(`${config.ApiUrl}/blueprints`, () => {
+      http.post(`${getConfig().ApiUrl}/blueprints`, () => {
         return HttpResponse.json(
           {
             status: "error",
@@ -553,13 +555,13 @@ describe("RegisterBlueprintWizard Integration", () => {
     const user = userEvent.setup();
 
     server.use(
-      http.get(`${config.ApiUrl}/blueprints/stacksets`, () => {
+      http.get(`${getConfig().ApiUrl}/blueprints/stacksets`, () => {
         return HttpResponse.json({
           status: "success",
           data: { result: [] },
         });
       }),
-      http.get(`${config.ApiUrl}/configurations`, () => {
+      http.get(`${getConfig().ApiUrl}/configurations`, () => {
         return HttpResponse.json({
           status: "success",
           data: {
@@ -603,7 +605,7 @@ describe("RegisterBlueprintWizard Integration", () => {
     let capturedRequest: any = null;
 
     server.use(
-      http.get(`${config.ApiUrl}/blueprints/stacksets`, () => {
+      http.get(`${getConfig().ApiUrl}/blueprints/stacksets`, () => {
         return HttpResponse.json({
           status: "success",
           data: {
@@ -618,7 +620,7 @@ describe("RegisterBlueprintWizard Integration", () => {
           },
         });
       }),
-      http.get(`${config.ApiUrl}/configurations`, () => {
+      http.get(`${getConfig().ApiUrl}/configurations`, () => {
         return HttpResponse.json({
           status: "success",
           data: {
@@ -626,7 +628,7 @@ describe("RegisterBlueprintWizard Integration", () => {
           },
         });
       }),
-      http.post(`${config.ApiUrl}/blueprints`, async ({ request }) => {
+      http.post(`${getConfig().ApiUrl}/blueprints`, async ({ request }) => {
         capturedRequest = await request.json();
         return HttpResponse.json({
           status: "success",

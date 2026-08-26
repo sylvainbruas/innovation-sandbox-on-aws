@@ -6,14 +6,12 @@ import { BaseApiLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons
 
 export const AccountLambdaEnvironmentSchema =
   BaseApiLambdaEnvironmentSchema.extend({
-    APP_CONFIG_APPLICATION_ID: z.string(),
-    APP_CONFIG_PROFILE_ID: z.string(),
-    APP_CONFIG_ENVIRONMENT_ID: z.string(),
-    AWS_APPCONFIG_EXTENSION_PREFETCH_LIST: z.string(),
+    CONFIG_TABLE_NAME: z.string(),
     ACCOUNT_TABLE_NAME: z.string(),
     ISB_NAMESPACE: z.string(),
     LEASE_TABLE_NAME: z.string(),
     BLUEPRINT_TABLE_NAME: z.string(),
+    CLEANUP_REPORT_TABLE_NAME: z.string(),
     SANDBOX_ACCOUNT_ROLE_NAME: z.string(),
     ISB_EVENT_BUS: z.string(),
     INTERMEDIATE_ROLE_ARN: z.string(),

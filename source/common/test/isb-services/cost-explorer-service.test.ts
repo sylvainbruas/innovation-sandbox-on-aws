@@ -9,6 +9,7 @@ import {
   CostExplorerService,
 } from "@amzn/innovation-sandbox-commons/isb-services/cost-explorer-service.js";
 import { IsbServices } from "@amzn/innovation-sandbox-commons/isb-services/index.js";
+import { toCeTagKey } from "@amzn/innovation-sandbox-commons/utils/isb-account-tags.js";
 import { now } from "@amzn/innovation-sandbox-commons/utils/time-utils.js";
 
 vi.mock("@amzn/innovation-sandbox-commons/utils/cross-account-roles.js", () => {
@@ -19,7 +20,9 @@ vi.mock("@amzn/innovation-sandbox-commons/utils/cross-account-roles.js", () => {
   };
 });
 
+const NAMESPACE = "myisb";
 const costExplorerService = IsbServices.costExplorer({
+  ISB_NAMESPACE: NAMESPACE,
   USER_AGENT_EXTRA: "test-agent",
 });
 
@@ -297,8 +300,9 @@ describe("CostExplorerService", () => {
     });
 
     it("returns costs for accounts all within time period, with batchSize of 1", async () => {
-      const { COST_EXPLORER_CONFIG, CostExplorerService } =
-        await import("@amzn/innovation-sandbox-commons/isb-services/cost-explorer-service.js");
+      const { COST_EXPLORER_CONFIG, CostExplorerService } = await import(
+        "@amzn/innovation-sandbox-commons/isb-services/cost-explorer-service.js"
+      );
       vi.spyOn(
         COST_EXPLORER_CONFIG,
         "MAX_ACCOUNTS_IN_FILTER",
@@ -430,6 +434,281 @@ describe("CostExplorerService", () => {
         2,
       );
       expect(costCalculated.costMap).toEqual(costExpected.costMap);
+    });
+  });
+
+  describe("getCostForLeasesByTag", () => {
+    const lease1 = "lease-uuid-1";
+    const lease2 = "lease-uuid-2";
+
+    it("returns empty report and skips SDK call when no leases provided", async () => {
+      const sendSpy = vi.fn();
+      costExplorerService.costExplorerClient.send = sendSpy;
+
+      const result = await costExplorerService.getCostForLeasesByTag(
+        [],
+        now().minus({ days: 1 }),
+        now(),
+      );
+
+      expect(sendSpy).not.toHaveBeenCalled();
+      expect(result.costMap).toEqual({});
+    });
+
+    it("issues a GetCostAndUsage call grouped by the namespaced LeaseId tag with no Tags filter", async () => {
+      const sendSpy = vi.fn().mockResolvedValue({ ResultsByTime: [] });
+      costExplorerService.costExplorerClient.send = sendSpy;
+
+      const start = now().minus({ days: 3 });
+      const end = now();
+
+      await costExplorerService.getCostForLeasesByTag(
+        [lease1, lease2],
+        start,
+        end,
+      );
+
+      expect(sendSpy).toHaveBeenCalledTimes(1);
+      const command = sendSpy.mock.calls[0]![0];
+      const input = command.input;
+
+      expect(input.TimePeriod).toEqual({
+        Start: CostExplorerService.toCostExplorerFormat(
+          start,
+          Granularity.DAILY,
+        ),
+        End: CostExplorerService.toCostExplorerFormat(
+          CostExplorerService.toStartOfNextPeriod(end, Granularity.DAILY),
+          Granularity.DAILY,
+        ),
+      });
+      expect(input.Granularity).toBe(Granularity.DAILY);
+      expect(input.Metrics).toEqual(["UnblendedCost"]);
+      expect(input.GroupBy).toEqual([
+        { Type: "TAG", Key: toCeTagKey(`ISB-${NAMESPACE}:LeaseId`) },
+      ]);
+      expect(input.Filter).toEqual({
+        Not: {
+          Dimensions: {
+            Key: "RECORD_TYPE",
+            Values: ["Credit", "Refund"],
+            MatchOptions: ["EQUALS"],
+          },
+        },
+      });
+      expect(input.NextPageToken).toBeUndefined();
+    });
+
+    it("follows NextPageToken until exhausted and merges results across pages", async () => {
+      const sendSpy = vi
+        .fn()
+        .mockResolvedValueOnce({
+          NextPageToken: "page-2",
+          ResultsByTime: [
+            {
+              Groups: [
+                {
+                  Keys: [`accountTag/ISB-myisb:LeaseId$${lease1}`],
+                  Metrics: { UnblendedCost: { Amount: "10.00", Unit: "USD" } },
+                },
+              ],
+              TimePeriod: {
+                Start: CostExplorerService.toCostExplorerFormat(
+                  now().minus({ days: 1 }).startOf("day"),
+                  Granularity.DAILY,
+                ),
+                End: CostExplorerService.toCostExplorerFormat(
+                  now().startOf("day"),
+                  Granularity.DAILY,
+                ),
+              },
+            },
+          ],
+        })
+        .mockResolvedValueOnce({
+          ResultsByTime: [
+            {
+              Groups: [
+                {
+                  Keys: [`accountTag/ISB-myisb:LeaseId$${lease1}`],
+                  Metrics: { UnblendedCost: { Amount: "2.50", Unit: "USD" } },
+                },
+                {
+                  Keys: [`accountTag/ISB-myisb:LeaseId$${lease2}`],
+                  Metrics: { UnblendedCost: { Amount: "7.00", Unit: "USD" } },
+                },
+              ],
+              TimePeriod: {
+                Start: CostExplorerService.toCostExplorerFormat(
+                  now().minus({ days: 2 }).startOf("day"),
+                  Granularity.DAILY,
+                ),
+                End: CostExplorerService.toCostExplorerFormat(
+                  now().minus({ days: 1 }).startOf("day"),
+                  Granularity.DAILY,
+                ),
+              },
+            },
+          ],
+        });
+      costExplorerService.costExplorerClient.send = sendSpy;
+
+      const report = await costExplorerService.getCostForLeasesByTag(
+        [lease1, lease2],
+        now().minus({ days: 3 }),
+        now(),
+      );
+
+      expect(sendSpy).toHaveBeenCalledTimes(2);
+      expect(sendSpy.mock.calls[0]![0].input.NextPageToken).toBeUndefined();
+      expect(sendSpy.mock.calls[1]![0].input.NextPageToken).toBe("page-2");
+      expect(report.getCost(lease1)).toBeCloseTo(12.5, 2);
+      expect(report.getCost(lease2)).toBeCloseTo(7, 2);
+    });
+
+    it("accumulates per-day costs keyed by lease UUID parsed from CE TAG group keys", async () => {
+      costExplorerService.costExplorerClient.send = vi.fn().mockResolvedValue({
+        ResultsByTime: [
+          {
+            Groups: [
+              {
+                Keys: [`accountTag/ISB-myisb:LeaseId$${lease1}`],
+                Metrics: { UnblendedCost: { Amount: "10.00", Unit: "USD" } },
+              },
+              {
+                Keys: [`accountTag/ISB-myisb:LeaseId$${lease2}`],
+                Metrics: { UnblendedCost: { Amount: "5.00", Unit: "USD" } },
+              },
+            ],
+            TimePeriod: {
+              Start: CostExplorerService.toCostExplorerFormat(
+                now().minus({ days: 1 }).startOf("day"),
+                Granularity.DAILY,
+              ),
+              End: CostExplorerService.toCostExplorerFormat(
+                now().startOf("day"),
+                Granularity.DAILY,
+              ),
+            },
+          },
+          {
+            Groups: [
+              {
+                Keys: [`accountTag/ISB-myisb:LeaseId$${lease1}`],
+                Metrics: { UnblendedCost: { Amount: "15.50", Unit: "USD" } },
+              },
+            ],
+            TimePeriod: {
+              Start: CostExplorerService.toCostExplorerFormat(
+                now().minus({ days: 2 }).startOf("day"),
+                Granularity.DAILY,
+              ),
+              End: CostExplorerService.toCostExplorerFormat(
+                now().minus({ days: 1 }).startOf("day"),
+                Granularity.DAILY,
+              ),
+            },
+          },
+        ],
+      });
+
+      const report = await costExplorerService.getCostForLeasesByTag(
+        [lease1, lease2],
+        now().minus({ days: 3 }),
+        now(),
+      );
+
+      expect(report.getCost(lease1)).toBeCloseTo(25.5, 2);
+      expect(report.getCost(lease2)).toBeCloseTo(5, 2);
+    });
+
+    it("omits leases whose tag did not match in CE (caller routes them to legacy fallback)", async () => {
+      costExplorerService.costExplorerClient.send = vi.fn().mockResolvedValue({
+        ResultsByTime: [
+          {
+            Groups: [
+              {
+                Keys: [`accountTag/ISB-myisb:LeaseId$${lease1}`],
+                Metrics: { UnblendedCost: { Amount: "7.25", Unit: "USD" } },
+              },
+            ],
+            TimePeriod: {
+              Start: CostExplorerService.toCostExplorerFormat(
+                now().minus({ days: 1 }).startOf("day"),
+                Granularity.DAILY,
+              ),
+              End: CostExplorerService.toCostExplorerFormat(
+                now().startOf("day"),
+                Granularity.DAILY,
+              ),
+            },
+          },
+        ],
+      });
+
+      const report = await costExplorerService.getCostForLeasesByTag(
+        [lease1, lease2],
+        now().minus({ days: 2 }),
+        now(),
+      );
+
+      expect(Object.keys(report.costMap)).toEqual([lease1]);
+      expect(report.costMap[lease2]).toBeUndefined();
+    });
+
+    it("ignores TAG groups with empty values and unknown lease IDs", async () => {
+      costExplorerService.costExplorerClient.send = vi.fn().mockResolvedValue({
+        ResultsByTime: [
+          {
+            Groups: [
+              {
+                Keys: ["accountTag/ISB-myisb:LeaseId$"],
+                Metrics: { UnblendedCost: { Amount: "99.99", Unit: "USD" } },
+              },
+              {
+                Keys: ["accountTag/ISB-myisb:LeaseId$some-other-uuid"],
+                Metrics: { UnblendedCost: { Amount: "42.00", Unit: "USD" } },
+              },
+              {
+                Keys: [`accountTag/ISB-myisb:LeaseId$${lease1}`],
+                Metrics: { UnblendedCost: { Amount: "1.00", Unit: "USD" } },
+              },
+            ],
+            TimePeriod: {
+              Start: CostExplorerService.toCostExplorerFormat(
+                now().minus({ days: 1 }).startOf("day"),
+                Granularity.DAILY,
+              ),
+              End: CostExplorerService.toCostExplorerFormat(
+                now().startOf("day"),
+                Granularity.DAILY,
+              ),
+            },
+          },
+        ],
+      });
+
+      const report = await costExplorerService.getCostForLeasesByTag(
+        [lease1],
+        now().minus({ days: 1 }),
+        now(),
+      );
+
+      expect(report.costMap).toEqual({ [lease1]: 1 });
+    });
+
+    it("returns an empty report when CE returns no ResultsByTime", async () => {
+      costExplorerService.costExplorerClient.send = vi
+        .fn()
+        .mockResolvedValue({ ResultsByTime: [] });
+
+      const report = await costExplorerService.getCostForLeasesByTag(
+        [lease1],
+        now().minus({ days: 1 }),
+        now(),
+      );
+
+      expect(report.costMap).toEqual({});
     });
   });
 

@@ -14,7 +14,7 @@ import {
 export const LeaseFrozenReasonTypeSchema = z.enum(
   ["Expired", "BudgetExceeded", "ManuallyFrozen"],
   {
-    errorMap: enumErrorMap,
+    error: enumErrorMap,
   },
 );
 

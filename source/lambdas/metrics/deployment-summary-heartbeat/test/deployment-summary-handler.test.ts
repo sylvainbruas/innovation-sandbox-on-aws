@@ -1,12 +1,12 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { GlobalConfigSchema } from "@amzn/innovation-sandbox-commons/data/global-config/global-config.js";
 import { DeploymentSummaryLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/deployment-summary-lambda-environment.js";
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
 import {
   createEventBridgeEvent,
   mockContext,
+  mockGlobalConfig,
 } from "@amzn/innovation-sandbox-commons/test/lambdas/fixtures.js";
 import {
   bulkStubEnv,
@@ -25,7 +25,7 @@ import {
 } from "vitest";
 
 const testEnv = generateSchemaData(DeploymentSummaryLambdaEnvironmentSchema);
-const mockedGlobalConfig = generateSchemaData(GlobalConfigSchema);
+const mockedGlobalConfig = mockGlobalConfig();
 const mockedReportingConfig = {
   costReportGroups: ["test-group"],
   requireCostReportGroup: false,
@@ -33,24 +33,18 @@ const mockedReportingConfig = {
 
 let handler: any;
 
-const mockLeaseTemplateStore = {
-  findAll: vi.fn(),
-};
+// The individual collectors are unit-tested in metrics-collectors.test.ts; here
+// they are mocked so the test exercises only the handler's orchestration:
+// wiring each collector, degrading on failure, and assembling the log payload.
+const mockSummarizeAccountPool = vi.fn();
+const mockGetScpMetrics = vi.fn();
+const mockSummarizeBlueprints = vi.fn();
+const mockSummarizeMultiUserLeases = vi.fn();
+const mockCountM2mClients = vi.fn();
+const mockCollectApiCallsByAuthType = vi.fn();
 
-const mockBlueprintStore = {
-  listBlueprints: vi.fn(),
-  get: vi.fn(),
-};
+const mockLeaseTemplateStore = { findAll: vi.fn() };
 
-const mockOrgsService = {
-  listAllAccountsInOU: vi.fn(),
-};
-
-const mockCfnClient = {
-  send: vi.fn(),
-};
-
-// Mock the logger to avoid console output during tests
 vi.spyOn(Logger.prototype, "info").mockImplementation(() => {});
 vi.spyOn(Logger.prototype, "warn").mockImplementation(() => {});
 vi.spyOn(Logger.prototype, "error").mockImplementation(() => {});
@@ -58,23 +52,57 @@ vi.spyOn(Logger.prototype, "error").mockImplementation(() => {});
 beforeAll(async () => {
   bulkStubEnv(testEnv);
 
-  // Mock IsbServices before importing handler
+  const { DynamoConfigStore } = await import(
+    "@amzn/innovation-sandbox-commons/data/config/dynamo-config-store.js"
+  );
   vi.doMock("@amzn/innovation-sandbox-commons/isb-services/index.js", () => ({
     IsbServices: {
       leaseTemplateStore: vi.fn().mockReturnValue(mockLeaseTemplateStore),
-      blueprintStore: vi.fn().mockReturnValue(mockBlueprintStore),
-      orgsService: vi.fn().mockReturnValue(mockOrgsService),
+      blueprintStore: vi.fn().mockReturnValue({}),
+      orgsService: vi.fn().mockReturnValue({}),
+      configStore: vi.fn(
+        () => new DynamoConfigStore({ client: {} as any, tableName: "test" }),
+      ),
+      accountPoolStackConfigStore: vi
+        .fn()
+        .mockReturnValue({ get: vi.fn().mockResolvedValue({}) }),
+      principalStore: vi.fn().mockReturnValue({}),
     },
   }));
 
-  // Mock IsbClients before importing handler
   vi.doMock("@amzn/innovation-sandbox-commons/sdk-clients/index.js", () => ({
     IsbClients: {
-      cloudFormation: vi.fn().mockReturnValue(mockCfnClient),
+      cloudFormation: vi.fn().mockReturnValue({}),
+      accessAnalyzer: vi.fn().mockReturnValue({}),
+      iam: vi.fn().mockReturnValue({}),
+      cloudWatch: vi.fn().mockReturnValue({}),
     },
   }));
 
-  // Import handler after mocking dependencies
+  vi.doMock(
+    "@amzn/innovation-sandbox-deployment-summary-heartbeat/m2m-client-discovery.js",
+    () => ({
+      countM2mClients: mockCountM2mClients,
+    }),
+  );
+
+  vi.doMock(
+    "@amzn/innovation-sandbox-deployment-summary-heartbeat/api-call-mix.js",
+    () => ({
+      collectApiCallsByAuthType: mockCollectApiCallsByAuthType,
+    }),
+  );
+
+  vi.doMock(
+    "@amzn/innovation-sandbox-deployment-summary-heartbeat/metrics-collectors.js",
+    () => ({
+      summarizeAccountPool: mockSummarizeAccountPool,
+      getScpMetrics: mockGetScpMetrics,
+      summarizeBlueprints: mockSummarizeBlueprints,
+      summarizeMultiUserLeases: mockSummarizeMultiUserLeases,
+    }),
+  );
+
   const module =
     await import("@amzn/innovation-sandbox-deployment-summary-heartbeat/deployment-summary-handler.js");
   handler = module.handler;
@@ -83,46 +111,40 @@ beforeAll(async () => {
 beforeEach(() => {
   bulkStubEnv(testEnv);
   mockAppConfigMiddleware(mockedGlobalConfig, mockedReportingConfig);
-
-  // Reset and setup mocks
   vi.clearAllMocks();
 
-  // Setup default mock responses
   mockLeaseTemplateStore.findAll.mockResolvedValue({
-    result: [{ leaseTemplateId: "template-1", name: "Test Template" }],
-    nextPageIdentifier: null,
-  });
-
-  mockBlueprintStore.listBlueprints.mockResolvedValue({
     result: [
-      {
-        blueprint: {
-          blueprintId: "blueprint-1",
-          name: "Test Blueprint",
-        },
-        stackSets: [],
-        deploymentHistory: [],
-      },
+      { leaseTemplateId: "t1", blueprintId: "bp-1" },
+      { leaseTemplateId: "t2", blueprintId: undefined },
     ],
     nextPageIdentifier: null,
   });
-
-  mockBlueprintStore.get.mockResolvedValue({
-    result: {
-      blueprint: {
-        blueprintId: "blueprint-1",
-        name: "Test Blueprint",
-      },
-      stackSets: [{ stackSetId: "stack-set-1" }],
-      deploymentHistory: [],
-    },
+  mockCountM2mClients.mockResolvedValue(0);
+  mockSummarizeAccountPool.mockResolvedValue({
+    available: 0,
+    active: 0,
+    frozen: 0,
+    cleanup: 0,
+    quarantine: 0,
   });
-
-  mockOrgsService.listAllAccountsInOU.mockResolvedValue([]);
-
-  mockCfnClient.send.mockResolvedValue({
-    ResourceTypes: ["AWS::S3::Bucket", "AWS::Lambda::Function"],
+  mockGetScpMetrics.mockResolvedValue({
+    additionalAllowedServicesList: [],
+    bedrockInferenceProfilePatternsList: [],
   });
+  mockSummarizeBlueprints.mockResolvedValue({
+    numBlueprints: 0,
+    blueprintServiceCounts: {},
+  });
+  mockSummarizeMultiUserLeases.mockResolvedValue({
+    numTemplatesWithSharing: 0,
+    numLeasesWithAssignments: 0,
+    totalUserAssignments: 0,
+    totalGroupAssignments: 0,
+    avgAssignmentsPerLease: 0,
+    maxAssignmentsPerLease: 0,
+  });
+  mockCollectApiCallsByAuthType.mockResolvedValue({ m2m: 0, user: 0 });
 });
 
 afterEach(() => {
@@ -137,116 +159,184 @@ describe("deployment-summary-handler", () => {
   const mockedContext = mockContext(testEnv);
   const scheduleEvent = createEventBridgeEvent("Scheduled Event", {});
 
-  it("should successfully execute summarizeDeployment", async () => {
+  it("assembles the deployment summary from every collector", async () => {
+    mockCountM2mClients.mockResolvedValue(7);
+    mockSummarizeBlueprints.mockResolvedValue({
+      numBlueprints: 1,
+      blueprintServiceCounts: { S3: 2 },
+    });
+    mockSummarizeAccountPool.mockResolvedValue({
+      available: 5,
+      active: 3,
+      frozen: 1,
+      cleanup: 0,
+      quarantine: 2,
+    });
+    mockGetScpMetrics.mockResolvedValue({
+      additionalAllowedServicesList: ["sts:*"],
+      bedrockInferenceProfilePatternsList: ["us.*"],
+    });
+    mockSummarizeMultiUserLeases.mockResolvedValue({
+      numTemplatesWithSharing: 1,
+      numLeasesWithAssignments: 2,
+      totalUserAssignments: 3,
+      totalGroupAssignments: 1,
+      avgAssignmentsPerLease: 2,
+      maxAssignmentsPerLease: 3,
+    });
+    mockCollectApiCallsByAuthType.mockResolvedValue({ m2m: 4, user: 12 });
+
     await handler(scheduleEvent, mockedContext);
 
-    expect(mockLeaseTemplateStore.findAll).toHaveBeenCalled();
-    expect(mockBlueprintStore.listBlueprints).toHaveBeenCalled();
+    expect(mockCountM2mClients).toHaveBeenCalledWith(
+      expect.anything(),
+      testEnv.ISB_NAMESPACE,
+    );
     expect(Logger.prototype.info).toHaveBeenCalledWith(
       "ISB Deployment Summary",
       expect.objectContaining({
         logDetailType: "DeploymentSummary",
-        numLeaseTemplates: expect.any(Number),
-        numBlueprints: expect.any(Number),
-      }),
-    );
-  });
-
-  it("should correctly call summarizeAccountPool", async () => {
-    mockOrgsService.listAllAccountsInOU
-      .mockResolvedValueOnce([{ accountId: "111111111111" }] as any)
-      .mockResolvedValueOnce([{ accountId: "222222222222" }] as any)
-      .mockResolvedValueOnce([{ accountId: "333333333333" }] as any)
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([]);
-
-    await handler(scheduleEvent, mockedContext);
-
-    expect(mockOrgsService.listAllAccountsInOU).toHaveBeenCalledWith(
-      "Available",
-    );
-    expect(mockOrgsService.listAllAccountsInOU).toHaveBeenCalledWith("Active");
-    expect(mockOrgsService.listAllAccountsInOU).toHaveBeenCalledWith("Frozen");
-    expect(mockOrgsService.listAllAccountsInOU).toHaveBeenCalledWith("CleanUp");
-    expect(mockOrgsService.listAllAccountsInOU).toHaveBeenCalledWith(
-      "Quarantine",
-    );
-  });
-
-  it("should correctly count services in getBlueprintServiceCounts", async () => {
-    mockCfnClient.send.mockResolvedValue({
-      ResourceTypes: [
-        "AWS::S3::Bucket",
-        "AWS::S3::Bucket",
-        "AWS::Lambda::Function",
-      ],
-    });
-
-    await handler(scheduleEvent, mockedContext);
-
-    expect(mockBlueprintStore.get).toHaveBeenCalledWith("blueprint-1");
-    expect(mockCfnClient.send).toHaveBeenCalled();
-    expect(Logger.prototype.info).toHaveBeenCalledWith(
-      "ISB Deployment Summary",
-      expect.objectContaining({
-        blueprintServiceCounts: expect.objectContaining({
-          S3: 2,
-          Lambda: 1,
-        }),
-      }),
-    );
-  });
-
-  it("should return empty object when there are no blueprints", async () => {
-    mockBlueprintStore.listBlueprints.mockResolvedValue({
-      result: [],
-      nextPageIdentifier: null,
-    });
-
-    await handler(scheduleEvent, mockedContext);
-
-    expect(Logger.prototype.info).toHaveBeenCalledWith(
-      "ISB Deployment Summary",
-      expect.objectContaining({
-        numBlueprints: 0,
-        blueprintServiceCounts: {},
-      }),
-    );
-  });
-
-  it("should include all expected fields in deployment summary", async () => {
-    await handler(scheduleEvent, mockedContext);
-
-    expect(Logger.prototype.info).toHaveBeenCalledWith(
-      "ISB Deployment Summary",
-      expect.objectContaining({
-        logDetailType: "DeploymentSummary",
-        numLeaseTemplates: 1,
-        numLeaseTemplatesWithBlueprint: 0,
+        numM2mClients: 7,
+        numLeaseTemplates: 2,
+        numLeaseTemplatesWithBlueprint: 1,
         numBlueprints: 1,
-        blueprintServiceCounts: expect.any(Object),
-        config: expect.objectContaining({
-          numCostReportGroups: 1,
-          requireMaxBudget: expect.any(Boolean),
-          maxBudget: expect.any(Number),
-          requireMaxDuration: expect.any(Boolean),
-          maxDurationHours: expect.any(Number),
-          maxLeasesPerUser: expect.any(Number),
-          requireCostReportGroup: false,
-          numberOfFailedAttemptsToCancelCleanup: expect.any(Number),
-          waitBeforeRetryFailedAttemptSeconds: expect.any(Number),
-          numberOfSuccessfulAttemptsToFinishCleanup: expect.any(Number),
-          waitBeforeRerunSuccessfulAttemptSeconds: expect.any(Number),
-          isStableTaggingEnabled: expect.any(Boolean),
-          isMultiAccountDeployment: expect.any(Boolean),
-        }),
-        accountPool: expect.objectContaining({
-          available: 0,
-          active: 0,
-          frozen: 0,
+        blueprintServiceCounts: { S3: 2 },
+        // Full config-block assertion: assembling this from globalConfig /
+        // reportingConfig is real handler logic (the collectors are mocked), so
+        // every field is pinned to its source value.
+        config: {
+          numCostReportGroups: mockedReportingConfig.costReportGroups.length,
+          requireMaxBudget: mockedGlobalConfig.leases.requireMaxBudget,
+          maxBudget: mockedGlobalConfig.leases.maxBudget,
+          requireMaxDuration: mockedGlobalConfig.leases.requireMaxDuration,
+          maxDurationHours: mockedGlobalConfig.leases.maxDurationHours,
+          maxLeasesPerUser: mockedGlobalConfig.leases.maxLeasesPerUser,
+          requireCostReportGroup: mockedReportingConfig.requireCostReportGroup,
+          numberOfFailedAttemptsToCancelCleanup:
+            mockedGlobalConfig.cleanup.numberOfFailedAttemptsToCancelCleanup,
+          waitBeforeRetryFailedAttemptSeconds:
+            mockedGlobalConfig.cleanup.waitBeforeRetryFailedAttemptSeconds,
+          numberOfSuccessfulAttemptsToFinishCleanup:
+            mockedGlobalConfig.cleanup
+              .numberOfSuccessfulAttemptsToFinishCleanup,
+          waitBeforeRerunSuccessfulAttemptSeconds:
+            mockedGlobalConfig.cleanup.waitBeforeRerunSuccessfulAttemptSeconds,
+          isStableTaggingEnabled: testEnv.IS_STABLE_TAGGING_ENABLED === "Yes",
+          isMultiAccountDeployment:
+            testEnv.ORG_MGT_ACCOUNT_ID !== testEnv.HUB_ACCOUNT_ID,
+          allowUserLeaseTermination:
+            mockedGlobalConfig.leases.allowUserLeaseTermination,
+          leaseRequestWindowHours:
+            mockedGlobalConfig.leases.leaseRequestWindowHours,
+          maxLeaseRequestsPerWindow:
+            mockedGlobalConfig.leases.maxLeaseRequestsPerWindow,
+          leaseSharingEnabled: mockedGlobalConfig.leases.leaseSharingEnabled,
+          enablePrincipalSearch:
+            mockedGlobalConfig.leases.enablePrincipalSearch,
+        },
+        accountPool: {
+          available: 5,
+          active: 3,
+          frozen: 1,
           cleanup: 0,
-          quarantine: 0,
-        }),
+          quarantine: 2,
+        },
+        additionalAllowedServicesList: ["sts:*"],
+        bedrockInferenceProfilePatternsList: ["us.*"],
+        numTemplatesWithSharing: 1,
+        numLeasesWithAssignments: 2,
+        totalUserAssignments: 3,
+        totalGroupAssignments: 1,
+        avgAssignmentsPerLease: 2,
+        maxAssignmentsPerLease: 3,
+        dailyApiCallsByAuthType: { m2m: 4, user: 12 },
+      }),
+    );
+  });
+
+  it("degrades the api call-mix collector to zero counts without sinking the heartbeat", async () => {
+    mockCollectApiCallsByAuthType.mockRejectedValue(
+      new Error("GetMetricData blew up"),
+    );
+
+    await handler(scheduleEvent, mockedContext);
+
+    expect(Logger.prototype.warn).toHaveBeenCalledWith(
+      expect.stringContaining("dailyApiCallsByAuthType"),
+      expect.objectContaining({ error: expect.any(String) }),
+    );
+    expect(Logger.prototype.info).toHaveBeenCalledWith(
+      "ISB Deployment Summary",
+      expect.objectContaining({
+        logDetailType: "DeploymentSummary",
+        dailyApiCallsByAuthType: { m2m: 0, user: 0 },
+      }),
+    );
+  });
+
+  it("passes the fetched lease templates into the dependent collector", async () => {
+    await handler(scheduleEvent, mockedContext);
+
+    // leaseTemplates is fetched once in the handler and fanned out; the
+    // multi-user-lease collector consumes that shared array.
+    expect(mockSummarizeMultiUserLeases).toHaveBeenCalledWith(
+      [
+        { leaseTemplateId: "t1", blueprintId: "bp-1" },
+        { leaseTemplateId: "t2", blueprintId: undefined },
+      ],
+      expect.anything(),
+    );
+  });
+
+  it("degrades a failing collector to its fallback without sinking the heartbeat", async () => {
+    mockSummarizeMultiUserLeases.mockRejectedValue(
+      new Error("principals scan blew up"),
+    );
+    mockCountM2mClients.mockResolvedValue(3);
+
+    await handler(scheduleEvent, mockedContext);
+
+    expect(Logger.prototype.warn).toHaveBeenCalledWith(
+      expect.stringContaining("multiUserLeases"),
+      expect.objectContaining({ error: expect.any(String) }),
+    );
+    expect(Logger.prototype.info).toHaveBeenCalledWith(
+      "ISB Deployment Summary",
+      expect.objectContaining({
+        logDetailType: "DeploymentSummary",
+        numM2mClients: 3,
+        numLeasesWithAssignments: 0,
+        totalUserAssignments: 0,
+        maxAssignmentsPerLease: 0,
+      }),
+    );
+  });
+
+  it("degrades leaseTemplates and blueprints to zero counts and still emits when they fail", async () => {
+    mockLeaseTemplateStore.findAll.mockRejectedValue(
+      new Error("lease template table unavailable"),
+    );
+    mockSummarizeBlueprints.mockRejectedValue(
+      new Error("blueprint table unavailable"),
+    );
+
+    await handler(scheduleEvent, mockedContext);
+
+    expect(Logger.prototype.warn).toHaveBeenCalledWith(
+      expect.stringContaining("leaseTemplates"),
+      expect.objectContaining({ error: expect.any(String) }),
+    );
+    expect(Logger.prototype.warn).toHaveBeenCalledWith(
+      expect.stringContaining("blueprints"),
+      expect.objectContaining({ error: expect.any(String) }),
+    );
+    expect(Logger.prototype.info).toHaveBeenCalledWith(
+      "ISB Deployment Summary",
+      expect.objectContaining({
+        logDetailType: "DeploymentSummary",
+        numLeaseTemplates: 0,
+        numLeaseTemplatesWithBlueprint: 0,
+        numBlueprints: 0,
       }),
     );
   });

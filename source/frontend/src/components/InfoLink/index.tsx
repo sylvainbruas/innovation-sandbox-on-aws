@@ -15,11 +15,10 @@ interface InfoLinkProps {
 }
 
 export const InfoLink = ({ text, markdown }: InfoLinkProps) => {
-  const { setTools, setToolsOpen, setToolsHide } = useAppLayoutContext();
+  const { setTools, setToolsOpen } = useAppLayoutContext();
 
   const onClick = () => {
     setTools(<Markdown file={markdown} />);
-    setToolsHide(false);
     setToolsOpen(true);
   };
 

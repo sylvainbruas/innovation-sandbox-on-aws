@@ -6,7 +6,7 @@ import { BaseLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/la
 
 export const LogArchivingEnvironmentSchema = BaseLambdaEnvironmentSchema.extend(
   {
-    LOG_GROUP_NAME: z.string(),
+    LOG_GROUP_NAMES: z.string(),
     DESTINATION_BUCKET_NAME: z.string(),
     DESTINATION_PREFIX: z.string(),
     ISB_NAMESPACE: z.string(),

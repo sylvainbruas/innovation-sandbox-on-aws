@@ -8,7 +8,7 @@ import { BrowserRouter as Router } from "react-router-dom";
 import { describe, expect, test, vi } from "vitest";
 
 import { ApprovalsPanel } from "@amzn/innovation-sandbox-frontend/domains/home/components/ApprovalsPanel";
-import { config } from "@amzn/innovation-sandbox-frontend/helpers/config";
+import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import { createPendingLease } from "@amzn/innovation-sandbox-frontend/mocks/factories/leaseFactory";
 import { mockLeaseApi } from "@amzn/innovation-sandbox-frontend/mocks/mockApi";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
@@ -49,7 +49,7 @@ describe("ApprovalsPanel", () => {
 
   test("displays loading state while fetching approvals", async () => {
     server.use(
-      http.get(`${config.ApiUrl}/leases`, () => {
+      http.get(`${getConfig().ApiUrl}/leases`, () => {
         return new Promise((resolve) =>
           setTimeout(() => resolve(HttpResponse.json([])), 100),
         );
@@ -117,7 +117,7 @@ describe("ApprovalsPanel", () => {
 
   test("handles error state", async () => {
     server.use(
-      http.get(`${config.ApiUrl}/leases`, () => {
+      http.get(`${getConfig().ApiUrl}/leases`, () => {
         return HttpResponse.json(
           { status: "error", message: "Internal Server Error" },
           { status: 500 },

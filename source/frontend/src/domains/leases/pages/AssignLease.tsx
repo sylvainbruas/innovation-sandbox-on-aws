@@ -17,21 +17,27 @@ import {
 import { useAppLayoutContext } from "@amzn/innovation-sandbox-frontend/components/AppLayout/AppLayoutContext";
 import { ContentLayout } from "@amzn/innovation-sandbox-frontend/components/ContentLayout";
 import TextareaField from "@amzn/innovation-sandbox-frontend/components/FormFields/TextareaField";
+import { Loader } from "@amzn/innovation-sandbox-frontend/components/Loader";
 import { Markdown } from "@amzn/innovation-sandbox-frontend/components/Markdown";
 import {
   showErrorToast,
   showSuccessToast,
 } from "@amzn/innovation-sandbox-frontend/components/Toast";
+import { AssignmentsForm } from "@amzn/innovation-sandbox-frontend/domains/leases/components/AssignmentsForm";
+import { PendingAssignmentsList } from "@amzn/innovation-sandbox-frontend/domains/leases/components/PendingAssignmentsList";
 import { ReviewForm } from "@amzn/innovation-sandbox-frontend/domains/leases/components/ReviewForm";
 import { TemplateSelectionForm } from "@amzn/innovation-sandbox-frontend/domains/leases/components/TemplateSelectionForm";
 import { TermsOfServiceForm } from "@amzn/innovation-sandbox-frontend/domains/leases/components/TermsOfServiceForm";
 import { UserSelectionForm } from "@amzn/innovation-sandbox-frontend/domains/leases/components/UserSelectionForm";
+import { toAssignmentRefs } from "@amzn/innovation-sandbox-frontend/domains/leases/helpers";
 import { useRequestNewLease } from "@amzn/innovation-sandbox-frontend/domains/leases/hooks";
 import { NewLeaseRequest } from "@amzn/innovation-sandbox-frontend/domains/leases/types";
 import {
   AssignLeaseFormValues,
   AssignLeaseValidationSchema,
 } from "@amzn/innovation-sandbox-frontend/domains/leases/validation";
+import { useGetLeaseTemplateById } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/hooks";
+import { useGetConfigurations } from "@amzn/innovation-sandbox-frontend/domains/settings/hooks";
 import { useBreadcrumb } from "@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb";
 
 export const AssignLease = () => {
@@ -58,11 +64,31 @@ export const AssignLease = () => {
 
   const { trigger, getFieldState, getValues, clearErrors, watch } = methods;
 
-  // Reset acceptTerms when template changes
+  // Reset acceptTerms whenever the request changes
   const leaseTemplateUuid = watch("leaseTemplateUuid");
+  const assignmentsKey = (watch("assignments") ?? [])
+    .map((a) => a.principalId)
+    // Opaque IDC principal IDs: sort by code point for a deterministic,
+    // locale-independent key. This value only feeds the effect dependency
+    // below, so stable ordering matters, not human-readable collation.
+    .sort((a, b) => Number(a > b) - Number(a < b))
+    .join(",");
   useEffect(() => {
     methods.resetField("acceptTerms");
-  }, [leaseTemplateUuid, methods]);
+  }, [leaseTemplateUuid, assignmentsKey, methods]);
+
+  const { data: globalConfig } = useGetConfigurations();
+  const { isLoading: isTemplateLoading } = useGetLeaseTemplateById(
+    leaseTemplateUuid || undefined,
+  );
+
+  const stepFields: Array<Array<keyof AssignLeaseFormValues>> = [
+    ["leaseTemplateUuid"], // Template selection
+    ["userEmail"], // User selection
+    ["assignments"], // Share access (always available for admin/manager)
+    ["acceptTerms"], // Terms of service
+    [], // Review (no validation needed)
+  ];
 
   useEffect(() => {
     setBreadcrumb([
@@ -83,13 +109,6 @@ export const AssignLease = () => {
 
     // Only validate when moving forward
     if (requestedStepIndex > activeStepIndex) {
-      const stepFields: Array<Array<keyof AssignLeaseFormValues>> = [
-        ["leaseTemplateUuid"], // Step 0: Template selection
-        ["userEmail"], // Step 1: User selection
-        ["acceptTerms"], // Step 2: Terms of service
-        [], // Step 3: Review (no validation needed)
-      ];
-
       const currentStepFields = stepFields[activeStepIndex];
       const currentStepHasErrors = currentStepFields.some(
         (field) => getFieldState(field).error !== undefined,
@@ -107,18 +126,22 @@ export const AssignLease = () => {
   const handleSubmit = async () => {
     const isValid = await trigger();
     if (!isValid) {
-      // Navigate to ToS step — the only validation that can fail at submit time
-      // (template selection and email have inline validation that blocks forward navigation)
-      setActiveStepIndex(2);
+      // ToS is always the second-to-last step (Review is last). Deriving
+      // from stepFields.length keeps this correct if new steps are added.
+      setActiveStepIndex(stepFields.length - 2);
       showErrorToast("Please correct validation errors", "Validation Failed");
       return;
     }
 
     const values = getValues();
+
+    const assignments = toAssignmentRefs(values.assignments);
+
     const request: NewLeaseRequest = {
       leaseTemplateUuid: values.leaseTemplateUuid,
       comments: values.comments,
       userEmail: values.userEmail,
+      ...(assignments ? { assignments } : {}),
     };
 
     try {
@@ -145,7 +168,25 @@ export const AssignLease = () => {
     },
     {
       title: "Select user",
-      content: <UserSelectionForm />,
+      content: (
+        <UserSelectionForm
+          enablePrincipalSearch={
+            globalConfig?.leases?.enablePrincipalSearch ?? false
+          }
+        />
+      ),
+    },
+    {
+      title: "Share access",
+      isOptional: true,
+      content: (
+        <AssignmentsForm
+          enablePrincipalSearch={
+            globalConfig?.leases?.enablePrincipalSearch ?? false
+          }
+          ownerEmail={watch("userEmail")}
+        />
+      ),
     },
     {
       title: "Terms of Service",
@@ -155,13 +196,18 @@ export const AssignLease = () => {
     },
     {
       title: "Review & Submit",
-      content: (
+      content: isTemplateLoading ? (
+        <Loader label="Loading review..." />
+      ) : (
         <SpaceBetween direction="vertical" size="l">
           <ReviewForm
             data={{
               leaseTemplateUuid: methods.watch("leaseTemplateUuid"),
               userEmail: methods.watch("userEmail"),
             }}
+          />
+          <PendingAssignmentsList
+            desiredAssignments={methods.watch("assignments")}
           />
           <Container>
             <TextareaField

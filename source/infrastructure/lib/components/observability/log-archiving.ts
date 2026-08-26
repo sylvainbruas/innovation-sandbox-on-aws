@@ -9,7 +9,7 @@ import { getContextFromMapping } from "@amzn/innovation-sandbox-infrastructure/h
 import { addCfnGuardSuppression } from "@amzn/innovation-sandbox-infrastructure/helpers/cfn-guard";
 import { isDevMode } from "@amzn/innovation-sandbox-infrastructure/helpers/deployment-mode";
 import { IsbComputeResources } from "@amzn/innovation-sandbox-infrastructure/isb-compute-resources";
-import { Duration, RemovalPolicy, Stack, Token } from "aws-cdk-lib";
+import { Duration, Fn, RemovalPolicy, Stack, Token } from "aws-cdk-lib";
 import {
   Effect,
   PolicyStatement,
@@ -116,7 +116,7 @@ export class LogArchiving extends Construct {
       }),
     );
 
-    const globalLogGroup = IsbLogGroups.globalLogGroup(scope, props.namespace);
+    const archivedLogGroups = IsbLogGroups.getAllGroups(scope, props.namespace);
     const EXPORT_PERIOD_DAYS = 7;
 
     const logArchivingLambda = new IsbLambdaFunction(this, id, {
@@ -137,14 +137,18 @@ export class LogArchiving extends Construct {
       namespace: props.namespace,
       environment: {
         DESTINATION_PREFIX: "isb-archive",
-        LOG_GROUP_NAME: globalLogGroup.logGroupName,
         DESTINATION_BUCKET_NAME: archivingBucket.bucketName,
         ISB_NAMESPACE: props.namespace,
         EXPORT_PERIOD_DAYS: String(EXPORT_PERIOD_DAYS),
+        LOG_GROUP_NAMES: Fn.join(
+          ",",
+          archivedLogGroups.map((lg) => lg.logGroupName),
+        ),
       },
       logGroup: IsbComputeResources.globalLogGroup,
       envSchema: LogArchivingEnvironmentSchema,
       reservedConcurrentExecutions: 1,
+      timeout: Duration.minutes(15),
     });
 
     const role = new Role(scope, "LogArchivingLambdaInvokeRole", {
@@ -158,24 +162,26 @@ export class LogArchiving extends Construct {
     logArchivingLambda.lambdaFunction.addToRolePolicy(
       new PolicyStatement({
         effect: Effect.ALLOW,
-        actions: [
-          "logs:CreateExportTask",
-          "logs:DescribeExportTasks",
-          "logs:DescribeLogStreams",
-          "logs:ReadLogGroup",
-          "logs:ReadLogStream",
-        ],
-        resources: [
-          `${globalLogGroup.logGroupArn}:*`,
-          `${globalLogGroup.logGroupArn}:log-stream/*`,
-        ],
+        actions: ["logs:CreateExportTask", "logs:DescribeLogStreams"],
+        resources: archivedLogGroups.flatMap((logGroup) => [
+          `${logGroup.logGroupArn}:*`,
+          `${logGroup.logGroupArn}:log-stream/*`,
+        ]),
+      }),
+    );
+
+    logArchivingLambda.lambdaFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ["logs:DescribeExportTasks"],
+        resources: ["*"],
       }),
     );
 
     kmsKey.grantEncryptDecrypt(logArchivingLambda.lambdaFunction);
 
     new CfnSchedule(scope, "LogArchivingScheduledEvent", {
-      description: `Invokes Log Archiving ${EXPORT_PERIOD_DAYS} days`,
+      description: `Invokes Log Archiving every ${EXPORT_PERIOD_DAYS} days`,
       scheduleExpression: `rate(${EXPORT_PERIOD_DAYS} days)`,
       flexibleTimeWindow: {
         mode: "FLEXIBLE",

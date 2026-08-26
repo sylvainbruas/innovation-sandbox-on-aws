@@ -13,7 +13,7 @@ import { Uint8ArrayBlobAdapter } from "@smithy/util-stream";
 
 import { GlobalConfigStore } from "@amzn/innovation-sandbox-commons/data/global-config/global-config-store.js";
 import {
-  GlobalConfig,
+  AppConfigGlobalConfig,
   GlobalConfigSchema,
 } from "@amzn/innovation-sandbox-commons/data/global-config/global-config.js";
 import { IsbClients } from "@amzn/innovation-sandbox-commons/sdk-clients/index.js";
@@ -48,7 +48,9 @@ export class AppConfigGlobalConfigStore extends GlobalConfigStore {
     this.lambdaEnv = props.lambdaEnv;
   }
 
-  public async put(globalConfig: GlobalConfig): Promise<GlobalConfig> {
+  public async put(
+    globalConfig: AppConfigGlobalConfig,
+  ): Promise<AppConfigGlobalConfig> {
     const createHostedConfigurationVersionResponse = await IsbClients.appConfig(
       this.lambdaEnv,
     ).send(
@@ -85,10 +87,10 @@ export class AppConfigGlobalConfigStore extends GlobalConfigStore {
       Buffer.from(createHostedConfigurationVersionResponse.Content!).toString(
         "utf8",
       ),
-    ) as GlobalConfig;
+    ) as AppConfigGlobalConfig;
   }
 
-  public async get(): Promise<GlobalConfig> {
+  public async get(): Promise<AppConfigGlobalConfig> {
     if (!this.configurationToken) {
       const startSessionResponse = await IsbClients.appConfigData(
         this.lambdaEnv,

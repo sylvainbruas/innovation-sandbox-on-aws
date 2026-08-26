@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 export const validateNumber = (val: any) => {
-  if (isNaN(val) || val.toString() === "") {
+  if (Number.isNaN(Number(val)) || val.toString() === "") {
     return "Please enter a valid number.";
   }
   if (val === 0) {

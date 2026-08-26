@@ -41,9 +41,11 @@ export class EventsToSqsToLambda extends Construct {
           contentBasedDeduplication: true,
           encryption: QueueEncryption.KMS,
           encryptionMasterKey: kmsKey,
+          enforceSSL: true,
         }),
       },
       ...props.queueProps,
+      enforceSSL: true,
     });
 
     const rule = new Rule(this, "AccountLifeCycleEventsRule", props.ruleProps);

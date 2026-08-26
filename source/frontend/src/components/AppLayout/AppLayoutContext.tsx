@@ -7,7 +7,6 @@ interface AppLayoutContextType {
   toolsOpen: boolean;
   setTools: (tools: ReactNode) => void;
   setToolsOpen: (open: boolean) => void;
-  setToolsHide: (hide: boolean) => void;
 }
 
 const AppLayoutContext = createContext<AppLayoutContextType | undefined>(
@@ -45,18 +44,13 @@ export const AppLayoutProvider: React.FC<AppLayoutProviderProps> = ({
     onToolsChange(open);
   };
 
-  const setToolsHide = (hide: boolean) => {
-    onToolsChange(!hide);
-  };
-
   const value = useMemo(
     () => ({
       toolsOpen,
       setTools,
       setToolsOpen,
-      setToolsHide,
     }),
-    [toolsOpen, setTools, setToolsOpen, setToolsHide],
+    [toolsOpen, setTools, setToolsOpen],
   );
 
   return (

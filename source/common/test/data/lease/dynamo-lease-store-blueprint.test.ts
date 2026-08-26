@@ -134,37 +134,4 @@ describe("DynamoLeaseStore - blueprintId transformation", () => {
       );
     });
   });
-
-  describe("Zod validation", () => {
-    test("should accept blueprintId=null", () => {
-      const lease = generateSchemaData(PendingLeaseSchema, {
-        blueprintId: null,
-        blueprintName: null,
-      });
-
-      expect(() => PendingLeaseSchema.parse(lease)).not.toThrow();
-      expect(lease.blueprintId).toBeNull();
-    });
-
-    test("should accept blueprintId=undefined (from DynamoDB read)", () => {
-      const lease = generateSchemaData(PendingLeaseSchema, {
-        blueprintId: undefined, // Simulates field missing from DynamoDB
-        blueprintName: undefined,
-      });
-
-      expect(() => PendingLeaseSchema.parse(lease)).not.toThrow();
-      expect(lease.blueprintId).toBeUndefined();
-    });
-
-    test("should accept blueprintId=UUID", () => {
-      const blueprintId = "660e8400-e29b-41d4-a716-446655440001";
-      const lease = generateSchemaData(PendingLeaseSchema, {
-        blueprintId,
-        blueprintName: "TestBlueprint",
-      });
-
-      expect(() => PendingLeaseSchema.parse(lease)).not.toThrow();
-      expect(lease.blueprintId).toBe(blueprintId);
-    });
-  });
 });

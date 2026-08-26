@@ -78,10 +78,12 @@ export const AddLeaseTemplate = () => {
   } = useGetConfigurations();
   const globalMaxBudget = config?.leases.maxBudget;
   const requireMaxBudget = config?.leases.requireMaxBudget || false;
-  const requireCostReportGroup = config?.requireCostReportGroup || false;
-  const costReportGroups = config?.costReportGroups;
+  const requireCostReportGroup =
+    config?.costReporting.requireCostReportGroup || false;
+  const costReportGroups = config?.costReporting.costReportGroups;
   const globalMaxDurationHours = config?.leases.maxDurationHours;
   const requireMaxDuration = config?.leases.requireMaxDuration || false;
+  const leaseSharingEnabled = config?.leases.leaseSharingEnabled || false;
 
   // Create combined validation schema
   const validationSchema = useMemo(
@@ -106,6 +108,7 @@ export const AddLeaseTemplate = () => {
       description: "",
       requiresApproval: true,
       visibility: "PRIVATE",
+      allowOwnerToShareLease: false,
       // Budget Settings
       maxBudgetEnabled: true,
       maxSpend: undefined,
@@ -115,7 +118,8 @@ export const AddLeaseTemplate = () => {
       leaseDurationInHours: undefined,
       durationThresholds: [],
       // Cost Report Settings
-      costReportGroupEnabled: config?.requireCostReportGroup ?? false,
+      costReportGroupEnabled:
+        config?.costReporting.requireCostReportGroup ?? false,
       selectedCostReportGroup: undefined,
       blueprintEnabled: true,
       blueprintId: undefined,
@@ -141,7 +145,13 @@ export const AddLeaseTemplate = () => {
     if (requestedStepIndex > activeStepIndex) {
       // Check if current step has errors
       const stepFields: Array<Array<keyof LeaseTemplateFormValues>> = [
-        ["name", "description", "requiresApproval", "visibility"],
+        [
+          "name",
+          "description",
+          "requiresApproval",
+          "visibility",
+          "allowOwnerToShareLease",
+        ],
         ["blueprintId"],
         ["maxBudgetEnabled", "maxSpend", "budgetThresholds"],
         ["maxDurationEnabled", "leaseDurationInHours", "durationThresholds"],
@@ -188,6 +198,7 @@ export const AddLeaseTemplate = () => {
         durationThresholds: values.durationThresholds,
         costReportGroup: values.selectedCostReportGroup,
         blueprintId: values.blueprintId,
+        allowOwnerToShareLease: values.allowOwnerToShareLease,
       };
 
       await addLeaseTemplate(leaseTemplate);
@@ -253,7 +264,7 @@ export const AddLeaseTemplate = () => {
               title: "Basic Details",
               content: (
                 <Container>
-                  <BasicDetailsForm />
+                  <BasicDetailsForm leaseSharingEnabled={leaseSharingEnabled} />
                 </Container>
               ),
               description: "Basic information",
@@ -324,8 +335,12 @@ export const AddLeaseTemplate = () => {
                     costReportGroup: methods.watch("selectedCostReportGroup"),
                     blueprintId: methods.watch("blueprintId"),
                     blueprintName: methods.watch("blueprintName"),
+                    allowOwnerToShareLease: methods.watch(
+                      "allowOwnerToShareLease",
+                    ),
                   }}
                   showEditButtons={false}
+                  leaseSharingEnabled={leaseSharingEnabled}
                 />
               ),
               description: "Review your lease template configuration",

@@ -10,7 +10,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { LeaseTemplate } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
 import { TemplateSelectionForm } from "@amzn/innovation-sandbox-frontend/domains/leases/components/TemplateSelectionForm";
-import { config } from "@amzn/innovation-sandbox-frontend/helpers/config";
+import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import {
   mockAdvancedLeaseTemplate,
   mockBasicLeaseTemplate,
@@ -74,7 +74,7 @@ describe("TemplateSelectionForm", () => {
 
   test("handles error when fetching lease templates fails", async () => {
     server.use(
-      http.get(`${config.ApiUrl}/leaseTemplates`, () => {
+      http.get(`${getConfig().ApiUrl}/leaseTemplates`, () => {
         return HttpResponse.json(
           { status: "error", message: "Failed to fetch lease templates" },
           { status: 500 },
@@ -93,7 +93,7 @@ describe("TemplateSelectionForm", () => {
 
   test("displays loading state while fetching templates", async () => {
     server.use(
-      http.get(`${config.ApiUrl}/leaseTemplates`, async () => {
+      http.get(`${getConfig().ApiUrl}/leaseTemplates`, async () => {
         await new Promise((resolve) => setTimeout(resolve, 100));
         return HttpResponse.json({
           status: "success",
@@ -135,7 +135,7 @@ describe("TemplateSelectionForm", () => {
 
   test("displays no templates message when no templates are available", async () => {
     server.use(
-      http.get(`${config.ApiUrl}/leaseTemplates`, () => {
+      http.get(`${getConfig().ApiUrl}/leaseTemplates`, () => {
         return HttpResponse.json({
           status: "success",
           data: { result: [], nextPageIdentifier: null },
@@ -220,7 +220,7 @@ describe("TemplateSelectionForm", () => {
     ];
 
     server.use(
-      http.get(`${config.ApiUrl}/leaseTemplates`, () => {
+      http.get(`${getConfig().ApiUrl}/leaseTemplates`, () => {
         return HttpResponse.json({
           status: "success",
           data: { result: searchableTemplates, nextPageIdentifier: null },
@@ -286,7 +286,7 @@ describe("TemplateSelectionForm", () => {
     }));
 
     server.use(
-      http.get(`${config.ApiUrl}/leaseTemplates`, () => {
+      http.get(`${getConfig().ApiUrl}/leaseTemplates`, () => {
         return HttpResponse.json({
           status: "success",
           data: { result: manyTemplates, nextPageIdentifier: null },
@@ -341,7 +341,7 @@ describe("TemplateSelectionForm", () => {
     }));
 
     server.use(
-      http.get(`${config.ApiUrl}/leaseTemplates`, () => {
+      http.get(`${getConfig().ApiUrl}/leaseTemplates`, () => {
         return HttpResponse.json({
           status: "success",
           data: { result: manyTemplates, nextPageIdentifier: null },

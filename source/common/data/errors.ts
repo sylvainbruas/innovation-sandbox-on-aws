@@ -21,3 +21,30 @@ export class ItemAlreadyExists extends Error {
     this.name = "ItemAlreadyExists";
   }
 }
+
+export class BatchUnprocessedItemsError extends Error {
+  public readonly unprocessedCount: number;
+
+  constructor(unprocessedCount: number) {
+    super(`${unprocessedCount} unprocessed item(s) remaining`);
+    this.name = "BatchUnprocessedItemsError";
+    this.unprocessedCount = unprocessedCount;
+  }
+}
+
+export class BatchGetUnprocessedKeysError extends Error {
+  public readonly unprocessedCount: number;
+
+  constructor(unprocessedCount: number) {
+    super(`${unprocessedCount} unprocessed key(s) remaining`);
+    this.name = "BatchGetUnprocessedKeysError";
+    this.unprocessedCount = unprocessedCount;
+  }
+}
+
+export class ResourceLockConflictError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ResourceLockConflictError";
+  }
+}

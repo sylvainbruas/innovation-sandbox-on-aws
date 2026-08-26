@@ -8,7 +8,7 @@ import { BrowserRouter as Router } from "react-router-dom";
 import { describe, expect, test, vi } from "vitest";
 
 import { AccountsPanel } from "@amzn/innovation-sandbox-frontend/domains/home/components/AccountsPanel";
-import { config } from "@amzn/innovation-sandbox-frontend/helpers/config";
+import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import { createSandboxAccount } from "@amzn/innovation-sandbox-frontend/mocks/factories/accountFactory";
 import { mockAccountApi } from "@amzn/innovation-sandbox-frontend/mocks/mockApi";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
@@ -50,7 +50,7 @@ describe("AccountsPanel", () => {
 
   test("displays loading state while fetching accounts", async () => {
     server.use(
-      http.get(`${config.ApiUrl}/accounts`, () => {
+      http.get(`${getConfig().ApiUrl}/accounts`, () => {
         return new Promise((resolve) =>
           setTimeout(() => resolve(HttpResponse.json([])), 100),
         );
@@ -143,7 +143,7 @@ describe("AccountsPanel", () => {
 
   test("handles error state", async () => {
     server.use(
-      http.get(`${config.ApiUrl}/accounts`, () => {
+      http.get(`${getConfig().ApiUrl}/accounts`, () => {
         return HttpResponse.json(
           { status: "error", message: "Internal Server Error" },
           { status: 500 },

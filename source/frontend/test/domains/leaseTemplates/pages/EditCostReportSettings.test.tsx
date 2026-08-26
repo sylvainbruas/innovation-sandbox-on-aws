@@ -12,7 +12,8 @@ import {
   showSuccessToast,
 } from "@amzn/innovation-sandbox-frontend/components/Toast";
 import { EditCostReportSettings } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/pages/EditCostReportSettings";
-import { config } from "@amzn/innovation-sandbox-frontend/helpers/config";
+import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
+import { createConfiguration } from "@amzn/innovation-sandbox-frontend/mocks/factories/configurationFactory";
 import { mockBasicLeaseTemplate } from "@amzn/innovation-sandbox-frontend/mocks/handlers/leaseTemplateHandlers";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
 import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
@@ -76,7 +77,7 @@ describe("EditCostReportSettings", () => {
     const submitSpy = vi.fn();
     server.use(
       http.put(
-        `${config.ApiUrl}/leaseTemplates/${mockUuid}`,
+        `${getConfig().ApiUrl}/leaseTemplates/${mockUuid}`,
         async ({ request }) => {
           const data = await request.json();
           submitSpy(data);
@@ -115,7 +116,7 @@ describe("EditCostReportSettings", () => {
 
   test("displays error toast on submission failure", async () => {
     server.use(
-      http.put(`${config.ApiUrl}/leaseTemplates/${mockUuid}`, () => {
+      http.put(`${getConfig().ApiUrl}/leaseTemplates/${mockUuid}`, () => {
         return HttpResponse.json(
           { status: "error", message: "Update failed" },
           { status: 500 },
@@ -161,5 +162,60 @@ describe("EditCostReportSettings", () => {
 
     const saveButton = screen.getByRole("button", { name: /save changes/i });
     expect(saveButton).toBeDisabled();
+  });
+
+  test("assigns a group when required and none was previously set", async () => {
+    // Regression: with a required group and none set, the enable toggle is
+    // forced-on-but-disabled, so costReportGroupEnabled stays false. Selecting a
+    // group must still submit it (not undefined).
+    const configWithRequired = createConfiguration({
+      costReporting: {
+        costReportGroups: ["group-a", "group-b"],
+        requireCostReportGroup: true,
+      },
+    });
+
+    let submittedData: any = null;
+    server.use(
+      http.get(`${getConfig().ApiUrl}/configurations`, () =>
+        HttpResponse.json({ status: "success", data: configWithRequired }),
+      ),
+      http.get(`${getConfig().ApiUrl}/leaseTemplates/${mockUuid}`, () =>
+        HttpResponse.json({
+          status: "success",
+          data: { ...mockBasicLeaseTemplate, costReportGroup: undefined },
+        }),
+      ),
+      http.put(
+        `${getConfig().ApiUrl}/leaseTemplates/${mockUuid}`,
+        async ({ request }) => {
+          submittedData = await request.json();
+          return HttpResponse.json({ status: "success", data: submittedData });
+        },
+      ),
+    );
+
+    renderComponent();
+    const user = userEvent.setup();
+
+    await waitFor(() => {
+      expect(
+        screen.getByText(/Edit Cost Report Settings/i),
+      ).toBeInTheDocument();
+    });
+
+    // Open the select and choose a group.
+    const selectTrigger = screen
+      .getAllByRole("button")
+      .find((btn) => btn.textContent?.includes("Select a cost report group"));
+    expect(selectTrigger).toBeDefined();
+    await user.click(selectTrigger!);
+    await user.click(await screen.findByText("group-b"));
+
+    const saveButton = screen.getByRole("button", { name: /save changes/i });
+    await waitFor(() => expect(saveButton).not.toBeDisabled());
+    await user.click(saveButton);
+
+    await waitFor(() => expect(submittedData?.costReportGroup).toBe("group-b"));
   });
 });

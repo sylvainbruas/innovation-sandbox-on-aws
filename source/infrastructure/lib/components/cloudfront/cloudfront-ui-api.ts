@@ -60,9 +60,18 @@ import { isDevMode } from "@amzn/innovation-sandbox-infrastructure/helpers/deplo
 export interface CloudFrontUiApiProps {
   restApi: ApiGatewayRestApi;
   namespace: string;
+  cognitoUserPoolId: string;
+  cognitoAppClientId: string;
+  cognitoIdentityPoolId: string;
+  cognitoDomain: string;
+  awsAccessPortalUrl: string;
+  customDomainName: string;
+  customDomainCertificateArn: string;
 }
 
 export class CloudfrontUiApi extends Construct {
+  public readonly distributionDomainName: string;
+
   constructor(scope: Construct, id: string, props: CloudFrontUiApiProps) {
     super(scope, id);
     const kmsKey = IsbKmsKeys.get(scope, props.namespace);
@@ -152,15 +161,24 @@ export class CloudfrontUiApi extends Construct {
       this,
       "IsbCloudFrontDistributionOac",
       {
-        originAccessControlName: "IsbCloudFrontDistributionOac",
+        originAccessControlName: `${props.namespace}-IsbCloudFrontDistributionOac`,
         signing: Signing.SIGV4_ALWAYS,
       },
     );
+
+    const connectSrcDirectives = [
+      "'self'",
+      "https://api.github.com",
+      `https://${props.cognitoDomain}.auth.${Stack.of(this).region}.amazoncognito.com`,
+      `https://cognito-idp.${Stack.of(this).region}.amazonaws.com`,
+      `https://cognito-identity.${Stack.of(this).region}.amazonaws.com`,
+    ];
 
     const responseHeadersPolicy = new ResponseHeadersPolicy(
       this,
       "IsbCloudFrontResponseHeadersPolicy",
       {
+        responseHeadersPolicyName: `${props.namespace}-IsbCloudFrontResponseHeadersPolicy`,
         securityHeadersBehavior: {
           contentTypeOptions: {
             override: true,
@@ -187,7 +205,7 @@ export class CloudfrontUiApi extends Construct {
               "style-src 'self';",
               "img-src 'self' data:;",
               "font-src 'self' data:;",
-              "connect-src 'self' https://api.github.com;",
+              `connect-src ${connectSrcDirectives.join(" ")};`,
               "manifest-src 'self';",
               "frame-ancestors 'none';",
               "base-uri 'none';",
@@ -211,6 +229,7 @@ export class CloudfrontUiApi extends Construct {
       this,
       "IsbApiCloudFrontResponseHeadersPolicy",
       {
+        responseHeadersPolicyName: `${props.namespace}-IsbApiCloudFrontResponseHeadersPolicy`,
         securityHeadersBehavior: {
           contentTypeOptions: {
             override: true,
@@ -235,7 +254,7 @@ export class CloudfrontUiApi extends Construct {
       "IsbPathRewriteCloudFrontFunction",
       {
         runtime: FunctionRuntime.JS_2_0,
-        functionName: "IsbPathRewriteCloudFrontFunction",
+        functionName: `${props.namespace}-IsbPathRewriteCloudFrontFunction`,
         code: CloudFrontFunctionCode.fromInline(`
           function handler (event) {
             const request = event.request;
@@ -258,12 +277,20 @@ export class CloudfrontUiApi extends Construct {
       "IsbS3OriginPathRedirectCloudFrontFunction",
       {
         runtime: FunctionRuntime.JS_2_0,
-        functionName: "IsbS3OriginPathRedirectCloudFrontFunction",
+        functionName: `${props.namespace}-IsbS3OriginPathRedirectCloudFrontFunction`,
         code: CloudFrontFunctionCode.fromInline(`
           function handler(event) {
-            const request = event.request;
-            const hasType = request.uri.split(/\\#|\\?/)[0].split(".").length >= 2;
-            if (hasType) return request;
+            var request = event.request;
+            var uri = request.uri;
+            // A dot after the last slash = the last segment has a file extension
+            // (e.g. /assets/app.js) -> serve as-is; otherwise it's a client-side route.
+            // No regex on purpose: a prior version used request.uri.split(/\\#|\\?/)
+            // and a long URI (e.g. a ~127-char base64 leaseId path) failed with
+            // "RangeError: Regex execute instruction limit exceeded" -> 503,
+            // probably the regex evaluation exceeding its time/step budget.
+            var slash = uri.lastIndexOf("/");
+            var dot = uri.lastIndexOf(".");
+            if (dot > slash) return request;
             request.uri = "/index.html";
             return request;
           }
@@ -309,7 +336,7 @@ export class CloudfrontUiApi extends Construct {
       comment: "ISB CloudFront Distribution",
       priceClass: PriceClass.PRICE_CLASS_ALL,
       httpVersion: HttpVersion.HTTP2,
-      minimumProtocolVersion: SecurityPolicyProtocol.TLS_V1_2_2019,
+      minimumProtocolVersion: SecurityPolicyProtocol.TLS_V1_2_2021,
       enableIpv6: false,
     });
 
@@ -328,6 +355,41 @@ export class CloudfrontUiApi extends Construct {
       ),
     );
 
+    // Attach the custom domain alias + ACM certificate only when both a domain
+    // and a us-east-1 certificate are provided. A domain without a certificate
+    // is the "front ISB with your own edge" case: the base URL is set elsewhere
+    // but the distribution keeps its default certificate.
+    const attachCustomDomain = new CfnCondition(this, "AttachCustomDomain", {
+      expression: Fn.conditionAnd(
+        Fn.conditionNot(Fn.conditionEquals(props.customDomainName, "")),
+        Fn.conditionNot(
+          Fn.conditionEquals(props.customDomainCertificateArn, ""),
+        ),
+      ),
+    });
+
+    cfnDistribution.addPropertyOverride(
+      "DistributionConfig.Aliases",
+      Fn.conditionIf(
+        attachCustomDomain.logicalId,
+        [props.customDomainName],
+        Fn.ref("AWS::NoValue"),
+      ),
+    );
+
+    cfnDistribution.addPropertyOverride(
+      "DistributionConfig.ViewerCertificate",
+      Fn.conditionIf(
+        attachCustomDomain.logicalId,
+        {
+          AcmCertificateArn: props.customDomainCertificateArn,
+          SslSupportMethod: "sni-only",
+          MinimumProtocolVersion: "TLSv1.2_2021",
+        },
+        Fn.ref("AWS::NoValue"),
+      ),
+    );
+
     new BucketDeployment(this, "DeployIsbFrontEnd", {
       sources: [
         Source.asset(
@@ -335,6 +397,16 @@ export class CloudfrontUiApi extends Construct {
             path.join(__dirname, "..", "..", "..", "..", "frontend"),
           ),
         ),
+        Source.jsonData("config.json", {
+          CognitoUserPoolId: props.cognitoUserPoolId,
+          CognitoAppClientId: props.cognitoAppClientId,
+          CognitoIdentityPoolId: props.cognitoIdentityPoolId,
+          CognitoDomain: props.cognitoDomain,
+          Region: Stack.of(this).region,
+          AwsAccessPortalUrl: props.awsAccessPortalUrl,
+          ApiGatewayHost: `${props.restApi.restApiId}.execute-api.${Stack.of(this).region}.${Stack.of(this).urlSuffix}`,
+          ApiGatewayStage: props.restApi.deploymentStage.stageName,
+        }),
       ],
       destinationBucket: feBucket,
       distribution: distribution,
@@ -372,6 +444,8 @@ export class CloudfrontUiApi extends Construct {
       key: "CloudFrontDistributionUrl",
       value: `https://${distribution.distributionDomainName}`,
     });
+
+    this.distributionDomainName = distribution.distributionDomainName;
 
     addCfnGuardSuppression(feBucket, ["S3_BUCKET_LOGGING_ENABLED"]);
     addCfnGuardSuppression(loggingBucket, ["S3_BUCKET_LOGGING_ENABLED"]);

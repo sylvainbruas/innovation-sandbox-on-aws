@@ -12,7 +12,7 @@ import { z } from "zod";
 export const BudgetSettingsValidationSchema = z.object({
   maxBudgetEnabled: z.boolean(),
   maxSpend: z
-    .number({ invalid_type_error: "Maximum spend must be a number" })
+    .number({ error: "Maximum spend must be a number" })
     .gt(0, "Maximum spend must be greater than 0")
     .optional(),
   budgetThresholds: z
@@ -20,12 +20,14 @@ export const BudgetSettingsValidationSchema = z.object({
       z.object({
         dollarsSpent: z
           .number({
-            required_error: "Threshold amount is required",
-            invalid_type_error: "Threshold amount must be a number",
+            error: (issue) =>
+              issue.input === undefined
+                ? "Threshold amount is required"
+                : "Threshold amount must be a number",
           })
           .gt(0, "Threshold amount must be greater than 0"),
         action: z.enum(["ALERT", "FREEZE_ACCOUNT"], {
-          required_error: "Threshold action is required",
+          error: "Threshold action is required",
         }),
       }),
     )
@@ -35,21 +37,23 @@ export const BudgetSettingsValidationSchema = z.object({
 export const DurationSettingsValidationSchema = z.object({
   maxDurationEnabled: z.boolean(),
   leaseDurationInHours: z
-    .number({ invalid_type_error: "Duration must be a number" })
+    .number({ error: "Duration must be a number" })
     .gt(0, "Duration must be greater than 0")
     .optional(),
-  expirationDate: z.string().datetime().optional(),
+  expirationDate: z.iso.datetime().optional(),
   durationThresholds: z
     .array(
       z.object({
         hoursRemaining: z
           .number({
-            required_error: "Threshold amount is required",
-            invalid_type_error: "Threshold amount must be a number",
+            error: (issue) =>
+              issue.input === undefined
+                ? "Threshold amount is required"
+                : "Threshold amount must be a number",
           })
           .gt(0, "Hours remaining must be greater than 0"),
         action: z.enum(["ALERT", "FREEZE_ACCOUNT"], {
-          required_error: "Threshold action is required",
+          error: "Threshold action is required",
         }),
       }),
     )
@@ -61,9 +65,17 @@ export const CostReportSettingsValidationSchema = z.object({
   selectedCostReportGroup: z.string().optional(),
 });
 
+export const SharingSettingsValidationSchema = z.object({
+  allowOwnerToShareLease: z.boolean(),
+});
+
+export type SharingSettingsFormValues = z.infer<
+  typeof SharingSettingsValidationSchema
+>;
+
 export const BlueprintSelectionValidationSchema = z.object({
   blueprintEnabled: z.boolean(),
-  blueprintId: z.string().uuid().nullish(),
+  blueprintId: z.uuid().nullish(),
   blueprintName: z.string().nullish(),
 });
 

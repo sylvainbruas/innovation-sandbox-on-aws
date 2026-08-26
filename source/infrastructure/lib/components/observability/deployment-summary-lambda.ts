@@ -1,6 +1,6 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
-import { ArnFormat, Stack } from "aws-cdk-lib";
+import { Aws, ArnFormat, Duration, Stack } from "aws-cdk-lib";
 import {
   Effect,
   PolicyStatement,
@@ -12,7 +12,10 @@ import { Construct } from "constructs";
 import path from "path";
 
 import { DeploymentSummaryLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/deployment-summary-lambda-environment";
-import { addAppConfigExtensionLayer } from "@amzn/innovation-sandbox-infrastructure/components/config/app-config-lambda-extension";
+import {
+  buildM2mRolePrefix,
+  M2M_ROLE_NAME_INFIX,
+} from "@amzn/innovation-sandbox-commons/utils/m2m-role-arn";
 import { IsbLambdaFunction } from "@amzn/innovation-sandbox-infrastructure/components/isb-lambda-function";
 import { AnonymizedMetricsProps } from "@amzn/innovation-sandbox-infrastructure/components/observability/anonymized-metrics-reporting";
 import {
@@ -20,7 +23,6 @@ import {
   IntermediateRole,
 } from "@amzn/innovation-sandbox-infrastructure/helpers/isb-roles";
 import {
-  grantIsbAppConfigRead,
   grantIsbDbReadOnly,
   grantIsbSsmParameterRead,
 } from "@amzn/innovation-sandbox-infrastructure/helpers/policy-generators";
@@ -35,10 +37,7 @@ export class DeploymentSummaryLambda extends Construct {
       accountTable,
       leaseTemplateTable,
       blueprintTable,
-      configApplicationId,
-      configEnvironmentId,
-      globalConfigConfigurationProfileId,
-      reportingConfigConfigurationProfileId,
+      configTableName,
     } = IsbComputeStack.sharedSpokeConfig.data;
 
     const lambda = new IsbLambdaFunction(scope, "ReportingFunction", {
@@ -59,6 +58,7 @@ export class DeploymentSummaryLambda extends Construct {
       handler: "handler",
       namespace: props.namespace,
       environment: {
+        CONFIG_TABLE_NAME: configTableName,
         METRICS_URL: props.metricsUrl,
         SOLUTION_ID: props.solutionId,
         SOLUTION_VERSION: props.solutionVersion,
@@ -68,6 +68,8 @@ export class DeploymentSummaryLambda extends Construct {
         ACCOUNT_TABLE_NAME: accountTable,
         LEASE_TEMPLATE_TABLE_NAME: leaseTemplateTable,
         BLUEPRINT_TABLE_NAME: blueprintTable,
+        PRINCIPAL_TABLE_NAME:
+          IsbComputeStack.sharedSpokeConfig.data.principalTable,
         ISB_NAMESPACE: props.namespace,
         ORG_MGT_ROLE_ARN: getOrgMgtRoleArn(
           scope,
@@ -75,19 +77,17 @@ export class DeploymentSummaryLambda extends Construct {
           props.orgManagementAccountId,
         ),
         INTERMEDIATE_ROLE_ARN: IntermediateRole.getRoleArn(),
-        APP_CONFIG_APPLICATION_ID: configApplicationId,
-        APP_CONFIG_ENVIRONMENT_ID: configEnvironmentId,
-        APP_CONFIG_PROFILE_ID: globalConfigConfigurationProfileId,
-        REPORTING_CONFIG_PROFILE_ID: reportingConfigConfigurationProfileId,
-        AWS_APPCONFIG_EXTENSION_PREFETCH_LIST: `/applications/${configApplicationId}/environments/${configEnvironmentId}/configurations/${globalConfigConfigurationProfileId},/applications/${configApplicationId}/environments/${configEnvironmentId}/configurations/${reportingConfigConfigurationProfileId},`,
         IS_STABLE_TAGGING_ENABLED: props.isStableTaggingEnabled,
         ACCOUNT_POOL_CONFIG_PARAM_ARN:
           IsbComputeStack.sharedSpokeConfig.parameterArns
             .accountPoolConfigParamArn,
+        WAF_WEB_ACL_NAME: props.wafWebAclName,
+        WAF_REGION: Aws.REGION,
       },
       logGroup: IsbComputeResources.globalLogGroup,
       envSchema: DeploymentSummaryLambdaEnvironmentSchema,
       reservedConcurrentExecutions: 1,
+      timeout: Duration.minutes(15),
     });
 
     grantIsbDbReadOnly(
@@ -96,9 +96,9 @@ export class DeploymentSummaryLambda extends Construct {
       leaseTemplateTable,
       accountTable,
       blueprintTable,
+      configTableName,
+      IsbComputeStack.sharedSpokeConfig.data.principalTable,
     );
-    grantIsbAppConfigRead(scope, lambda, globalConfigConfigurationProfileId);
-    grantIsbAppConfigRead(scope, lambda, reportingConfigConfigurationProfileId);
     grantIsbSsmParameterRead(
       lambda.lambdaFunction.role! as Role,
       IsbComputeStack.sharedSpokeConfig.parameterArns.accountPoolConfigParamArn,
@@ -117,7 +117,47 @@ export class DeploymentSummaryLambda extends Construct {
         ],
       }),
     );
-    addAppConfigExtensionLayer(lambda);
+    lambda.lambdaFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ["access-analyzer:ValidatePolicy"],
+        resources: ["*"],
+      }),
+    );
+    // Reads the WAF caller-mix CountedRequests metrics. GetMetricData has no
+    // resource-level scoping.
+    lambda.lambdaFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ["cloudwatch:GetMetricData"],
+        resources: ["*"],
+      }),
+    );
+    // For counting deployed M2M client roles for the heartbeat metric.
+    // iam:ListRoles has no resource-level scoping; tag reads are scoped to this
+    // deployment's M2M roles by their dedicated path + name pattern.
+    lambda.lambdaFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ["iam:ListRoles"],
+        resources: ["*"],
+      }),
+    );
+    lambda.lambdaFunction.addToRolePolicy(
+      new PolicyStatement({
+        effect: Effect.ALLOW,
+        actions: ["iam:ListRoleTags"],
+        resources: [
+          Stack.of(scope).formatArn({
+            service: "iam",
+            region: "",
+            resource: "role",
+            arnFormat: ArnFormat.SLASH_RESOURCE_NAME,
+            resourceName: `${buildM2mRolePrefix(props.namespace)}/${props.namespace}-${M2M_ROLE_NAME_INFIX}-*`,
+          }),
+        ],
+      }),
+    );
 
     IntermediateRole.addTrustedRole(lambda.lambdaFunction.role! as Role);
 

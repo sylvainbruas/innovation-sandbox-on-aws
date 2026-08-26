@@ -49,6 +49,25 @@ export class IsbLogGroups {
     return IsbLogGroups.logGroups[logGroupId]!;
   }
 
+  public static authLogGroup(scope: Construct, namespace: string): LogGroup {
+    const stack = Stack.of(scope);
+    const logGroupId = `${stack.stackName}-ISBLogGroup-Auth`;
+    if (!IsbLogGroups.logGroups[logGroupId]) {
+      const logGroup = new LogGroup(stack, "ISBLogGroup-Auth", {
+        encryptionKey: IsbKmsKeys.get(scope, namespace),
+        removalPolicy: isDevMode(scope)
+          ? RemovalPolicy.DESTROY
+          : RemovalPolicy.RETAIN,
+        retention: Token.asNumber(
+          getContextFromMapping(scope, "cloudWatchLogRetentionInDays"),
+        ),
+      });
+      IsbLogGroups.logGroups[logGroupId] = logGroup;
+      addCfnGuardSuppression(logGroup, ["CW_LOGGROUP_RETENTION_PERIOD_CHECK"]); // Retention period is defined in CfnMapping and evades the CFN Guard check
+    }
+    return IsbLogGroups.logGroups[logGroupId]!;
+  }
+
   public static customResourceLogGroup(
     scope: Construct,
     namespace: string,
@@ -69,5 +88,14 @@ export class IsbLogGroups {
       addCfnGuardSuppression(logGroup, ["CW_LOGGROUP_RETENTION_PERIOD_CHECK"]); // Retention period is defined in CfnMapping and evades the CFN Guard check
     }
     return IsbLogGroups.logGroups[logGroupId]!;
+  }
+
+  public static getAllGroups(scope: Construct, namespace: string): LogGroup[] {
+    return [
+      IsbLogGroups.globalLogGroup(scope, namespace),
+      IsbLogGroups.cleanupLogGroup(scope, namespace),
+      IsbLogGroups.authLogGroup(scope, namespace),
+      IsbLogGroups.customResourceLogGroup(scope, namespace),
+    ];
   }
 }

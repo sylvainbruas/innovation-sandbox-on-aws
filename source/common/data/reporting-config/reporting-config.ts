@@ -7,13 +7,14 @@ export const ReportingConfigSchema = z.object({
     .array(z.string().max(50).min(1))
     .max(100)
     .default([])
-    .describe("List of valid cost report groups that can be used"),
+    .meta({ description: "List of valid cost report groups that can be used" }),
   requireCostReportGroup: z
     .boolean()
     .default(false)
-    .describe(
-      "Whether cost report group is required when creating/updating lease templates",
-    ),
+    .meta({
+      description:
+        "Whether cost report group is required when creating/updating lease templates",
+    }),
 });
 
 export type ReportingConfig = z.infer<typeof ReportingConfigSchema>;

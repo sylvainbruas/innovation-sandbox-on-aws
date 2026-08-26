@@ -1,7 +1,6 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { GlobalConfigSchema } from "@amzn/innovation-sandbox-commons/data/global-config/global-config.js";
 import { MonitoredLeaseSchema } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import {
   SandboxAccount,
@@ -18,6 +17,7 @@ import {
   searchableLeaseProperties,
 } from "@amzn/innovation-sandbox-commons/observability/logging.js";
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
+import { mockGlobalConfig } from "@amzn/innovation-sandbox-commons/test/lambdas/fixtures.js";
 import {
   mockedAccountStore,
   mockedBlueprintDeploymentService,
@@ -25,13 +25,14 @@ import {
   mockedIdcService,
   mockedIsbEventBridge,
   mockedLeaseStore,
+  mockedOrganizationsTaggingService,
   mockedOrgsService,
 } from "@amzn/innovation-sandbox-commons/test/mocking/common-mocks.js";
 import { createMockOf } from "@amzn/innovation-sandbox-commons/test/mocking/mock-utils.js";
 import {
-  IsbUser,
-  IsbUserSchema,
-} from "@amzn/innovation-sandbox-commons/types/isb-types.js";
+  type IdcIdentity,
+  IdcIdentitySchema,
+} from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
 import { datetimeAsString } from "@amzn/innovation-sandbox-commons/utils/time-utils.js";
 import { Logger } from "@aws-lambda-powertools/logger";
 import { Tracer } from "@aws-lambda-powertools/tracer";
@@ -44,16 +45,13 @@ function createMockContext() {
     sandboxAccountStore: mockedAccountStore(),
     idcService: mockedIdcService(),
     orgsService: mockedOrgsService(),
+    organizationsTaggingService: mockedOrganizationsTaggingService(),
     eventBridgeClient: mockedIsbEventBridge(),
     blueprintStore: mockedBlueprintStore(),
     blueprintDeploymentService: mockedBlueprintDeploymentService(),
     logger: createMockOf(Logger),
     tracer: new Tracer(),
-    globalConfig: generateSchemaData(GlobalConfigSchema, {
-      leases: generateSchemaData(GlobalConfigSchema.shape.leases, {
-        ttl: 30,
-      }),
-    }),
+    globalConfig: mockGlobalConfig(),
   };
 }
 
@@ -63,12 +61,12 @@ const currentDateTime = DateTime.fromISO("2024-12-20T08:45:00.000Z", {
 
 describe("InnovationSandbox.terminateLease()", () => {
   let mockContext: ReturnType<typeof createMockContext>;
-  let mockUser: IsbUser;
+  let mockUser: IdcIdentity;
   let mockLeaseAccount: SandboxAccount;
 
   beforeEach(() => {
     mockContext = createMockContext();
-    mockUser = generateSchemaData(IsbUserSchema);
+    mockUser = generateSchemaData(IdcIdentitySchema);
     mockLeaseAccount = generateSchemaData(SandboxAccountSchema, {
       awsAccountId: "000000000000",
     });
@@ -104,7 +102,7 @@ describe("InnovationSandbox.terminateLease()", () => {
     vi.useRealTimers();
   });
 
-  test("HappyPath - terminate active lease", async () => {
+  test("HappyPath - terminate active lease acquires lock and triggers Step Function", async () => {
     const lease = generateSchemaData(MonitoredLeaseSchema, {
       status: "Active",
       awsAccountId: mockLeaseAccount.awsAccountId,
@@ -132,9 +130,31 @@ describe("InnovationSandbox.terminateLease()", () => {
       endDate: currentDateTime.toISO(),
     });
 
-    expect(mockContext.idcService.revokeAllUserAccess).toHaveBeenCalledWith(
-      lease.awsAccountId,
+    // Acquires lock with TERMINATE intent (no desiredAssignments — processor handles clearing)
+    expect(mockContext.leaseStore.acquireLock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        leaseId: lease.uuid,
+        userEmail: lease.userEmail,
+        timeoutSeconds: 900,
+        meta: { intent: "TERMINATE" },
+      }),
     );
+
+    // AssignmentRequested event emitted with TERMINATE intent
+    expect(mockContext.eventBridgeClient.sendIsbEvent).toHaveBeenCalledWith(
+      mockContext.tracer,
+      expect.objectContaining({
+        DetailType: "AssignmentRequested",
+        Detail: expect.objectContaining({
+          intent: "TERMINATE",
+          leaseId: lease.uuid,
+          requestedBy: lease.userEmail,
+          leaseOwnerEmail: lease.userEmail,
+        }),
+      }),
+    );
+
+    // No synchronous revokeAllUserAccess — handled async by Step Function
 
     expect(mockContext.eventBridgeClient.sendIsbEvents).toHaveBeenCalledWith(
       mockContext.tracer,
@@ -158,6 +178,7 @@ describe("InnovationSandbox.terminateLease()", () => {
       status: "Frozen",
       awsAccountId: mockLeaseAccount.awsAccountId,
       userEmail: mockUser.email,
+      leaseDurationInHours: 48,
     });
 
     await InnovationSandbox.terminateLease(
@@ -183,9 +204,7 @@ describe("InnovationSandbox.terminateLease()", () => {
       endDate: currentDateTime.toISO(),
     });
 
-    expect(mockContext.idcService.revokeAllUserAccess).toHaveBeenCalledWith(
-      lease.awsAccountId,
-    );
+    // No assignment records → backward compat path
 
     expect(mockContext.eventBridgeClient.sendIsbEvents).toHaveBeenCalledWith(
       mockContext.tracer,
@@ -221,7 +240,7 @@ describe("InnovationSandbox.terminateLease()", () => {
     );
 
     expect(mockContext.logger.info).toHaveBeenCalledWith(
-      `Lease of type (${lease.originalLeaseTemplateName}) for (${mockUser.email}) terminated. Reason: ManuallyTerminated. SandboxAccount (${mockLeaseAccount.awsAccountId}) sent for cleanup.`,
+      `Lease ${lease.uuid} owned by ${lease.userEmail} terminated: ManuallyTerminated`,
       {
         ...searchableAccountProperties(mockLeaseAccount),
         ...searchableLeaseProperties(lease),
@@ -237,14 +256,12 @@ describe("InnovationSandbox.terminateLease()", () => {
     );
   });
 
-  test("Succeeds when user is not found in IDC (deleted user)", async () => {
+  test("writes the Status tag as CleanUp after the OU move when autoCleanup is true", async () => {
     const lease = generateSchemaData(MonitoredLeaseSchema, {
       status: "Active",
       awsAccountId: mockLeaseAccount.awsAccountId,
-      userEmail: "deleted-user@example.com",
+      userEmail: mockUser.email,
     });
-
-    mockContext.idcService.getUserFromEmail.mockResolvedValue(undefined);
 
     await InnovationSandbox.terminateLease(
       {
@@ -254,20 +271,101 @@ describe("InnovationSandbox.terminateLease()", () => {
       mockContext,
     );
 
-    expect(mockContext.logger.warn).toHaveBeenCalledWith(
-      "User (deleted-user@example.com) not found in IDC. Proceeding with lease termination.",
+    expect(
+      mockContext.organizationsTaggingService.updateStatusTag,
+    ).toHaveBeenCalledWith(mockLeaseAccount.awsAccountId, "CleanUp");
+  });
+
+  test("does NOT write the Status tag when autoCleanup is false", async () => {
+    const lease = generateSchemaData(MonitoredLeaseSchema, {
+      status: "Active",
+      awsAccountId: mockLeaseAccount.awsAccountId,
+      userEmail: mockUser.email,
+    });
+
+    await InnovationSandbox.terminateLease(
+      {
+        lease,
+        expiredStatus: "ManuallyTerminated",
+        autoCleanup: false,
+      },
+      mockContext,
     );
 
-    expect(mockContext.idcService.revokeAllUserAccess).toHaveBeenCalledWith(
-      lease.awsAccountId,
+    expect(
+      mockContext.organizationsTaggingService.updateStatusTag,
+    ).not.toHaveBeenCalled();
+  });
+
+  test("status-tag failure does not block the lifecycle", async () => {
+    const lease = generateSchemaData(MonitoredLeaseSchema, {
+      status: "Active",
+      awsAccountId: mockLeaseAccount.awsAccountId,
+      userEmail: mockUser.email,
+    });
+    mockContext.organizationsTaggingService.updateStatusTag.mockRejectedValue(
+      new Error("AccessDenied"),
     );
 
-    expect(mockContext.leaseStore.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        status: "ManuallyTerminated",
-      }),
+    await InnovationSandbox.terminateLease(
+      { lease, expiredStatus: "ManuallyTerminated" },
+      mockContext,
     );
 
+    // Lifecycle continues — events still emitted.
     expect(mockContext.eventBridgeClient.sendIsbEvents).toHaveBeenCalled();
+  });
+
+  test("propagates error when acquireLock fails with ResourceLockConflictError", async () => {
+    const { ResourceLockConflictError } = await import(
+      "@amzn/innovation-sandbox-commons/data/errors.js"
+    );
+    const lease = generateSchemaData(MonitoredLeaseSchema, {
+      status: "Active",
+      awsAccountId: mockLeaseAccount.awsAccountId,
+      userEmail: mockUser.email,
+    });
+
+    mockContext.leaseStore.acquireLock.mockRejectedValue(
+      new ResourceLockConflictError("Lock held by another operation"),
+    );
+
+    await expect(
+      InnovationSandbox.terminateLease(
+        { lease, expiredStatus: "ManuallyTerminated" },
+        mockContext,
+      ),
+    ).rejects.toThrow("Lock held by another operation");
+
+    // Lease status was updated before lock acquisition attempt
+    expect(mockContext.leaseStore.update).toHaveBeenCalledWith(
+      expect.objectContaining({ status: "ManuallyTerminated" }),
+    );
+
+    // CleanAccountRequest and LeaseTerminatedEvent NOT sent (error thrown before sendIsbEvents)
+    expect(mockContext.eventBridgeClient.sendIsbEvents).not.toHaveBeenCalled();
+  });
+
+  test("holds lock when sendIsbEvent fails for TERMINATE (critical intent)", async () => {
+    const lease = generateSchemaData(MonitoredLeaseSchema, {
+      status: "Active",
+      awsAccountId: mockLeaseAccount.awsAccountId,
+      userEmail: mockUser.email,
+    });
+
+    mockContext.eventBridgeClient.sendIsbEvent.mockRejectedValue(
+      new Error("EventBridge throttled"),
+    );
+
+    await expect(
+      InnovationSandbox.terminateLease(
+        { lease, expiredStatus: "ManuallyTerminated" },
+        mockContext,
+      ),
+    ).rejects.toThrow("EventBridge throttled");
+
+    // Lock was acquired but NOT released (critical intent holds lock)
+    expect(mockContext.leaseStore.acquireLock).toHaveBeenCalled();
+    expect(mockContext.leaseStore.releaseLock).not.toHaveBeenCalled();
   });
 });

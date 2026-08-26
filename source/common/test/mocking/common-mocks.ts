@@ -13,6 +13,7 @@ import { SandboxAccountStore } from "@amzn/innovation-sandbox-commons/data/sandb
 import { SandboxAccount } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
 import { BlueprintDeploymentService } from "@amzn/innovation-sandbox-commons/isb-services/blueprint-deployment-service.js";
 import { IdcService } from "@amzn/innovation-sandbox-commons/isb-services/idc-service.js";
+import { OrganizationsTaggingService } from "@amzn/innovation-sandbox-commons/isb-services/organizations-tagging-service.js";
 import { SandboxOuService } from "@amzn/innovation-sandbox-commons/isb-services/sandbox-ou-service.js";
 import { IsbEventBridgeClient } from "@amzn/innovation-sandbox-commons/sdk-clients/event-bridge-client.js";
 import { createMockOf } from "@amzn/innovation-sandbox-commons/test/mocking/mock-utils.js";
@@ -113,4 +114,8 @@ export function mockTransaction<T>(returnValue: T): Transaction<T> {
     beginTransaction: async () => returnValue,
     rollbackTransaction: async () => {},
   });
+}
+
+export function mockedOrganizationsTaggingService() {
+  return createMockOf(OrganizationsTaggingService);
 }

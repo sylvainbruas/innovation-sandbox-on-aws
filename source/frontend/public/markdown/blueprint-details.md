@@ -86,3 +86,7 @@ You cannot update:
 To unregister this blueprint, choose **Actions** > **Unregister**.
 
 **Before unregistering**: Remove the blueprint from any lease templates that reference it. Existing leases with deployed resources are not affected.
+
+---
+
+For more information, see [Registering and managing blueprints](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/administrator-guide.html#registering-managing-blueprints) in the implementation guide.

@@ -7,22 +7,22 @@ import { IsbEvent } from "@amzn/innovation-sandbox-commons/sdk-clients/event-bri
 import { enumErrorMap } from "@amzn/innovation-sandbox-commons/utils/zod.js";
 
 export const BlueprintDeploymentRequestSchema = z.object({
-  blueprintId: z.string().uuid(),
-  leaseId: z.string().uuid(),
-  userEmail: z.string().email(),
+  blueprintId: z.uuid(),
+  leaseId: z.uuid(),
+  userEmail: z.email(),
   accountId: z.string(),
   blueprintName: z.string(),
   stackSetId: z.string(),
   regions: z.array(z.string()),
   regionConcurrencyType: z.enum(["SEQUENTIAL", "PARALLEL"], {
-    errorMap: enumErrorMap,
+    error: enumErrorMap,
   }),
   deploymentTimeoutMinutes: z.number(),
   maxConcurrentPercentage: z.number().optional(),
   failureTolerancePercentage: z.number().optional(),
   concurrencyMode: z
     .enum(["STRICT_FAILURE_TOLERANCE", "SOFT_FAILURE_TOLERANCE"], {
-      errorMap: enumErrorMap,
+      error: enumErrorMap,
     })
     .optional(),
 });

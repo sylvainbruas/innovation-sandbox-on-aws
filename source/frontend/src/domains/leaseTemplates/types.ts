@@ -21,3 +21,8 @@ export type LeaseTemplateFormData = LeaseTemplate & {
 };
 
 export type NewLeaseTemplate = Omit<LeaseTemplate, "uuid" | "createdBy">;
+
+export type UpdateLeaseTemplate = Omit<
+  LeaseTemplate,
+  "uuid" | "blueprintName" | "createdBy"
+>;

@@ -29,7 +29,7 @@ describe("createHttpJSendValidationError", () => {
           errors: [
             {
               field: "age",
-              message: "Expected number, received string",
+              message: "Invalid input: expected number, received string",
             },
           ],
         },
@@ -47,7 +47,7 @@ describe("createHttpJSendValidationError", () => {
       const parsed = JSON.parse(error.message);
       expect(parsed.data.errors[0]).toMatchObject({
         field: "name",
-        message: "String must contain at least 3 character(s)",
+        message: "Too small: expected string to have >=3 characters",
       });
     }
   });

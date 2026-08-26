@@ -20,12 +20,13 @@ export const LeaseTerminatedReasonTypeSchema = z.enum(
     "Expired",
     "BudgetExceeded",
     "ManuallyTerminated",
+    "UserTerminated",
     "AccountQuarantined",
     "Ejected",
     "ProvisioningFailed",
   ],
   {
-    errorMap: enumErrorMap,
+    error: enumErrorMap,
   },
 );
 
@@ -42,6 +43,11 @@ export const LeaseTerminatedByBudgetSchema = z.object({
 
 export const LeaseTerminatedManualSchema = z.object({
   type: z.literal(LeaseTerminatedReasonTypeSchema.enum.ManuallyTerminated),
+  comment: FreeTextSchema,
+});
+
+export const LeaseTerminatedByUserSchema = z.object({
+  type: z.literal(LeaseTerminatedReasonTypeSchema.enum.UserTerminated),
   comment: FreeTextSchema,
 });
 
@@ -64,6 +70,7 @@ export const LeaseTerminatedReasonSchema = z.discriminatedUnion("type", [
   LeaseTerminatedByDurationSchema,
   LeaseTerminatedByBudgetSchema,
   LeaseTerminatedManualSchema,
+  LeaseTerminatedByUserSchema,
   LeaseTerminatedQuarantinedSchema,
   LeaseTerminatedEjectedSchema,
   LeaseTerminatedProvisioningFailedSchema,
@@ -142,6 +149,11 @@ export function getLeaseTerminatedReason(
       return {
         type: "ManuallyTerminated",
         comment: "Terminated by admin",
+      };
+    case "UserTerminated":
+      return {
+        type: "UserTerminated",
+        comment: "Terminated by user",
       };
     case "AccountQuarantined":
       return {

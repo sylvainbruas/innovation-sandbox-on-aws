@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { BlueprintName } from "@amzn/innovation-sandbox-frontend/components/BlueprintName";
+import { SharingStatusIndicator } from "@amzn/innovation-sandbox-frontend/components/SharingStatusIndicator";
 import { ThresholdDetails } from "@amzn/innovation-sandbox-frontend/components/ThresholdDetails";
 import {
   Box,
@@ -35,8 +36,10 @@ interface LeaseTemplateSummaryProps {
     costReportGroup?: string;
     blueprintId?: string | null;
     blueprintName?: string | null;
+    allowOwnerToShareLease?: boolean;
   };
   showEditButtons?: boolean;
+  leaseSharingEnabled?: boolean;
   onEditBasic?: () => void;
   onEditBlueprint?: () => void;
   onEditBudget?: () => void;
@@ -47,6 +50,7 @@ interface LeaseTemplateSummaryProps {
 export const LeaseTemplateSummary = ({
   leaseTemplate,
   showEditButtons = false,
+  leaseSharingEnabled = false,
   onEditBasic,
   onEditBlueprint,
   onEditBudget,
@@ -111,6 +115,16 @@ export const LeaseTemplateSummary = ({
       },
     );
 
+    items.push({
+      label: "Sharing",
+      value: (
+        <SharingStatusIndicator
+          allowOwnerToShareLease={leaseTemplate.allowOwnerToShareLease}
+          leaseSharingEnabled={leaseSharingEnabled}
+        />
+      ),
+    });
+
     return items;
   };
 
@@ -157,7 +171,7 @@ export const LeaseTemplateSummary = ({
           columns={1}
           items={[
             {
-              label: <Box variant="h3" children={"Blueprint ID"} />,
+              label: <Box variant="h3">Blueprint ID</Box>,
               value: leaseTemplate.blueprintId ? (
                 leaseTemplate.blueprintId
               ) : (
@@ -165,7 +179,7 @@ export const LeaseTemplateSummary = ({
               ),
             },
             {
-              label: <Box variant="h3" children={"Blueprint Name"} />,
+              label: <Box variant="h3">Blueprint Name</Box>,
               value: (
                 <BlueprintName blueprintName={leaseTemplate.blueprintName} />
               ),
@@ -196,7 +210,7 @@ export const LeaseTemplateSummary = ({
             columns={1}
             items={[
               {
-                label: <Box variant="h3" children={"Maximum Budget"} />,
+                label: <Box variant="h3">Maximum Budget</Box>,
                 value:
                   leaseTemplate.maxSpend !== undefined
                     ? `$${leaseTemplate.maxSpend.toFixed(2)}`
@@ -208,7 +222,7 @@ export const LeaseTemplateSummary = ({
             columns={1}
             items={[
               {
-                label: <Box variant="h3" children={"Budget Thresholds"} />,
+                label: <Box variant="h3">Budget Thresholds</Box>,
                 value: (
                   <ThresholdDetails
                     thresholds={leaseTemplate.budgetThresholds}
@@ -246,7 +260,7 @@ export const LeaseTemplateSummary = ({
             columns={1}
             items={[
               {
-                label: <Box variant="h3" children={"Maximum Duration"} />,
+                label: <Box variant="h3">Maximum Duration</Box>,
                 value:
                   leaseTemplate.leaseDurationInHours !== undefined
                     ? `${leaseTemplate.leaseDurationInHours} hours`
@@ -258,7 +272,7 @@ export const LeaseTemplateSummary = ({
             columns={1}
             items={[
               {
-                label: <Box variant="h3" children={"Duration Thresholds"} />,
+                label: <Box variant="h3">Duration Thresholds</Box>,
                 value: (
                   <ThresholdDetails
                     thresholds={leaseTemplate.durationThresholds}

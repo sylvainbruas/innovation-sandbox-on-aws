@@ -41,7 +41,7 @@ export const EditCostReportSettings = () => {
   const setBreadcrumb = useBreadcrumb();
   const { setTools } = useAppLayoutContext();
 
-  const query = useGetLeaseById(leaseId!);
+  const query = useGetLeaseById(leaseId);
   const { data: lease, isLoading, isError, refetch, error } = query;
 
   const { mutateAsync: updateLease, isPending: isUpdating } = useUpdateLease();
@@ -54,8 +54,9 @@ export const EditCostReportSettings = () => {
     refetch: refetchConfig,
     error: configError,
   } = useGetConfigurations();
-  const costReportGroups = config?.costReportGroups ?? [];
-  const requireCostReportGroup = config?.requireCostReportGroup || false;
+  const costReportGroups = config?.costReporting.costReportGroups ?? [];
+  const requireCostReportGroup =
+    config?.costReporting.requireCostReportGroup || false;
 
   // Create dynamic schema based on requirements
   const schema = useMemo(
@@ -104,11 +105,15 @@ export const EditCostReportSettings = () => {
     if (!lease) return;
 
     try {
+      // When a group is required, the enable toggle is disabled (forced on) in
+      // the form, so `costReportGroupEnabled` stays false even though the user
+      // selected a group. Treat "required" as enabled so the selection is sent
+      // rather than discarded as null.
+      const groupEnabled =
+        data.costReportGroupEnabled || requireCostReportGroup;
       const leasePatchRequest: LeasePatchRequest = {
         leaseId: lease.leaseId,
-        costReportGroup: data.costReportGroupEnabled
-          ? data.selectedCostReportGroup
-          : null,
+        costReportGroup: groupEnabled ? data.selectedCostReportGroup : null,
       };
 
       await updateLease(leasePatchRequest);

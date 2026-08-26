@@ -6,14 +6,13 @@ import { z } from "zod";
 export const LogLevelSchema = z.enum(
   ["DEBUG", "INFO", "WARN", "ERROR", "CRITICAL", "SILENT"],
   {
-    errorMap: enumErrorMap,
+    error: enumErrorMap,
   },
 );
 
 export const BaseLambdaEnvironmentSchema = z.object({
   NODE_OPTIONS: z.string(),
   USER_AGENT_EXTRA: z.string(),
-  POWERTOOLS_LOG_LEVEL: LogLevelSchema,
   POWERTOOLS_SERVICE_NAME: z.string(),
   AWS_XRAY_CONTEXT_MISSING: z.literal("IGNORE_ERROR"),
 });

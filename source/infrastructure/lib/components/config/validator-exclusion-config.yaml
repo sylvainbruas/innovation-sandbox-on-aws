@@ -1,0 +1,115 @@
+# ==============================================================================
+# Validator Exclusion Config — Innovation Sandbox on AWS
+# ==============================================================================
+#
+# SYNC REQUIREMENT: This config MUST be kept in sync with the nuke config
+# (nuke-config.yaml). Every resource that Nuke preserves via filters AND that
+# Resource Explorer indexes requires a corresponding exclusion entry here.
+# Otherwise the post-cleanup validator will flag it as a cleanup failure
+# (false positive) and quarantine the account unnecessarily.
+#
+# When modifying the nuke config:
+#   1. Check if the Nuke resource type has a corresponding Resource Explorer
+#      resource type (see supported-resource-types docs).
+#   2. If YES → add a corresponding ARN pattern below.
+#   3. If NO  → no action needed here.
+#
+# See: https://docs.aws.amazon.com/resource-explorer/latest/userguide/supported-resource-types.html
+#
+# Failure modes if out of sync:
+#   - Filter in nuke config but NOT here → false-positive validation failure
+#   - Filter here but NOT in nuke config → no impact (stale entry)
+# ==============================================================================
+
+validation:
+  excludedArnPatterns:
+    # =========================================================================
+    # ISB Infrastructure
+    # =========================================================================
+    # CloudFormationStack filter: StackSet-Isb-*
+    - "arn:aws:cloudformation:*:*:stack/StackSet-Isb-*/*"
+    # IAMRole filter: InnovationSandbox-* (cleanup spoke role, matches %CLEANUP_ROLE_NAME%)
+    - "arn:aws:iam::*:role/InnovationSandbox-*"
+    # IAMRole filter: stacksets-exec-*
+    - "arn:aws:iam::*:role/stacksets-exec-*"
+
+    # =========================================================================
+    # AWS Organizations
+    # =========================================================================
+    # IAMRole filter: OrganizationAccountAccessRole
+    - "arn:aws:iam::*:role/OrganizationAccountAccessRole"
+
+    # =========================================================================
+    # AWS Control Tower / Landing Zone Accelerator
+    # =========================================================================
+    # IAMRole filters: aws-controltower-*, contains AWSControlTower, AWSAccelerator-*
+    - "arn:aws:iam::*:role/aws-controltower-*"
+    - "arn:aws:iam::*:role/*AWSControlTower*"
+    - "arn:aws:iam::*:role/AWSAccelerator-*"
+    # CloudTrailTrail filters: aws-controltower-*, all-org-cloud-trail
+    - "arn:aws:cloudtrail:*:*:trail/aws-controltower-*"
+    - "arn:aws:cloudtrail:*:*:trail/all-org-cloud-trail"
+    # LambdaFunction filter: aws-controltower-*
+    - "arn:aws:lambda:*:*:function:aws-controltower-*"
+    # CloudWatchLogsLogGroup filter: contains aws-controltower
+    - "arn:aws:logs:*:*:log-group:*aws-controltower*"
+    # SNSTopic filter: aws-controltower-*
+    - "arn:aws:sns:*:*:aws-controltower-*"
+    # CloudWatchEventsRule filters: aws-controltower-*, contains AWSControlTower
+    - "arn:aws:events:*:*:rule/aws-controltower-*"
+    - "arn:aws:events:*:*:rule/*AWSControlTower*"
+
+    # =========================================================================
+    # AWS Security Incident Response (SIR)
+    # =========================================================================
+    # CloudWatchEventsRule filters: SIRGuardDutyRule, SIRSecurityHubRule
+    # (managed by AWS SIR, cannot be deleted via DeleteRule API)
+    - "arn:aws:events:*:*:rule/SIRGuardDutyRule"
+    - "arn:aws:events:*:*:rule/SIRSecurityHubRule"
+
+    # =========================================================================
+    # AWS SSO / IAM Identity Center
+    # =========================================================================
+    # IAMRole filter: AWSReservedSSO_*
+    - "arn:aws:iam::*:role/*AWSReservedSSO_*"
+    # IAMSAMLProvider filter: contains AWSSSO
+    - "arn:aws:iam::*:saml-provider/*AWSSSO*"
+
+    # =========================================================================
+    # Resource Explorer (must persist for validation to work)
+    # =========================================================================
+    # ResourceExplorer2Index filter: * (Task 19)
+    - "arn:aws:resource-explorer-2:*:*:index/*"
+    # ResourceExplorer2View filter: * (Task 19)
+    - "arn:aws:resource-explorer-2:*:*:view/*"
+
+    # =========================================================================
+    # Nuke Built-In Filters (not in nuke config but Nuke skips them)
+    # =========================================================================
+    # AWS service-linked roles — Nuke preserves these by default
+    - "arn:aws:iam::*:role/aws-service-role/*"
+
+    # =========================================================================
+    # AWS-Managed Defaults (exist in every account, cannot be deleted)
+    # =========================================================================
+    # These resources are created automatically by AWS services and persist
+    # across cleanups. Nuke's built-in filters preserve them, but they appear
+    # in Resource Explorer results and must be excluded from validation.
+    - "arn:aws:elasticache:*:*:user:default"
+    - "arn:aws:athena:*:*:workgroup/primary"
+    - "arn:aws:athena:*:*:datacatalog/AwsDataCatalog"
+    - "arn:aws:memorydb:*:*:parametergroup/default.*"
+    - "arn:aws:memorydb:*:*:acl/open-access"
+    - "arn:aws:memorydb:*:*:user/default"
+    - "arn:aws:events:*:*:event-bus/default"
+    - "arn:aws:xray:*:*:sampling-rule/Default"
+    - "arn:aws:s3:*:*:storage-lens/default-account-dashboard"
+    - "arn:aws:rds:*:*:og:default:*"
+    - "arn:aws:rds:*:*:pg:default.*"
+    - "arn:aws:rds:*:*:cluster-pg:default.*"
+    - "arn:aws:apprunner:*:*:autoscalingconfiguration/DefaultConfiguration/*"
+    # KMS keys
+    # aws-nuke calls ScheduleKeyDeletion (minimum 7-day waiting period enforced
+    # by AWS). Keys remain in Resource Explorer as PendingDeletion after a
+    # successful nuke run.
+    - "arn:aws:kms:*:*:key/*"

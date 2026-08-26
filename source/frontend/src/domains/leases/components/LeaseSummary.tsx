@@ -20,10 +20,14 @@ import {
   isPendingLease,
   Lease,
 } from "@amzn/innovation-sandbox-commons/data/lease/lease";
+import { AccountId } from "@amzn/innovation-sandbox-frontend/components/AccountId";
 import { BlueprintName } from "@amzn/innovation-sandbox-frontend/components/BlueprintName";
 import { BudgetProgressBar } from "@amzn/innovation-sandbox-frontend/components/BudgetProgressBar";
 import { BudgetStatus } from "@amzn/innovation-sandbox-frontend/components/BudgetStatus";
 import { DurationStatus } from "@amzn/innovation-sandbox-frontend/components/DurationStatus";
+import { LeaseName } from "@amzn/innovation-sandbox-frontend/components/LeaseName";
+import { LeaseTemplateName } from "@amzn/innovation-sandbox-frontend/components/LeaseTemplateName";
+import { SharingStatusIndicator } from "@amzn/innovation-sandbox-frontend/components/SharingStatusIndicator";
 import { ThresholdDetails } from "@amzn/innovation-sandbox-frontend/components/ThresholdDetails";
 import { LeaseStatusBadge } from "@amzn/innovation-sandbox-frontend/domains/leases/components/LeaseStatusBadge";
 import { getLeaseExpiryInfo } from "@amzn/innovation-sandbox-frontend/helpers/LeaseExpiryInfo";
@@ -32,9 +36,12 @@ import { DateTime } from "luxon";
 interface LeaseSummaryProps {
   lease: Lease;
   showEditButtons?: boolean;
+  showAdminFields?: boolean;
+  leaseSharingEnabled?: boolean;
   onEditBudget?: () => void;
   onEditDuration?: () => void;
   onEditCostReport?: () => void;
+  onEditSharing?: () => void;
 }
 
 // Helper function to render time popover
@@ -48,26 +55,6 @@ const renderTimePopover = (date: string) => (
     <Box>{DateTime.fromISO(date).toRelative()}</Box>
   </Popover>
 );
-
-// Helper function to render account ID
-const renderAccountId = (lease: Lease) => {
-  const isMonitoredOrExpired = isMonitoredLease(lease) || isExpiredLease(lease);
-
-  if (!isMonitoredOrExpired) {
-    return (
-      <StatusIndicator type="warning">No account assigned</StatusIndicator>
-    );
-  }
-
-  return (
-    <CopyToClipboard
-      variant="inline"
-      textToCopy={lease.awsAccountId}
-      copySuccessText="Copied AWS Account ID"
-      copyErrorText="Failed to copy AWS Account ID"
-    />
-  );
-};
 
 // Helper function to render approved by
 const renderApprovedBy = (lease: Lease) => {
@@ -144,9 +131,12 @@ const renderCostReportGroup = (costReportGroup?: string) => {
 export const LeaseSummary = ({
   lease,
   showEditButtons = false,
+  showAdminFields = false,
+  leaseSharingEnabled = false,
   onEditBudget,
   onEditDuration,
   onEditCostReport,
+  onEditSharing,
 }: LeaseSummaryProps) => {
   return (
     <SpaceBetween size="l">
@@ -157,35 +147,55 @@ export const LeaseSummary = ({
             columns={1}
             items={[
               {
-                label: "Lease ID",
+                label: "Name",
+                value: (
+                  <LeaseName
+                    uuid={lease.uuid}
+                    templateName={lease.originalLeaseTemplateName}
+                  />
+                ),
+              },
+              {
+                label: "UUID",
                 value: (
                   <CopyToClipboard
                     variant="inline"
                     textToCopy={lease.uuid}
-                    copySuccessText="Copied Lease ID"
-                    copyErrorText="Failed to copy Lease ID"
+                    copyButtonAriaLabel="Copy lease UUID"
+                    copySuccessText="UUID copied"
+                    copyErrorText="Failed to copy"
                   />
                 ),
               },
               {
                 label: "AWS Account ID",
-                value: renderAccountId(lease),
+                value: (
+                  <AccountId
+                    accountId={
+                      isMonitoredLease(lease) || isExpiredLease(lease)
+                        ? lease.awsAccountId
+                        : undefined
+                    }
+                    copyable
+                  />
+                ),
               },
               {
                 label: "Lease Template",
-                value: lease.originalLeaseTemplateName,
+                value: (
+                  <LeaseTemplateName
+                    uuid={lease.originalLeaseTemplateUuid}
+                    name={lease.originalLeaseTemplateName}
+                  />
+                ),
               },
               {
                 label: "Blueprint Name",
                 value: <BlueprintName blueprintName={lease.blueprintName} />,
               },
               {
-                label: "User Email",
+                label: "Owner",
                 value: lease.userEmail,
-              },
-              {
-                label: "Created By",
-                value: lease.createdBy ?? lease.userEmail,
               },
             ]}
           />
@@ -197,6 +207,10 @@ export const LeaseSummary = ({
                 value: <LeaseStatusBadge lease={lease} />,
               },
               {
+                label: "Created By",
+                value: lease.createdBy ?? lease.userEmail,
+              },
+              {
                 label: "Approved By",
                 value: renderApprovedBy(lease),
               },
@@ -204,10 +218,14 @@ export const LeaseSummary = ({
                 label: "Lease Started",
                 value: renderLeaseStarted(lease),
               },
-              {
-                label: "Last Monitored",
-                value: renderLastMonitored(lease),
-              },
+              ...(showAdminFields
+                ? [
+                    {
+                      label: "Last Monitored",
+                      value: renderLastMonitored(lease),
+                    },
+                  ]
+                : []),
               {
                 label: "Comments from Requester",
                 value: renderComments(lease.comments),
@@ -239,28 +257,30 @@ export const LeaseSummary = ({
             columns={1}
             items={[
               {
-                label: <Box variant="h3" children={"Budget Status"} />,
+                label: <Box variant="h3">Budget Status</Box>,
                 value: renderBudgetStatus(lease),
               },
             ]}
           />
-          <KeyValuePairs
-            columns={1}
-            items={[
-              {
-                label: <Box variant="h3" children={"Budget Thresholds"} />,
-                value: (
-                  <ThresholdDetails
-                    thresholds={lease.budgetThresholds}
-                    valueLabel="Cost Accrued"
-                    renderValue={(threshold) =>
-                      `$${threshold.dollarsSpent.toFixed(2)}`
-                    }
-                  />
-                ),
-              },
-            ]}
-          />
+          {showAdminFields && (
+            <KeyValuePairs
+              columns={1}
+              items={[
+                {
+                  label: <Box variant="h3">Budget Thresholds</Box>,
+                  value: (
+                    <ThresholdDetails
+                      thresholds={lease.budgetThresholds}
+                      valueLabel="Cost Accrued"
+                      renderValue={(threshold) =>
+                        `$${threshold.dollarsSpent.toFixed(2)}`
+                      }
+                    />
+                  ),
+                },
+              ]}
+            />
+          )}
         </ColumnLayout>
       </Container>
 
@@ -286,28 +306,30 @@ export const LeaseSummary = ({
             columns={1}
             items={[
               {
-                label: <Box variant="h3" children={"Lease Expiry"} />,
+                label: <Box variant="h3">Lease Expiry</Box>,
                 value: <DurationStatus {...getLeaseExpiryInfo(lease)} />,
               },
             ]}
           />
-          <KeyValuePairs
-            columns={1}
-            items={[
-              {
-                label: <Box variant="h3" children={"Duration Thresholds"} />,
-                value: (
-                  <ThresholdDetails
-                    thresholds={lease.durationThresholds}
-                    valueLabel="Hours Remaining"
-                    renderValue={(threshold) =>
-                      `${threshold.hoursRemaining} hours`
-                    }
-                  />
-                ),
-              },
-            ]}
-          />
+          {showAdminFields && (
+            <KeyValuePairs
+              columns={1}
+              items={[
+                {
+                  label: <Box variant="h3">Duration Thresholds</Box>,
+                  value: (
+                    <ThresholdDetails
+                      thresholds={lease.durationThresholds}
+                      valueLabel="Hours Remaining"
+                      renderValue={(threshold) =>
+                        `${threshold.hoursRemaining} hours`
+                      }
+                    />
+                  ),
+                },
+              ]}
+            />
+          )}
         </ColumnLayout>
       </Container>
 
@@ -334,6 +356,39 @@ export const LeaseSummary = ({
             {
               label: "Cost Report Group",
               value: renderCostReportGroup(lease.costReportGroup),
+            },
+          ]}
+        />
+      </Container>
+
+      {/* Sharing Settings */}
+      <Container
+        header={
+          <Header
+            variant="h2"
+            actions={
+              showEditButtons && onEditSharing && leaseSharingEnabled ? (
+                <Button iconName="edit" onClick={onEditSharing}>
+                  Edit
+                </Button>
+              ) : undefined
+            }
+          >
+            Sharing Settings
+          </Header>
+        }
+      >
+        <KeyValuePairs
+          columns={1}
+          items={[
+            {
+              label: "Sharing",
+              value: (
+                <SharingStatusIndicator
+                  allowOwnerToShareLease={lease.allowOwnerToShareLease}
+                  leaseSharingEnabled={leaseSharingEnabled}
+                />
+              ),
             },
           ]}
         />

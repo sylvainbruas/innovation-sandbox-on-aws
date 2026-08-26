@@ -2,7 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { LeaseTemplate } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template";
-import { NewLeaseTemplate } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/types";
+import {
+  NewLeaseTemplate,
+  UpdateLeaseTemplate,
+} from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/types";
 import {
   ApiProxy,
   IApiProxy,
@@ -48,8 +51,9 @@ export class LeaseTemplateService {
   }
 
   async updateLeaseTemplate(leaseTemplate: LeaseTemplate): Promise<void> {
-    const { uuid, blueprintName, ...rest } = leaseTemplate;
-    await this.api.put(`/leaseTemplates/${uuid}`, rest);
+    const { uuid, blueprintName, createdBy, ...rest } = leaseTemplate;
+    const body: UpdateLeaseTemplate = rest;
+    await this.api.put(`/leaseTemplates/${uuid}`, body);
   }
 
   async deleteLeaseTemplates(leaseTemplateIds: string[]): Promise<void> {

@@ -2,22 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { Effect, PolicyDocument, PolicyStatement } from "aws-cdk-lib/aws-iam";
-import fs from "fs";
-import path from "path";
 
-interface ScpStatement {
-  Sid: string;
-  Effect: "Allow" | "Deny";
-  Action?: string[];
-  NotAction?: string[];
-  Resource: string[];
-  Condition?: Record<string, Record<string, any>>;
-}
-
-interface ScpPolicy {
-  Version: "2012-10-17";
-  Statement: ScpStatement[];
-}
+import {
+  buildNukeScpConditionBlock,
+  injectBedrockInferenceProfilePatterns,
+  injectPrincipalExceptions,
+  loadPolicyFromFile,
+  type ScpPolicy,
+  type ScpStatement,
+} from "./scp-policy-utils.js";
 
 function createScpStatement(props: {
   sid: string;
@@ -73,16 +66,25 @@ function convertToPolicyDocument(policy: ScpPolicy): PolicyDocument {
 export interface IsbScpPolicyProps {
   namespace?: string;
   isbManagedRegions?: string[];
+  scpDirectoryPath?: string;
+  additionalPrincipalExceptions?: string[];
+  hasAdditionalPrincipalExceptionsConditionId?: string;
+  bedrockInferenceProfilePatterns?: string[];
+  hasBedrockInferenceProfilePatternsConditionId?: string;
 }
 
 export function getInnovationSandboxProtectScp(
   props: IsbScpPolicyProps,
 ): PolicyDocument {
+  // Note: Protect ISB Resources SCP is intentionally excluded from principal exceptions
+  // per design. Customer-added principals should NOT bypass ISB control plane protection.
   const protectPolicy = loadPolicyFromFile(
     "isb-protect-control-plane-resource-scp.json",
     props.namespace,
     props.isbManagedRegions,
+    props.scpDirectoryPath,
   );
+
   return convertToPolicyDocument(protectPolicy);
 }
 
@@ -93,19 +95,16 @@ export function getInnovationSandboxRestrictionsScp(
     "isb-restrictions-scp.json",
     props.namespace,
     props.isbManagedRegions,
+    props.scpDirectoryPath,
   );
-  return convertToPolicyDocument(restrictionsPolicy);
-}
 
-export function getInnovationSandboxAwsNukeSupportedServicesScp(
-  props: IsbScpPolicyProps,
-): PolicyDocument {
-  const nukePolicy = loadPolicyFromFile(
-    "isb-aws-nuke-supported-services-scp.json",
-    props.namespace,
-    props.isbManagedRegions,
+  injectPrincipalExceptions(
+    restrictionsPolicy,
+    props.additionalPrincipalExceptions,
+    props.hasAdditionalPrincipalExceptionsConditionId,
   );
-  return convertToPolicyDocument(nukePolicy);
+
+  return convertToPolicyDocument(restrictionsPolicy);
 }
 
 export function getInnovationSandboxLimitRegionsScp(
@@ -115,7 +114,21 @@ export function getInnovationSandboxLimitRegionsScp(
     "isb-limit-managed-regions.json",
     props.namespace,
     props.isbManagedRegions,
+    props.scpDirectoryPath,
   );
+
+  injectPrincipalExceptions(
+    limitRegionsPolicy,
+    props.additionalPrincipalExceptions,
+    props.hasAdditionalPrincipalExceptionsConditionId,
+  );
+
+  injectBedrockInferenceProfilePatterns(
+    limitRegionsPolicy,
+    props.bedrockInferenceProfilePatterns,
+    props.hasBedrockInferenceProfilePatternsConditionId,
+  );
+
   return convertToPolicyDocument(limitRegionsPolicy);
 }
 
@@ -126,40 +139,90 @@ export function getInnovationSandboxWriteProtectionScp(
     "isb-deny-all-non-control-plane-actions.json",
     props.namespace,
     props.isbManagedRegions,
+    props.scpDirectoryPath,
   );
   return convertToPolicyDocument(writeProtectionPolicy);
 }
 
-function loadPolicyFromFile(
-  fileName: string,
-  namespace?: string,
-  regionList?: string[],
-): ScpPolicy {
-  try {
-    // Define the path to the policy file
-    const policyPath = path.join(__dirname, fileName);
+/**
+ * Builds the Allowed Services SCP content as a CloudFormation Fn::Join intrinsic.
+ *
+ * CDK's PolicyStatement validates NotAction entries at synth time, rejecting
+ * unresolved CloudFormation tokens. AWS Organizations Policy Content property
+ * also does not support intrinsic function resolution within the policy body.
+ * This function constructs the SCP as a raw JSON string using Fn::Join/Fn::If
+ * that CloudFormation resolves before passing to the Organizations API.
+ *
+ * @param namespace - The ISB namespace for principal ARN patterns
+ * @param additionalServices - CDK token for the CommaDelimitedList parameter (valueAsList)
+ * @param hasAdditionalServicesConditionId - Logical ID of the CfnCondition for empty check
+ * @param additionalPrincipalExceptions - CDK token for the CommaDelimitedList parameter (valueAsList)
+ * @param hasAdditionalPrincipalExceptionsConditionId - Logical ID of the CfnCondition for empty check
+ * @returns A CloudFormation intrinsic object suitable for CfnPolicy.content
+ */
+export function getInnovationSandboxAwsNukeSupportedServicesScp(
+  namespace: string,
+  additionalServices: string[],
+  hasAdditionalServicesConditionId: string,
+  additionalPrincipalExceptions: string[],
+  hasAdditionalPrincipalExceptionsConditionId: string,
+  scpDirectoryPath?: string,
+): Record<string, unknown> {
+  const policy = loadPolicyFromFile(
+    "isb-aws-nuke-supported-services-scp.json",
+    namespace,
+    undefined,
+    scpDirectoryPath,
+  );
 
-    // Read the JSON file
-    let processedContent = fs.readFileSync(policyPath, "utf8");
-
-    // Replace namespace if provided
-    if (namespace) {
-      processedContent = processedContent.replace(/\${namespace}/g, namespace);
-    }
-
-    // Replace region list if provided
-    if (regionList) {
-      processedContent = processedContent.replace(
-        /\${isbManagedRegions}/g,
-        regionList.toString(),
-      );
-    }
-
-    // Parse and return the content
-    return JSON.parse(processedContent) as ScpPolicy;
-  } catch (error) {
+  const statement = policy.Statement[0];
+  if (!statement?.NotAction || !statement.Condition) {
     throw new Error(
-      `Failed to load SCP policy from ${fileName}: ${error instanceof Error ? error.message : "Unknown error"}`,
+      "Invalid Allowed Services SCP: missing NotAction or Condition in first statement",
     );
   }
+
+  const baselineNotActionJson = statement.NotAction.map((action) =>
+    JSON.stringify(action),
+  ).join(",");
+  const resourceJson = JSON.stringify(statement.Resource);
+
+  const {
+    conditionBlockStart,
+    basePrincipalArnsJson,
+    principalExceptionsFnIf,
+    conditionBlockEnd,
+  } = buildNukeScpConditionBlock(
+    policy,
+    additionalPrincipalExceptions,
+    hasAdditionalPrincipalExceptionsConditionId,
+  );
+
+  return {
+    "Fn::Join": [
+      "",
+      [
+        `{"Version":"${policy.Version}","Statement":[{"Sid":"${statement.Sid}","Effect":"${statement.Effect}","NotAction":[`,
+        baselineNotActionJson,
+        {
+          "Fn::If": [
+            hasAdditionalServicesConditionId,
+            {
+              "Fn::Join": [
+                "",
+                [',"', { "Fn::Join": ['","', additionalServices] }, '"'],
+              ],
+            },
+            "",
+          ],
+        },
+        `],"Resource":${resourceJson},"Condition":`,
+        conditionBlockStart,
+        basePrincipalArnsJson,
+        principalExceptionsFnIf,
+        conditionBlockEnd,
+        "}]}",
+      ],
+    ],
+  };
 }

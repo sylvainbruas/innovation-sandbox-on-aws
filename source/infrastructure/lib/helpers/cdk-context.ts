@@ -1,6 +1,5 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
-import { LogLevelSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/base-lambda-environment";
 import { readManifest } from "@amzn/innovation-sandbox-infrastructure/helpers/manifest-reader";
 import { CfnMapping, Stack } from "aws-cdk-lib";
 import { Construct, Node } from "constructs";
@@ -44,14 +43,37 @@ export const SolutionContextSchema = z
     publicEcrTag: z.string().default(solutionManifest.version),
     privateEcrRepo: z.string().optional(),
     nukeConfigFilePath: z.string().optional(),
-    logLevel: LogLevelSchema.default("INFO"),
+    scpDirectoryPath: z.string().optional(),
     deploymentMode: z.string().default("prod"),
+    stackPrefix: z.string().default("InnovationSandbox"),
     cloudWatchLogRetentionInDays:
       CloudWatchLogRetentionInDaysSchema.default(90),
     s3LogsArchiveRetentionInDays: z.coerce.number().default(365),
     s3LogsGlacierRetentionInDays: z.coerce.number().default(7 * 365),
     apiThrottlingRateLimit: z.coerce.number().default(100),
     apiThrottlingBurstLimit: z.coerce.number().default(200),
+    // Cognito token validity — https://docs.aws.amazon.com/cognito-user-identity-pools/latest/APIReference/API_TokenValidityUnitsType.html
+    cognitoAccessTokenValidityMinutes: z.coerce
+      .number()
+      .min(5)
+      .max(1440)
+      .default(60),
+    // Floor at 60 — Identity Pool's enhanced auth flow vends 1-hour AWS
+    // credentials regardless of role MaxSessionDuration
+    // (https://docs.aws.amazon.com/cognito/latest/developerguide/authentication-flow.html).
+    // A shorter ID token creates a window where the IAM credentials are
+    // still valid but the x-isb-identity header has expired, 401-ing every
+    // API call until Amplify's next fetchAuthSession() near credential expiry.
+    cognitoIdTokenValidityMinutes: z.coerce
+      .number()
+      .min(60)
+      .max(1440)
+      .default(60),
+    cognitoRefreshTokenValidityDays: z.coerce
+      .number()
+      .min(1)
+      .max(3650)
+      .default(7),
   })
   .transform((context) => {
     const { solutionName, version, distOutputBucket } = context;

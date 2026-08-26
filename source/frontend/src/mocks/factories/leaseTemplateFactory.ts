@@ -12,6 +12,9 @@ export function createLeaseTemplate(
 ): LeaseTemplate {
   return generateSchemaData(LeaseTemplateSchema, {
     requiresApproval: false,
+    maxSpend: 100,
+    leaseDurationInHours: 48,
+    costReportGroup: "default-group",
     ...overrides,
   });
 }
@@ -21,6 +24,9 @@ export function createAdvancedLeaseTemplate(
 ): LeaseTemplate {
   return generateSchemaData(LeaseTemplateSchema, {
     requiresApproval: true,
+    maxSpend: 500,
+    leaseDurationInHours: 72,
+    costReportGroup: "default-group",
     budgetThresholds: [{ dollarsSpent: 250, action: "ALERT" }],
     durationThresholds: [{ hoursRemaining: 24, action: "ALERT" }],
     ...overrides,

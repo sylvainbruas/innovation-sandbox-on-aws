@@ -6,35 +6,33 @@
 
 ## Table of Contents
 
-- [Innovation Sandbox on AWS](#innovation-sandbox-on-aws)
-  - [Table of Contents](#table-of-contents)
-  - [Solution Overview](#solution-overview)
-  - [Architecture](#architecture)
-  - [Prerequisites](#prerequisites)
-  - [Environment Variables](#environment-variables)
-  - [Deploy the Solution](#deploy-the-solution)
-    - [Deployment Prerequisites](#deployment-prerequisites)
-    - [Deploy from the AWS Console](#deploy-from-the-aws-console)
-    - [Deploy from Source](#deploy-from-source)
-    - [Post Deployment Tasks](#post-deployment-tasks)
-  - [Running Tests](#running-tests)
-    - [Unit Tests](#unit-tests)
-  - [Using Private ECR Repository](#using-private-ecr-repository)
-  - [Uninstalling the Solution](#uninstalling-the-solution)
-  - [Cost Scaling](#cost-scaling)
-  - [File Structure](#file-structure)
-  - [Pre-Commit](#pre-commit)
-  - [Collection of Operational Metrics](#collection-of-operational-metrics)
-  - [License](#license)
-  - [Additional Resources](#additional-resources)
+- [Table of Contents](#table-of-contents)
+- [Solution Overview](#solution-overview)
+- [Architecture](#architecture)
+- [Prerequisites](#prerequisites)
+- [Environment Variables](#environment-variables)
+- [Deploy the Solution](#deploy-the-solution)
+  - [Deployment Prerequisites](#deployment-prerequisites)
+  - [Deploy from the AWS Console](#deploy-from-the-aws-console)
+  - [Deploy from Source](#deploy-from-source)
+  - [Post Deployment Tasks](#post-deployment-tasks)
+- [Scripts](#scripts)
+- [Running Tests](#running-tests)
+  - [Unit Tests](#unit-tests)
+- [Using Private ECR Repository](#using-private-ecr-repository)
+- [Uninstalling the Solution](#uninstalling-the-solution)
+- [Cost Scaling](#cost-scaling)
+- [File Structure](#file-structure)
+- [Pre-Commit](#pre-commit)
+- [Collection of Operational Metrics](#collection-of-operational-metrics)
+- [License](#license)
+- [Additional Resources](#additional-resources)
 
 ## Solution Overview
 
-The Innovation Sandbox on AWS solution allows cloud administrators to set up and recycle temporary sandbox environments by automating
-the implementation of security and governance policies, spend management mechanisms, and account recycling preferences through a web user interface (UI).
-Using the solution, customers can empower their teams to experiment, learn, and innovate with AWS services in production-isolated AWS accounts that are recycled after use.
+Innovation Sandbox on AWS enables cloud administrators to provision and recycle temporary AWS sandbox environments with automated security, governance, and cost management. Teams can experiment, learn, and innovate with AWS services in production-isolated accounts that are automatically cleaned up and returned to the pool after use.
 
-Administrators can register self-managed CloudFormation StackSets as blueprints to automatically deploy pre-configured infrastructure when provisioning sandbox accounts. Users receive accounts with ready-to-use resources, tools, and configurations, reducing setup time from hours to minutes.
+The solution provides a self-service web UI and API for requesting time-bound sandbox leases, configuring lease templates with budget and duration controls, sharing accounts across teams, deploying pre-configured infrastructure via blueprints, and monitoring costs through native AWS billing integration. Administrators manage all settings, including Service Control Policies, cleanup behavior, and notifications, directly from the application.
 
 To find out more about Innovation Sandbox on AWS visit our [AWS Solutions](https://aws.amazon.com/solutions/implementations/innovation-sandbox-on-aws)
 page.
@@ -49,9 +47,9 @@ For more details, please refer to the [Architecture Overview](https://docs.aws.a
 
 In order to test, build, and deploy the solution from source the following prerequisites will be required for your development environment:
 
-- MacOS or Amazon Linux 2 Operating System
+- MacOS or Amazon Linux 2023 Operating System
 - Cloned Repository
-- Node 22
+- Node 24
 - Python (Optional)
 - Pre-Commit (Optional)
 - Docker (Optional)
@@ -116,6 +114,10 @@ npm run deploy:compute
 
 Before the solution is fully functional the post deployment tasks must be completed. See the [implementation guide](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/post-deployment-configuration-tasks.html) for more details.
 
+## Scripts
+
+- [M2M Authentication Scripts](./scripts/m2m/README.md) — CLI tools for deploying per-client M2M roles, assuming them, and signing API requests with SigV4.
+
 ## Running Tests
 
 ### Unit Tests
@@ -146,7 +148,7 @@ Follow these steps to configure deployment to use a private ECR image:
    ```shell
    npm run docker:build-and-push
    ```
-   This will build the dockerfile located at `source/infrastructure/components/account-cleaner/Dockerfile` and push it to the ECR repo configured in your .env file.
+   This will build the dockerfile located at `source/infrastructure/lib/components/account-cleaner/image/Dockerfile` and push it to the ECR repo configured in your .env file.
 1. If you have already deployed the solution you will need to deploy the compute stack again to have the solution use the private ecr repo. To do that run the following command:
    ```shell
    npm run deploy:compute
@@ -183,8 +185,10 @@ root
 │   ├── global-s3-assets                # generated dist files for cdk synthesized cloudformation templates
 │   ├── regional-s3-assets              # generated dist files for zipped runtime assets such as lambda functions
 │   └── build-s3-dist.sh                # builds solution into distributable assets that can be deployed with cloudformation
-├── docs/                           # shell scripts to generate native cloudformation distributables
-├── scripts/                        # scripts used to run checks on the repository
+├── docs/                           # architecture diagrams and API specifications
+├── scripts/                        # utility and deployment scripts
+│   ├── cdk/                            # CDK bootstrap, deploy, and destroy wrappers
+│   └── m2m/                            # M2M authentication helper scripts
 ├── source/                         # source code separated into multiple stand alone packages
 │   ├── common                          # common libraries used across the solution
 │   ├── frontend                        # frontend vite application

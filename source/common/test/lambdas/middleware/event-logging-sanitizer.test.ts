@@ -3,6 +3,7 @@
 
 import { injectSanitizedLambdaContext } from "@amzn/innovation-sandbox-commons/lambda/middleware/inject-sanitized-lambda-context.js";
 import { createAPIGatewayProxyEvent } from "@amzn/innovation-sandbox-commons/test/lambdas/fixtures.js";
+import { IDENTITY_HEADER } from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
 import { Logger } from "@aws-lambda-powertools/logger";
 import { APIGatewayProxyEvent } from "aws-lambda";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -148,6 +149,65 @@ describe("injectSanitizedLambdaContext", () => {
       "[REDACTED]",
       "[REDACTED]",
     ]);
+  });
+
+  it("should sanitize x-isb-identity headers (Cognito ID token)", async () => {
+    const idToken = "eyJ.fake.idtoken";
+    const event = createAPIGatewayProxyEvent({
+      headers: { [IDENTITY_HEADER]: idToken, Authorization: "Bearer x" },
+    } as any);
+    (event as any).multiValueHeaders = {
+      "X-ISB-Identity": [idToken],
+    };
+    const request = { event, context: {}, response: {} } as any;
+    const middleware = injectSanitizedLambdaContext(logger);
+
+    await middleware.before!(request);
+
+    expect(request.event.headers[IDENTITY_HEADER]).toBe("[REDACTED]");
+    expect(request.event.multiValueHeaders["X-ISB-Identity"]).toEqual([
+      "[REDACTED]",
+    ]);
+    expect(JSON.stringify(request.event)).not.toContain(idToken);
+  });
+
+  it("should sanitize x-amz-security-token headers (SigV4 session token)", async () => {
+    const sessionToken = "IQoJb3JpZ2luX2VjEXAMPLEsessiontoken";
+    const signedAt = "20260727T000000Z";
+    const loggerInfoSpy = vi.spyOn(logger, "info");
+    const event = createAPIGatewayProxyEvent({
+      headers: {
+        authorization: "AWS4-HMAC-SHA256 Credential=AKIAEXAMPLE/20260727",
+        "x-amz-security-token": sessionToken,
+        "x-amz-date": signedAt,
+      },
+    } as any);
+    (event as any).multiValueHeaders = {
+      "X-Amz-Security-Token": [sessionToken],
+    };
+    (event as any).rawHeaders = { "X-Amz-Security-Token": sessionToken };
+    (event as any).rawMultiValueHeaders = {
+      "X-Amz-Security-Token": [sessionToken],
+    };
+    const request = { event, context: {}, response: {} } as any;
+    const middleware = injectSanitizedLambdaContext(logger);
+
+    await middleware.before!(request);
+
+    const loggedEvent = (loggerInfoSpy.mock.calls[0]![1] as any).event;
+
+    expect(loggedEvent.headers["x-amz-security-token"]).toBe("[REDACTED]");
+    expect(loggedEvent.multiValueHeaders["X-Amz-Security-Token"]).toEqual([
+      "[REDACTED]",
+    ]);
+    expect(loggedEvent.rawHeaders["X-Amz-Security-Token"]).toBe("[REDACTED]");
+    expect(loggedEvent.rawMultiValueHeaders["X-Amz-Security-Token"]).toEqual([
+      "[REDACTED]",
+    ]);
+    expect(JSON.stringify(loggedEvent)).not.toContain(sessionToken);
+
+    // Non-credential SigV4 headers stay readable for log debugging.
+    expect(loggedEvent.headers["x-amz-date"]).toBe(signedAt);
   });
 
   it("should preserve original event data integrity", async () => {

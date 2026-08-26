@@ -23,10 +23,11 @@ import { Logger } from "@aws-lambda-powertools/logger";
 import {
   CloudWatchLogsClient,
   CreateExportTaskCommand,
+  DescribeExportTasksCommand,
 } from "@aws-sdk/client-cloudwatch-logs";
 import { GetObjectCommand, S3Client } from "@aws-sdk/client-s3";
 import { mockClient } from "aws-sdk-client-mock";
-import { DateTime } from "luxon";
+import { DateTime, Duration } from "luxon";
 
 const testExportPeriodDays = 7;
 const testEnv = generateSchemaData(LogArchivingEnvironmentSchema, {
@@ -78,18 +79,19 @@ describe("Log Archiving Service", () => {
     expect(response).toEqual(lastExportedTS);
   });
 
-  it("should create an export task with no errors", () => {
+  it("should create an export task and return its taskId", async () => {
     const toTime = now().minus({ days: 1 });
     const fromTime = now().minus({ days: testExportPeriodDays + 1 });
     const currentExportTS = nowAsIsoDatetimeString();
     cwLogsMock.on(CreateExportTaskCommand).resolves({
       taskId: "TestTaskId",
     } as any);
-    logArchivingService.createExportTask({
+    const taskId = await logArchivingService.createExportTask({
       fromTime,
       toTime,
       currentExportTS,
     });
+    expect(taskId).toEqual("TestTaskId");
     assertCreateExportTaskCall(currentExportTS, fromTime, toTime);
   });
 
@@ -121,6 +123,48 @@ describe("Log Archiving Service", () => {
       }),
     ).rejects.toThrow(`Exception creating export task for ${testLogGroupName}`);
     assertCreateExportTaskCall(currentExportTS, fromTime, toTime);
+  });
+
+  it("should return COMPLETED when export task finishes", async () => {
+    cwLogsMock.on(DescribeExportTasksCommand).resolves({
+      exportTasks: [{ status: { code: "COMPLETED" } }],
+    } as any);
+    const status = await logArchivingService.waitForExportTask("TestTaskId", {
+      pollInterval: Duration.fromMillis(0),
+      maxWait: Duration.fromObject({ seconds: 1 }),
+    });
+    expect(status).toEqual("COMPLETED");
+  });
+
+  it("should poll past PENDING/RUNNING states until terminal", async () => {
+    cwLogsMock
+      .on(DescribeExportTasksCommand)
+      .resolvesOnce({
+        exportTasks: [{ status: { code: "PENDING" } }],
+      } as any)
+      .resolvesOnce({
+        exportTasks: [{ status: { code: "RUNNING" } }],
+      } as any)
+      .resolves({
+        exportTasks: [{ status: { code: "COMPLETED" } }],
+      } as any);
+    const status = await logArchivingService.waitForExportTask("TestTaskId", {
+      pollInterval: Duration.fromMillis(0),
+      maxWait: Duration.fromObject({ seconds: 5 }),
+    });
+    expect(status).toEqual("COMPLETED");
+  });
+
+  it("should throw when waitForExportTask exceeds the bound", async () => {
+    cwLogsMock.on(DescribeExportTasksCommand).resolves({
+      exportTasks: [{ status: { code: "RUNNING" } }],
+    } as any);
+    await expect(
+      logArchivingService.waitForExportTask("TestTaskId", {
+        pollInterval: Duration.fromMillis(0),
+        maxWait: Duration.fromMillis(50),
+      }),
+    ).rejects.toThrow(/did not finish/);
   });
 
   function assertCreateExportTaskCall(

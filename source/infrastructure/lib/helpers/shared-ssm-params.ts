@@ -90,19 +90,32 @@ export function getSharedSsmParamValues(
     data: {
       configApplicationId: sharedJsonParamResolver.configApplicationId,
       configEnvironmentId: sharedJsonParamResolver.configEnvironmentId,
-      globalConfigConfigurationProfileId:
-        sharedJsonParamResolver.globalConfigConfigurationProfileId,
+      configTableName: sharedJsonParamResolver.configTableName,
       nukeConfigConfigurationProfileId:
         sharedJsonParamResolver.nukeConfigConfigurationProfileId,
-      reportingConfigConfigurationProfileId:
-        sharedJsonParamResolver.reportingConfigConfigurationProfileId,
+      validatorExclusionConfigConfigurationProfileId:
+        sharedJsonParamResolver.validatorExclusionConfigConfigurationProfileId,
       accountTable: sharedJsonParamResolver.accountTable,
       leaseTemplateTable: sharedJsonParamResolver.leaseTemplateTable,
       leaseTable: sharedJsonParamResolver.leaseTable,
       blueprintTable: sharedJsonParamResolver.blueprintTable,
+      principalTable: sharedJsonParamResolver.principalTable,
+      cleanupReportTable: sharedJsonParamResolver.cleanupReportTable,
       tableKmsKeyId: sharedJsonParamResolver.tableKmsKeyId,
       solutionVersion: sharedJsonParamResolver.dataSolutionVersion,
       supportedSchemas: sharedJsonParamResolver.dataSupportedSchemas,
+      cognitoUserPoolId: sharedJsonParamResolver.cognitoUserPoolId,
+      cognitoUserPoolArn: sharedJsonParamResolver.cognitoUserPoolArn,
+      cognitoAppClientId: sharedJsonParamResolver.cognitoAppClientId,
+      cognitoIdentityPoolId: sharedJsonParamResolver.cognitoIdentityPoolId,
+      cognitoDomain: sharedJsonParamResolver.cognitoDomain,
+      awsAccessPortalUrl: sharedJsonParamResolver.awsAccessPortalUrl,
+      identityPoolAdminRoleName:
+        sharedJsonParamResolver.identityPoolAdminRoleName,
+      identityPoolManagerRoleName:
+        sharedJsonParamResolver.identityPoolManagerRoleName,
+      identityPoolUserRoleName:
+        sharedJsonParamResolver.identityPoolUserRoleName,
     },
     parameterArns: {
       idcConfigParamArn,

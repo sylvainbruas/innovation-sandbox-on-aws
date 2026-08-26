@@ -89,6 +89,142 @@ describe("TextareaField", () => {
     });
   });
 
+  test("shows a live character count when maxLength is set", async () => {
+    const user = userEvent.setup();
+
+    function TestWithMax() {
+      const { control } = useForm<TestFormValues>({
+        defaultValues: { testField: "" },
+      });
+      return (
+        <TextareaField
+          controllerProps={{ control, name: "testField" }}
+          formFieldProps={{ label: "Test Textarea" }}
+          textareaProps={{ placeholder: "Enter text" }}
+          maxLength={100}
+        />
+      );
+    }
+
+    renderWithQueryClient(<TestWithMax />);
+
+    // Starts at 0 / 100 and updates live as the user types.
+    expect(screen.getByText("0 / 100 characters")).toBeInTheDocument();
+    await user.type(screen.getByPlaceholderText("Enter text"), "hello");
+    expect(await screen.findByText("5 / 100 characters")).toBeInTheDocument();
+  });
+
+  test("counts an existing default value toward the live count", () => {
+    function TestWithMax() {
+      const { control } = useForm<TestFormValues>({
+        defaultValues: { testField: "abc" },
+      });
+      return (
+        <TextareaField
+          controllerProps={{ control, name: "testField" }}
+          formFieldProps={{ label: "Test Textarea" }}
+          maxLength={100}
+        />
+      );
+    }
+
+    renderWithQueryClient(<TestWithMax />);
+
+    expect(screen.getByText("3 / 100 characters")).toBeInTheDocument();
+  });
+
+  test("turns the character count red once the value exceeds maxLength", () => {
+    function TestWithMax() {
+      const { control } = useForm<TestFormValues>({
+        defaultValues: { testField: "a".repeat(105) },
+      });
+      return (
+        <TextareaField
+          controllerProps={{ control, name: "testField" }}
+          formFieldProps={{ label: "Test Textarea" }}
+          maxLength={100}
+        />
+      );
+    }
+
+    renderWithQueryClient(<TestWithMax />);
+
+    // Over the limit: the count is shown in Cloudscape's error colour so the
+    // state reads as visibly wrong, not a calm neutral hint.
+    const counter = screen.getByText("105 / 100 characters");
+    const styled = counter.closest('[class*="error"]');
+    expect(styled?.className).toMatch(/error/);
+  });
+
+  test("keeps the character count neutral while within maxLength", () => {
+    function TestWithMax() {
+      const { control } = useForm<TestFormValues>({
+        defaultValues: { testField: "abc" },
+      });
+      return (
+        <TextareaField
+          controllerProps={{ control, name: "testField" }}
+          formFieldProps={{ label: "Test Textarea" }}
+          maxLength={100}
+        />
+      );
+    }
+
+    renderWithQueryClient(<TestWithMax />);
+
+    const counter = screen.getByText("3 / 100 characters");
+    expect(counter.closest('[class*="error"]')).toBeNull();
+  });
+
+  test("announces the character count to screen readers via a live region", () => {
+    function TestWithMax() {
+      const { control } = useForm<TestFormValues>({
+        defaultValues: { testField: "hello" },
+      });
+      return (
+        <TextareaField
+          controllerProps={{ control, name: "testField" }}
+          formFieldProps={{ label: "Test Textarea" }}
+          maxLength={100}
+        />
+      );
+    }
+
+    renderWithQueryClient(<TestWithMax />);
+
+    // A screen-reader-friendly phrasing is present so the live count is
+    // announced as the value changes (the visible "N / MAX" is aria-hidden and
+    // only read on focus, never live).
+    expect(screen.getByText("5 of 100 characters")).toBeInTheDocument();
+  });
+
+  test("announces the over-limit state to screen readers", () => {
+    function TestWithMax() {
+      const { control } = useForm<TestFormValues>({
+        defaultValues: { testField: "a".repeat(105) },
+      });
+      return (
+        <TextareaField
+          controllerProps={{ control, name: "testField" }}
+          formFieldProps={{ label: "Test Textarea" }}
+          maxLength={100}
+        />
+      );
+    }
+
+    renderWithQueryClient(<TestWithMax />);
+
+    expect(
+      screen.getByText("105 of 100 characters, over the limit"),
+    ).toBeInTheDocument();
+  });
+
+  test("renders no character count when maxLength is omitted", () => {
+    renderWithQueryClient(<TestComponent />);
+
+    expect(screen.queryByText(/\/ \d+ characters/)).not.toBeInTheDocument();
+  });
+
   test("handles multiline text", async () => {
     const user = userEvent.setup();
     renderWithQueryClient(<TestComponent />);

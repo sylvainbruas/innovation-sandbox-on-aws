@@ -14,15 +14,24 @@ export function createSandboxAccount(
   return generateSchemaData(SandboxAccountSchema, overrides);
 }
 
+// The shared fixtures pin resourceLock to undefined: zocker would otherwise
+// randomly generate one (it is optional in the schema), and a randomly-live
+// lock disables the retry-cleanup actions, making tests flaky.
 export const mockAvailableAccount = createSandboxAccount({
   status: "Available",
+  resourceLock: undefined,
 });
-export const mockActiveAccount = createSandboxAccount({ status: "Active" });
+export const mockActiveAccount = createSandboxAccount({
+  status: "Active",
+  resourceLock: undefined,
+});
 export const mockQuarantineAccount = createSandboxAccount({
   status: "Quarantine",
+  resourceLock: undefined,
 });
 export const mockCleanUpAccount = createSandboxAccount({
   status: "CleanUp",
+  resourceLock: undefined,
 });
 
 export const mockUnregisteredAccounts: UnregisteredAccount[] = [

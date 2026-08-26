@@ -36,14 +36,6 @@ export class DeploymentUUID extends Construct {
         ),
         handler: "handler",
         namespace: props.namespace,
-        bundling: {
-          externalModules: [
-            "uuid",
-            "@middy/core",
-            "@aws-lambda-powertools/logger",
-            "@aws-lambda-powertools/tracer",
-          ],
-        },
         envSchema: DeploymentUuidLambdaEnvironmentSchema,
         environment: {},
         customResourceType: "Custom::DeploymentUUID",

@@ -1,6 +1,15 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+/**
+ * IMPORTANT: All datetime strings stored in DynamoDB and validated by Zod schemas
+ * must be UTC with a "Z" suffix (e.g. "2025-01-15T10:30:00.000Z").
+ *
+ * Our schemas use z.iso.datetime() which rejects timezone offsets like "+05:00".
+ * Always use DateTime.utc() / now() from this module — never DateTime.now().toISO()
+ * which produces local-timezone offsets that will fail schema validation.
+ */
+
 import { DateTime } from "luxon";
 
 export function parseDatetime(datetime: string) {

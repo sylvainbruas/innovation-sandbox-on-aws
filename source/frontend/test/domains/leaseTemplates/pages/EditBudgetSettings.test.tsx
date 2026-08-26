@@ -12,7 +12,8 @@ import {
   showSuccessToast,
 } from "@amzn/innovation-sandbox-frontend/components/Toast";
 import { EditBudgetSettings } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/pages/EditBudgetSettings";
-import { config } from "@amzn/innovation-sandbox-frontend/helpers/config";
+import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
+import { createConfiguration } from "@amzn/innovation-sandbox-frontend/mocks/factories/configurationFactory";
 import { mockAdvancedLeaseTemplate } from "@amzn/innovation-sandbox-frontend/mocks/handlers/leaseTemplateHandlers";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
 import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
@@ -77,7 +78,7 @@ describe("EditBudgetSettings", () => {
     const submitSpy = vi.fn();
     server.use(
       http.put(
-        `${config.ApiUrl}/leaseTemplates/${mockUuid}`,
+        `${getConfig().ApiUrl}/leaseTemplates/${mockUuid}`,
         async ({ request }) => {
           const data = await request.json();
           submitSpy(data);
@@ -111,7 +112,7 @@ describe("EditBudgetSettings", () => {
 
   test("displays error toast on submission failure", async () => {
     server.use(
-      http.put(`${config.ApiUrl}/leaseTemplates/${mockUuid}`, () => {
+      http.put(`${getConfig().ApiUrl}/leaseTemplates/${mockUuid}`, () => {
         return HttpResponse.json(
           { status: "error", message: "Update failed" },
           { status: 500 },
@@ -151,5 +152,58 @@ describe("EditBudgetSettings", () => {
 
     const saveButton = screen.getByRole("button", { name: /save changes/i });
     expect(saveButton).toBeDisabled();
+  });
+
+  test("assigns a budget when required and none was previously set", async () => {
+    // Regression: with a required budget and none set, the enable toggle is
+    // forced-on-but-disabled, so maxBudgetEnabled stays false. Entering a value
+    // must still submit it (not undefined).
+    const configRequired = createConfiguration({
+      leases: {
+        maxBudget: 5000,
+        requireMaxBudget: true,
+      },
+    });
+
+    let submittedData: any = null;
+    server.use(
+      http.get(`${getConfig().ApiUrl}/configurations`, () =>
+        HttpResponse.json({ status: "success", data: configRequired }),
+      ),
+      http.get(`${getConfig().ApiUrl}/leaseTemplates/${mockUuid}`, () =>
+        HttpResponse.json({
+          status: "success",
+          data: {
+            ...mockAdvancedLeaseTemplate,
+            maxSpend: undefined,
+            budgetThresholds: undefined,
+          },
+        }),
+      ),
+      http.put(
+        `${getConfig().ApiUrl}/leaseTemplates/${mockUuid}`,
+        async ({ request }) => {
+          submittedData = await request.json();
+          return HttpResponse.json({ status: "success", data: submittedData });
+        },
+      ),
+    );
+
+    renderComponent();
+    const user = userEvent.setup();
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Maximum Spend (USD)")).toBeInTheDocument();
+    });
+
+    const maxSpendInput = screen.getByLabelText("Maximum Spend (USD)");
+    await user.tripleClick(maxSpendInput);
+    await user.keyboard("250");
+
+    const saveButton = screen.getByRole("button", { name: /save changes/i });
+    await waitFor(() => expect(saveButton).toBeEnabled());
+    await user.click(saveButton);
+
+    await waitFor(() => expect(submittedData?.maxSpend).toBe(250));
   });
 });

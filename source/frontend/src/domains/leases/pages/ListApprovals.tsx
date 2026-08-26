@@ -14,7 +14,10 @@ import { useEffect, useState } from "react";
 
 import { TextLink } from "@amzn/innovation-sandbox-frontend/components/TextLink";
 
-import { LeaseWithLeaseId as Lease } from "@amzn/innovation-sandbox-commons/data/lease/lease";
+import {
+  LEASE_NOT_PENDING_REVIEW_ERROR,
+  LeaseWithLeaseId as Lease,
+} from "@amzn/innovation-sandbox-commons/data/lease/lease";
 import { useAppLayoutContext } from "@amzn/innovation-sandbox-frontend/components/AppLayout/AppLayoutContext";
 import { ContentLayout } from "@amzn/innovation-sandbox-frontend/components/ContentLayout";
 import { InfoLink } from "@amzn/innovation-sandbox-frontend/components/InfoLink";
@@ -28,9 +31,24 @@ import {
   useGetPendingApprovals,
   useReviewLease,
 } from "@amzn/innovation-sandbox-frontend/domains/leases/hooks";
+import { ApiError } from "@amzn/innovation-sandbox-frontend/helpers/ApiProxy";
 import { createDateSortingComparator } from "@amzn/innovation-sandbox-frontend/helpers/date-sorting-comparator";
 import { useBreadcrumb } from "@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb";
 import { useModal } from "@amzn/innovation-sandbox-frontend/hooks/useModal";
+
+/**
+ * Drops selected rows no longer pending in the latest fetch so a batch review
+ * never submits a stale row (which 409s). Returns the same reference when
+ * unchanged so the effect driving it doesn't loop.
+ */
+export const reconcileSelectedRequests = (
+  selected: Lease[],
+  requests: Lease[],
+): Lease[] => {
+  const pendingIds = new Set(requests.map((r) => r.leaseId));
+  const reconciled = selected.filter((r) => pendingIds.has(r.leaseId));
+  return reconciled.length === selected.length ? selected : reconciled;
+};
 
 const DateRequestedCell = ({ lease }: { lease: Lease }) =>
   lease.meta?.createdTime
@@ -38,6 +56,28 @@ const DateRequestedCell = ({ lease }: { lease: Lease }) =>
     : undefined;
 
 const CommentsCell = ({ lease }: { lease: Lease }) => <>{lease.comments}</>;
+
+const SharedPrincipalsCell = ({
+  lease,
+  includeLinks,
+}: {
+  lease: Lease;
+  includeLinks: boolean;
+}) => {
+  // desiredAssignments always includes the owner as the first entry,
+  // so subtract 1 to show only additional shared principals.
+  const totalCount = lease.desiredAssignments?.length ?? 0;
+  const sharedCount = Math.max(0, totalCount - 1);
+  if (sharedCount === 0) {
+    return "-";
+  }
+  const label = `${sharedCount} ${sharedCount === 1 ? "principal" : "principals"}`;
+  return includeLinks ? (
+    <TextLink to={`/approvals/${lease.leaseId}?tab=sharing`}>{label}</TextLink>
+  ) : (
+    label
+  );
+};
 
 const RequestorCell = ({
   lease,
@@ -90,6 +130,16 @@ const createColumnDefinitions = (includeLinks: boolean) => [
     sortingField: "comments",
     cell: (lease: Lease) => <CommentsCell lease={lease} />, // NOSONAR typescript:S6478 - the way the table component works requires defining component during render
   },
+  {
+    id: "sharedPrincipals",
+    header: "Shared with",
+    sortingComparator: (a: Lease, b: Lease) =>
+      Math.max(0, (a.desiredAssignments?.length ?? 0) - 1) -
+      Math.max(0, (b.desiredAssignments?.length ?? 0) - 1),
+    cell: (lease: Lease) => (
+      <SharedPrincipalsCell lease={lease} includeLinks={includeLinks} />
+    ), // NOSONAR typescript:S6478 - the way the table component works requires defining component during render
+  },
 ];
 
 const ReviewModalContent = ({
@@ -107,10 +157,24 @@ const ReviewModalContent = ({
       identifierKey="leaseId"
       sequential
       onSubmit={async (lease: Lease) => {
-        await reviewLease({
-          leaseId: lease.leaseId,
-          approve: mode === "approve",
-        });
+        try {
+          await reviewLease({
+            leaseId: lease.leaseId,
+            approve: mode === "approve",
+          });
+        } catch (error) {
+          // Already reviewed elsewhere: treat this benign 409 as done so the
+          // batch doesn't error and prompt a redundant re-review.
+          if (
+            !(
+              error instanceof ApiError &&
+              error.statusCode === 409 &&
+              error.message === LEASE_NOT_PENDING_REVIEW_ERROR
+            )
+          ) {
+            throw error;
+          }
+        }
         setSelectedRequests((prev) =>
           prev.filter((r) => r.leaseId !== lease.leaseId),
         );
@@ -163,6 +227,11 @@ export const ListApprovals = () => {
     ]);
     setTools(<Markdown file="approvals" />);
   }, []);
+
+  useEffect(() => {
+    if (!requests) return;
+    setSelectedRequests((prev) => reconcileSelectedRequests(prev, requests));
+  }, [requests]);
 
   const showReviewModal = (mode: "approve" | "deny") => {
     showModal({

@@ -8,7 +8,7 @@ import { BrowserRouter as Router } from "react-router-dom";
 import { describe, expect, test } from "vitest";
 
 import { LeaseTemplatesTable } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/components/LeaseTemplatesTable";
-import { config } from "@amzn/innovation-sandbox-frontend/helpers/config";
+import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import { mockLeaseTemplates } from "@amzn/innovation-sandbox-frontend/mocks/handlers/leaseTemplateHandlers";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
 import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
@@ -33,7 +33,7 @@ describe("LeaseTemplatesTable", () => {
 
   test("handles error when fetching lease templates fails", async () => {
     server.use(
-      http.get(`${config.ApiUrl}/leaseTemplates`, () => {
+      http.get(`${getConfig().ApiUrl}/leaseTemplates`, () => {
         return HttpResponse.json(
           { status: "error", message: "Failed to fetch lease templates" },
           { status: 500 },
@@ -101,7 +101,7 @@ describe("LeaseTemplatesTable", () => {
 
     let callCount = 0;
     server.use(
-      http.get(`${config.ApiUrl}/leaseTemplates`, () => {
+      http.get(`${getConfig().ApiUrl}/leaseTemplates`, () => {
         callCount++;
         const data = callCount === 1 ? initialTemplates : refreshedTemplates;
         return HttpResponse.json({
@@ -133,7 +133,7 @@ describe("LeaseTemplatesTable", () => {
 
   test("navigates to edit page when clicking on a template name", async () => {
     server.use(
-      http.get(`${config.ApiUrl}/leaseTemplates`, () => {
+      http.get(`${getConfig().ApiUrl}/leaseTemplates`, () => {
         return HttpResponse.json({
           status: "success",
           data: { result: mockLeaseTemplates, nextPageIdentifier: null },

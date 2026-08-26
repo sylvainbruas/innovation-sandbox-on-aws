@@ -22,7 +22,7 @@ import baseMiddlewareBundle from "@amzn/innovation-sandbox-commons/lambda/middle
 import { ValidatedEnvironment } from "@amzn/innovation-sandbox-commons/lambda/middleware/environment-validator.js";
 import { SubscribableLog } from "@amzn/innovation-sandbox-commons/observability/log-types.js";
 import {
-  AppInsightsLogPatterns,
+  LogPatterns,
   searchableAccountProperties,
 } from "@amzn/innovation-sandbox-commons/observability/logging.js";
 import { fromTemporaryIsbOrgManagementCredentials } from "@amzn/innovation-sandbox-commons/utils/cross-account-roles.js";
@@ -57,7 +57,7 @@ export async function doAccountDriftMonitoring(
     (event) => event.account.driftAtLastScan,
   )) {
     logger.warn(
-      `${AppInsightsLogPatterns.AccountDrift.pattern}: (${driftingAccount.account.awsAccountId}) sending message to ISB bus`,
+      `${LogPatterns.AccountDrift.pattern}: (${driftingAccount.account.awsAccountId}) sending message to ISB bus`,
       {
         ...searchableAccountProperties(driftingAccount.account),
         logDetailType: "AccountDrift",
@@ -117,7 +117,7 @@ export async function doAccountDriftMonitoring(
       continue; //expected
     }
     logger.warn(
-      `${AppInsightsLogPatterns.AccountDrift.pattern}: Untracked account (${untrackedAccountId}) found in ${inOu} OU!, sending message to ISB bus`,
+      `${LogPatterns.AccountDrift.pattern}: Untracked account (${untrackedAccountId}) found in ${inOu} OU!, sending message to ISB bus`,
       {
         logDetailType: "AccountDrift",
         accountId: untrackedAccountId,

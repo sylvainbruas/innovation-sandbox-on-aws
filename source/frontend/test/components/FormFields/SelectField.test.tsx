@@ -17,7 +17,7 @@ type Status = "active" | "inactive" | "pending";
 
 const TestSchema = z.object({
   status: z.enum(["active", "inactive", "pending"], {
-    required_error: "Status is required",
+    error: "Status is required",
   }),
 });
 

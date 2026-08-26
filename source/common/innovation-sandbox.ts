@@ -9,6 +9,7 @@ import { LeaseTemplateStore } from "@amzn/innovation-sandbox-commons/data/lease-
 import { LeaseTemplate } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
 import { LeaseStore } from "@amzn/innovation-sandbox-commons/data/lease/lease-store.js";
 import {
+  DesiredAssignment,
   ExpiredLeaseStatus,
   isActiveLease,
   isFrozenLease,
@@ -20,6 +21,7 @@ import {
   MonitoredLeaseStatusSchema,
   PendingLease,
 } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
+import { PrincipalStore } from "@amzn/innovation-sandbox-commons/data/principal/principal-store.js";
 import { SandboxAccountStore } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account-store.js";
 import {
   IsbOu,
@@ -31,7 +33,10 @@ import {
 } from "@amzn/innovation-sandbox-commons/data/utils.js";
 import { AccountQuarantinedEvent } from "@amzn/innovation-sandbox-commons/events/account-quarantined-event.js";
 import { BlueprintDeploymentRequest } from "@amzn/innovation-sandbox-commons/events/blueprint-deployment-request.js";
-import { CleanAccountRequest } from "@amzn/innovation-sandbox-commons/events/clean-account-request.js";
+import {
+  CleanAccountRequest,
+  CleanupReasonSchema,
+} from "@amzn/innovation-sandbox-commons/events/clean-account-request.js";
 import { LeaseApprovedEvent } from "@amzn/innovation-sandbox-commons/events/lease-approved-event.js";
 import { LeaseDeniedEvent } from "@amzn/innovation-sandbox-commons/events/lease-denied-event.js";
 import {
@@ -47,10 +52,23 @@ import {
 import { LeaseUnfrozenEvent } from "@amzn/innovation-sandbox-commons/events/lease-unfrozen-event.js";
 import { BlueprintDeploymentService } from "@amzn/innovation-sandbox-commons/isb-services/blueprint-deployment-service.js";
 import { IdcService } from "@amzn/innovation-sandbox-commons/isb-services/idc-service.js";
+import {
+  acquireAssignmentProcessingLock,
+  enrichDesiredAssignments,
+  publishAssignmentProcessingRequest,
+  releaseAssignmentProcessingLock,
+  triggerAssignmentProcessing,
+} from "@amzn/innovation-sandbox-commons/isb-services/lease-assignment/index.js";
+import { OrganizationsTaggingService } from "@amzn/innovation-sandbox-commons/isb-services/organizations-tagging-service.js";
 import { SandboxOuService } from "@amzn/innovation-sandbox-commons/isb-services/sandbox-ou-service.js";
-import { SubscribableLog } from "@amzn/innovation-sandbox-commons/observability/log-types.js";
+import {
+  ReasonForQuarantine,
+  SubscribableLog,
+} from "@amzn/innovation-sandbox-commons/observability/log-types.js";
 import {
   addCorrelationContext,
+  logTaggingFailure,
+  logUntaggingFailure,
   searchableAccountProperties,
   searchableLeaseProperties,
   searchableLeaseTemplateProperties,
@@ -59,7 +77,13 @@ import {
   IsbEvent,
   IsbEventBridgeClient,
 } from "@amzn/innovation-sandbox-commons/sdk-clients/event-bridge-client.js";
-import { IsbUser } from "@amzn/innovation-sandbox-commons/types/isb-types.js";
+import {
+  type IsbUser,
+  getUserEmail,
+  isIdcUser,
+  isSyntheticM2mEmail,
+} from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
+import { ISB_ACCOUNT_TAG_SUFFIXES } from "@amzn/innovation-sandbox-commons/utils/isb-account-tags.js";
 import {
   calculateTtlInEpochSeconds,
   datetimeAsString,
@@ -74,12 +98,26 @@ import { randomUUID } from "crypto";
 export class InnovationSandboxError extends Error {}
 export class NoAccountsAvailableError extends InnovationSandboxError {}
 export class MaxNumberOfLeasesExceededError extends InnovationSandboxError {}
+export class LeaseRequestRateLimitExceededError extends InnovationSandboxError {
+  constructor(
+    message: string,
+    public readonly retryAt: string,
+  ) {
+    super(message);
+  }
+}
 export class AccountNotInQuarantineError extends InnovationSandboxError {}
 export class AccountInCleanUpError extends InnovationSandboxError {}
 export class AccountNotInActiveError extends InnovationSandboxError {}
 export class AccountNotInFrozenError extends InnovationSandboxError {}
 export class CouldNotFindAccountError extends InnovationSandboxError {}
 export class CouldNotRetrieveUserError extends InnovationSandboxError {}
+/**
+ * An M2M-assignee lease reached an IDC-grant code path. The entry guard in
+ * `postLeaseHandler` should make this unreachable; if it throws, it signals
+ * legacy data or a path that bypassed the API. Maps to HTTP 500.
+ */
+export class M2mAssigneeNotAllowedError extends InnovationSandboxError {}
 
 export type IsbContext<T extends { [key: string]: any }> = T & {
   logger: Logger;
@@ -98,6 +136,7 @@ export class InnovationSandbox {
       eventBridgeClient: IsbEventBridgeClient;
       orgsService: SandboxOuService;
       idcService: IdcService;
+      organizationsTaggingService: OrganizationsTaggingService;
     }>,
   ): Promise<SandboxAccount> {
     const { logger, eventBridgeClient, orgsService, idcService } = context;
@@ -134,6 +173,20 @@ export class InnovationSandbox {
       searchableAccountProperties(newSandboxAccount),
     );
 
+    try {
+      await context.organizationsTaggingService.updateStatusTag(
+        newSandboxAccount.awsAccountId,
+        "CleanUp",
+      );
+    } catch (error) {
+      logTaggingFailure(
+        logger,
+        newSandboxAccount.awsAccountId,
+        ["Status"],
+        error,
+      );
+    }
+
     logger.info(
       `Registered new SandboxAccount (${newSandboxAccount.awsAccountId}). Awaiting Cleanup...`,
     );
@@ -142,7 +195,7 @@ export class InnovationSandbox {
       context.tracer,
       new CleanAccountRequest({
         accountId: newSandboxAccount.awsAccountId,
-        reason: "ACCOUNT_REGISTRATION",
+        reason: CleanupReasonSchema.enum.ACCOUNT_REGISTRATION,
       }),
     );
 
@@ -156,10 +209,12 @@ export class InnovationSandbox {
       comments?: string;
       targetUser: IsbUser;
       createdBy?: string;
+      assignments?: DesiredAssignment[];
     },
     context: IsbContext<{
       globalConfig: GlobalConfig;
       leaseStore: LeaseStore;
+      principalStore: PrincipalStore;
       sandboxAccountStore: SandboxAccountStore;
       idcService: IdcService;
       orgsService: SandboxOuService;
@@ -167,11 +222,24 @@ export class InnovationSandbox {
       blueprintStore: BlueprintStore;
       blueprintDeploymentService: BlueprintDeploymentService;
       leaseTemplateStore: LeaseTemplateStore;
+      organizationsTaggingService: OrganizationsTaggingService;
     }>,
   ) {
-    const { leaseTemplate, comments, targetUser, createdBy } = props;
-    const { logger, tracer, leaseStore, isbEventBridgeClient, globalConfig } =
-      context;
+    const {
+      leaseTemplate,
+      comments,
+      targetUser,
+      createdBy,
+      assignments = [],
+    } = props;
+    const {
+      logger,
+      tracer,
+      leaseStore,
+      isbEventBridgeClient,
+      globalConfig,
+      principalStore,
+    } = context;
 
     addCorrelationContext(
       logger,
@@ -181,7 +249,7 @@ export class InnovationSandbox {
     const numOfActiveLeases = (
       await collect(
         stream(leaseStore, leaseStore.findByUserEmail, {
-          userEmail: targetUser.email,
+          userEmail: getUserEmail(targetUser),
         }),
       )
     ).filter((lease) =>
@@ -196,8 +264,27 @@ export class InnovationSandbox {
       );
     }
 
+    // Always include the owner in desiredAssignments from creation time.
+    // The owner's principalId comes from the resolved target user.
+    if (!isIdcUser(targetUser)) {
+      throw new Error("Target user must be an IDC user.");
+    }
+    const ownerAssignment = {
+      principalId: targetUser.userId,
+      principalType: "USER" as const,
+    };
+
+    const enrichedAssignments = await enrichDesiredAssignments(
+      [ownerAssignment, ...assignments],
+      {
+        principalStore,
+        idcService: context.idcService,
+        logger: context.logger,
+      },
+    );
+
     let newLease: Lease = await leaseStore.create({
-      userEmail: targetUser.email,
+      userEmail: getUserEmail(targetUser),
       uuid: randomUUID(),
       status: "PendingApproval",
       originalLeaseTemplateUuid: leaseTemplate.uuid,
@@ -208,9 +295,11 @@ export class InnovationSandbox {
       durationThresholds: leaseTemplate.durationThresholds,
       leaseDurationInHours: leaseTemplate.leaseDurationInHours,
       comments,
-      createdBy: createdBy || targetUser.email,
+      createdBy: createdBy || getUserEmail(targetUser),
       blueprintId: leaseTemplate.blueprintId,
       blueprintName: leaseTemplate.blueprintName,
+      allowOwnerToShareLease: leaseTemplate.allowOwnerToShareLease,
+      desiredAssignments: enrichedAssignments,
       totalCostAccrued: 0,
       approvedBy: null,
       awsAccountId: null,
@@ -253,7 +342,7 @@ export class InnovationSandbox {
     const actionBy = isLeaseAssignment ? `by ${createdBy}` : "";
 
     logger.info(
-      `Lease of type (${leaseTemplate.name}) (${leaseTemplate.uuid}) ${actionType} for (${targetUser.email}) ${actionBy}`,
+      `Lease of type (${leaseTemplate.name}) (${leaseTemplate.uuid}) ${actionType} for (${getUserEmail(targetUser)}) ${actionBy}`,
       {
         ...searchableLeaseProperties(newLease),
       },
@@ -271,9 +360,9 @@ export class InnovationSandbox {
     context: IsbContext<{
       leaseStore: LeaseStore;
       sandboxAccountStore: SandboxAccountStore;
-      idcService: IdcService;
       orgsService: SandboxOuService;
       eventBridgeClient: IsbEventBridgeClient;
+      organizationsTaggingService: OrganizationsTaggingService;
     }>,
   ) {
     const { lease, reason } = props;
@@ -282,7 +371,6 @@ export class InnovationSandbox {
       tracer,
       leaseStore,
       sandboxAccountStore,
-      idcService,
       orgsService,
       eventBridgeClient,
     } = context;
@@ -306,25 +394,56 @@ export class InnovationSandbox {
       );
     }
 
-    const user = await idcService.getUserFromEmail(lease.userEmail);
-    if (!user) {
-      logger.warn(
-        `User (${lease.userEmail}) not found in IDC. Proceeding with freeze operation.`,
-      );
+    // Acquire the assignment lock BEFORE mutating the lease. A conflict must
+    // leave the lease untouched — acquiring afterwards allowed the status/OU
+    // change to commit while the caller was told the operation failed.
+    const assignmentLock = await acquireAssignmentProcessingLock(
+      { leaseId: lease.uuid, userEmail: lease.userEmail, intent: "FREEZE" },
+      { leaseStore, eventBridgeClient, tracer, logger },
+    );
+
+    try {
+      await new Transaction(
+        orgsService.transactionalMoveAccount(account, "Active", "Frozen"),
+        leaseStore.transactionalUpdate({
+          ...lease,
+          status: "Frozen",
+          // `lease` was read before the lock was taken and this is a full-item
+          // put, so the lock must be carried through or the write erases it.
+          resourceLock: assignmentLock.lock,
+        }),
+      ).complete();
+    } catch (error) {
+      // Nothing was dispatched, so give the lock back.
+      await releaseAssignmentProcessingLock(assignmentLock, {
+        leaseStore,
+        logger,
+      });
+      throw error;
     }
 
-    await idcService.revokeAllUserAccess(account.awsAccountId);
+    try {
+      await context.organizationsTaggingService.updateStatusTag(
+        account.awsAccountId,
+        "Frozen",
+      );
+    } catch (error) {
+      logTaggingFailure(logger, account.awsAccountId, ["Status"], error);
+    }
 
-    await new Transaction(
-      orgsService.transactionalMoveAccount(account, "Active", "Frozen"),
-      leaseStore.transactionalUpdate({
-        ...lease,
-        status: "Frozen",
-      }),
-    ).complete();
+    await publishAssignmentProcessingRequest(assignmentLock, {
+      leaseStore,
+      eventBridgeClient,
+      tracer,
+      logger,
+    });
 
     logger.info(
-      `Lease of type (${lease.originalLeaseTemplateName}) for (${user?.email ?? lease.userEmail}) frozen. Account (${account.awsAccountId}) Frozen: ${reason.type}`,
+      `Lease ${lease.uuid} owned by ${lease.userEmail} frozen: ${reason.type}`,
+      {
+        ...searchableAccountProperties(account),
+        ...searchableLeaseProperties(lease),
+      },
     );
     await eventBridgeClient.sendIsbEvent(
       tracer,
@@ -349,12 +468,12 @@ export class InnovationSandbox {
     context: IsbContext<{
       leaseStore: LeaseStore;
       sandboxAccountStore: SandboxAccountStore;
-      idcService: IdcService;
       orgsService: SandboxOuService;
       eventBridgeClient: IsbEventBridgeClient;
       globalConfig: GlobalConfig;
       blueprintStore: BlueprintStore;
       blueprintDeploymentService: BlueprintDeploymentService;
+      organizationsTaggingService: OrganizationsTaggingService;
     }>,
   ) {
     const { lease, expiredStatus } = props;
@@ -364,7 +483,6 @@ export class InnovationSandbox {
       tracer,
       leaseStore,
       sandboxAccountStore,
-      idcService,
       orgsService,
       eventBridgeClient,
       globalConfig,
@@ -389,13 +507,6 @@ export class InnovationSandbox {
 
     addCorrelationContext(logger, searchableAccountProperties(account));
 
-    const user = await idcService.getUserFromEmail(lease.userEmail);
-    if (!user) {
-      logger.warn(
-        `User (${lease.userEmail}) not found in IDC. Proceeding with lease termination.`,
-      );
-    }
-
     // Clean up stack instance metadata before account cleanup (fire-and-forget)
     if (lease.blueprintId) {
       await context.blueprintDeploymentService.deleteStackInstancesMetadata(
@@ -409,10 +520,20 @@ export class InnovationSandbox {
       await orgsService
         .transactionalMoveAccount(account, account.status, "CleanUp")
         .complete();
+
+      try {
+        await context.organizationsTaggingService.updateStatusTag(
+          account.awsAccountId,
+          "CleanUp",
+        );
+      } catch (error) {
+        logTaggingFailure(logger, account.awsAccountId, ["Status"], error);
+      }
+
       eventsToSend.push(
         new CleanAccountRequest({
           accountId: account.awsAccountId,
-          reason: "LEASE_TERMINATION",
+          reason: CleanupReasonSchema.enum.LEASE_TERMINATION,
         }),
       );
     }
@@ -424,7 +545,10 @@ export class InnovationSandbox {
       ttl: calculateTtlInEpochSeconds(globalConfig.leases.ttl),
     });
 
-    await idcService.revokeAllUserAccess(account.awsAccountId);
+    await triggerAssignmentProcessing(
+      { leaseId: lease.uuid, userEmail: lease.userEmail, intent: "TERMINATE" },
+      { leaseStore, eventBridgeClient, tracer, logger },
+    );
 
     eventsToSend.push(
       new LeaseTerminatedEvent({
@@ -438,7 +562,7 @@ export class InnovationSandbox {
     );
 
     logger.info(
-      `Lease of type (${lease.originalLeaseTemplateName}) for (${user?.email ?? lease.userEmail}) terminated. Reason: ${expiredStatus}. ${autoCleanup && `SandboxAccount (${account.awsAccountId}) sent for cleanup.`}`, //NOSONAR
+      `Lease ${lease.uuid} owned by ${lease.userEmail} terminated: ${expiredStatus}`,
       {
         ...searchableAccountProperties(account),
         ...searchableLeaseProperties(lease),
@@ -465,9 +589,9 @@ export class InnovationSandbox {
     context: IsbContext<{
       leaseStore: LeaseStore;
       sandboxAccountStore: SandboxAccountStore;
-      idcService: IdcService;
       orgsService: SandboxOuService;
       eventBridgeClient: IsbEventBridgeClient;
+      organizationsTaggingService: OrganizationsTaggingService;
     }>,
   ): Promise<PutResult<Lease>> {
     const { lease } = props;
@@ -476,7 +600,6 @@ export class InnovationSandbox {
       tracer,
       leaseStore,
       sandboxAccountStore,
-      idcService,
       orgsService,
       eventBridgeClient,
     } = context;
@@ -498,29 +621,56 @@ export class InnovationSandbox {
       );
     }
 
-    const user = await idcService.getUserFromEmail(lease.userEmail);
-    if (!user) {
-      throw new CouldNotRetrieveUserError(
-        "Unable to retrieve user information.",
-      );
-    }
-    const transactionResult = await new Transaction(
-      leaseStore.transactionalUpdate({
-        ...lease,
-        status: "Active",
-      }),
-      orgsService.transactionalMoveAccount(account, "Frozen", "Active"),
-      idcService.transactionalGrantUserAccess(account.awsAccountId, user),
-    ).complete();
-
-    logger.info(
-      `Lease of type (${lease.originalLeaseTemplateName}) for (${user.email}) unfrozen. Account (${account.awsAccountId}) Active`,
-      {
-        ...searchableAccountProperties(account),
-        ...searchableLeaseProperties(lease),
-        logDetailType: "LeaseUnfrozen",
-      } satisfies SubscribableLog,
+    // Acquire the assignment lock BEFORE mutating the lease. UNFREEZE is
+    // non-critical, so any live lock rejects it; acquiring afterwards let the
+    // lease flip Frozen -> Active while an in-flight FREEZE was still revoking
+    // access, leaving desired assignments with no records behind them.
+    const assignmentLock = await acquireAssignmentProcessingLock(
+      { leaseId: lease.uuid, userEmail: lease.userEmail, intent: "UNFREEZE" },
+      { leaseStore, eventBridgeClient, tracer, logger },
     );
+
+    let transactionResult: PutResult<Lease>;
+    try {
+      transactionResult = await new Transaction(
+        leaseStore.transactionalUpdate({
+          ...lease,
+          status: "Active",
+          // See freezeLease.
+          resourceLock: assignmentLock.lock,
+        }),
+        orgsService.transactionalMoveAccount(account, "Frozen", "Active"),
+      ).complete();
+    } catch (error) {
+      // Nothing was dispatched, so give the lock back.
+      await releaseAssignmentProcessingLock(assignmentLock, {
+        leaseStore,
+        logger,
+      });
+      throw error;
+    }
+
+    try {
+      await context.organizationsTaggingService.updateStatusTag(
+        account.awsAccountId,
+        "Active",
+      );
+    } catch (error) {
+      logTaggingFailure(logger, account.awsAccountId, ["Status"], error);
+    }
+
+    await publishAssignmentProcessingRequest(assignmentLock, {
+      leaseStore,
+      eventBridgeClient,
+      tracer,
+      logger,
+    });
+
+    logger.info(`Lease ${lease.uuid} owned by ${lease.userEmail} unfrozen`, {
+      ...searchableAccountProperties(account),
+      ...searchableLeaseProperties(lease),
+      logDetailType: "LeaseUnfrozen",
+    } satisfies SubscribableLog);
 
     await eventBridgeClient.sendIsbEvent(
       tracer,
@@ -543,14 +693,16 @@ export class InnovationSandbox {
   public static async retryCleanup(
     props: {
       sandboxAccount: SandboxAccount;
+      initiatedBy?: string;
     },
     context: IsbContext<{
       sandboxAccountStore: SandboxAccountStore;
       eventBridgeClient: IsbEventBridgeClient;
       orgsService: SandboxOuService;
+      organizationsTaggingService: OrganizationsTaggingService;
     }>,
   ) {
-    const { sandboxAccount } = props;
+    const { sandboxAccount, initiatedBy } = props;
     const { logger, tracer, orgsService, eventBridgeClient } = context;
 
     addCorrelationContext(logger, searchableAccountProperties(sandboxAccount));
@@ -564,16 +716,43 @@ export class InnovationSandbox {
       );
     }
 
-    if (sandboxAccount.status != "CleanUp")
+    // Reject if a cleanup execution is already running (a non-expired lock).
+    // Dispatching a second CleanAccountRequest would let two executions race
+    // on the same account. An expired lock is the stuck-execution case this
+    // retry exists to recover, so it is allowed through.
+    const activeLock = sandboxAccount.resourceLock;
+    if (activeLock && parseDatetime(activeLock.expiresAt) > now()) {
+      throw new AccountInCleanUpError(
+        "A cleanup execution is already running for this account. Wait for it to finish before retrying.",
+      );
+    }
+
+    if (sandboxAccount.status != "CleanUp") {
       await orgsService
         .transactionalMoveAccount(sandboxAccount, "Quarantine", "CleanUp")
         .complete();
+
+      try {
+        await context.organizationsTaggingService.updateStatusTag(
+          sandboxAccount.awsAccountId,
+          "CleanUp",
+        );
+      } catch (error) {
+        logTaggingFailure(
+          logger,
+          sandboxAccount.awsAccountId,
+          ["Status"],
+          error,
+        );
+      }
+    }
 
     await eventBridgeClient.sendIsbEvents(
       tracer,
       new CleanAccountRequest({
         accountId: sandboxAccount.awsAccountId,
-        reason: "RETRY_FAILED_CLEANUP",
+        reason: CleanupReasonSchema.enum.MANUALLY_INITIATED,
+        initiatedBy,
       }),
     );
 
@@ -599,6 +778,7 @@ export class InnovationSandbox {
     },
     context: IsbContext<{
       leaseStore: LeaseStore;
+      principalStore: PrincipalStore;
       sandboxAccountStore: SandboxAccountStore;
       idcService: IdcService;
       orgsService: SandboxOuService;
@@ -606,6 +786,7 @@ export class InnovationSandbox {
       blueprintStore: BlueprintStore;
       blueprintDeploymentService: BlueprintDeploymentService;
       leaseTemplateStore: LeaseTemplateStore;
+      organizationsTaggingService: OrganizationsTaggingService;
     }>,
   ): Promise<PutResult<Lease>> {
     const { lease, approver } = props;
@@ -621,6 +802,8 @@ export class InnovationSandbox {
     } = context;
 
     addCorrelationContext(logger, searchableLeaseProperties(lease));
+
+    InnovationSandbox.assertAssigneeNotM2m(lease, logger);
 
     // Acquire an available account from the pool and get user info
     const [freeAccount, leaseUser] = await Promise.all([
@@ -650,7 +833,13 @@ export class InnovationSandbox {
       const transactionResult = await new Transaction(
         leaseStore.transactionalUpdate(approvedLease),
         orgsService.transactionalMoveAccount(
-          freeAccount,
+          {
+            ...freeAccount,
+            currentLease: {
+              leaseId: lease.uuid,
+              ownerEmail: lease.userEmail,
+            },
+          },
           "Available",
           "Active",
         ),
@@ -664,7 +853,10 @@ export class InnovationSandbox {
         },
       );
 
-      await InnovationSandbox.publishLease({ lease: approvedLease }, context);
+      await InnovationSandbox.publishLease(
+        { lease: transactionResult.newItem },
+        context,
+      );
 
       return transactionResult;
     } else {
@@ -693,7 +885,13 @@ export class InnovationSandbox {
       const transactionResult = await new Transaction(
         leaseStore.transactionalUpdate(approvedLease),
         orgsService.transactionalMoveAccount(
-          freeAccount,
+          {
+            ...freeAccount,
+            currentLease: {
+              leaseId: lease.uuid,
+              ownerEmail: lease.userEmail,
+            },
+          },
           "Available",
           "Active",
         ),
@@ -747,7 +945,8 @@ export class InnovationSandbox {
   }
 
   /**
-   * Complete lease provisioning by granting user access and sending LeaseApprovedEvent.
+   * Complete lease provisioning by persisting desired assignment state and
+   * requesting asynchronous IDC access provisioning, then publish LeaseApprovedEvent.
    *
    * Called by approveLease() for non-blueprint leases, or by Account Lifecycle Manager
    * after successful blueprint deployment.
@@ -762,15 +961,25 @@ export class InnovationSandbox {
     },
     context: IsbContext<{
       leaseStore: LeaseStore;
+      principalStore: PrincipalStore;
       idcService: IdcService;
       isbEventBridgeClient: IsbEventBridgeClient;
+      organizationsTaggingService: OrganizationsTaggingService;
     }>,
   ): Promise<void> {
     const { lease } = props;
-    const { logger, tracer, leaseStore, idcService, isbEventBridgeClient } =
-      context;
+    const {
+      logger,
+      tracer,
+      leaseStore,
+      principalStore,
+      idcService,
+      isbEventBridgeClient,
+    } = context;
 
     addCorrelationContext(logger, searchableLeaseProperties(lease));
+
+    InnovationSandbox.assertAssigneeNotM2m(lease, logger);
 
     const leaseUser = await idcService.getUserFromEmail(lease.userEmail);
     if (!leaseUser) {
@@ -789,15 +998,44 @@ export class InnovationSandbox {
         : undefined,
     };
 
-    await leaseStore.update(updatedLease);
+    await leaseStore.update(updatedLease, lease);
     logger.info(
       `Lease published: status set to Active, start time set for lease (${lease.uuid})`,
       searchableLeaseProperties(updatedLease),
     );
 
-    await idcService
-      .transactionalGrantUserAccess(lease.awsAccountId, leaseUser)
-      .complete();
+    const preApprovalAssignments = updatedLease.desiredAssignments ?? [];
+
+    await triggerAssignmentProcessing(
+      {
+        leaseId: lease.uuid,
+        userEmail: lease.userEmail,
+        intent: "PUBLISH",
+        desiredAssignments: preApprovalAssignments,
+      },
+      {
+        leaseStore,
+        eventBridgeClient: isbEventBridgeClient,
+        principalStore,
+        idcService,
+        tracer,
+        logger,
+      },
+    );
+
+    try {
+      await context.organizationsTaggingService.applyLeaseTags(
+        updatedLease,
+        leaseUser.userId,
+      );
+    } catch (error) {
+      logTaggingFailure(
+        logger,
+        updatedLease.awsAccountId,
+        [...ISB_ACCOUNT_TAG_SUFFIXES],
+        error,
+      );
+    }
 
     logger.info(
       `Published lease for (${lease.userEmail}). User access granted to account (${lease.awsAccountId})`,
@@ -814,6 +1052,7 @@ export class InnovationSandbox {
           updatedLease.createdBy === updatedLease.userEmail
             ? "REQUESTED"
             : "ASSIGNED",
+        numDesiredAssignments: updatedLease.desiredAssignments?.length ?? 0,
       } satisfies SubscribableLog,
     );
     await isbEventBridgeClient.sendIsbEvent(
@@ -925,7 +1164,7 @@ export class InnovationSandbox {
       tracer,
       new CleanAccountRequest({
         accountId: account.awsAccountId,
-        reason: "LEASE_RESET",
+        reason: CleanupReasonSchema.enum.LEASE_RESET,
       }),
       new LeaseProvisioningFailedEvent({
         leaseId: {
@@ -968,12 +1207,12 @@ export class InnovationSandbox {
     await leaseStore.update({
       ...lease,
       status: "ApprovalDenied",
-      approvedBy: denier.email,
+      approvedBy: getUserEmail(denier),
       ttl: calculateTtlInEpochSeconds(globalConfig.leases.ttl),
     });
 
     logger.info(
-      `(${denier.email}) denied lease request for (${lease.userEmail})`,
+      `(${getUserEmail(denier)}) denied lease request for (${lease.userEmail})`,
     );
 
     await isbEventBridgeClient.sendIsbEvent(
@@ -981,7 +1220,7 @@ export class InnovationSandbox {
       new LeaseDeniedEvent({
         leaseId: lease.uuid,
         userEmail: lease.userEmail,
-        deniedBy: denier.email,
+        deniedBy: getUserEmail(denier),
       }),
     );
   }
@@ -1006,6 +1245,7 @@ export class InnovationSandbox {
       globalConfig: GlobalConfig;
       blueprintStore: BlueprintStore;
       blueprintDeploymentService: BlueprintDeploymentService;
+      organizationsTaggingService: OrganizationsTaggingService;
     }>,
   ) {
     const { sandboxAccount } = props;
@@ -1028,6 +1268,20 @@ export class InnovationSandbox {
         { ...searchableAccountProperties(sandboxAccount) },
       ),
     );
+
+    try {
+      await context.organizationsTaggingService.untagAccount(
+        sandboxAccount.awsAccountId,
+        [...ISB_ACCOUNT_TAG_SUFFIXES],
+      );
+    } catch (error) {
+      logUntaggingFailure(
+        logger,
+        sandboxAccount.awsAccountId,
+        [...ISB_ACCOUNT_TAG_SUFFIXES],
+        error,
+      );
+    }
 
     await orgsService.performAccountMoveAction(
       sandboxAccount.awsAccountId,
@@ -1058,6 +1312,7 @@ export class InnovationSandbox {
       accountId: string;
       currentOu: IsbOu;
       reason: string;
+      reasonForQuarantine: ReasonForQuarantine;
     },
     context: IsbContext<{
       orgsService: SandboxOuService;
@@ -1068,9 +1323,10 @@ export class InnovationSandbox {
       globalConfig: GlobalConfig;
       blueprintStore: BlueprintStore;
       blueprintDeploymentService: BlueprintDeploymentService;
+      organizationsTaggingService: OrganizationsTaggingService;
     }>,
   ) {
-    const { accountId, currentOu, reason } = props;
+    const { accountId, currentOu, reason, reasonForQuarantine } = props;
     const {
       logger,
       tracer,
@@ -1103,9 +1359,21 @@ export class InnovationSandbox {
       .transactionalMoveAccount(accountRecord, currentOu, "Quarantine")
       .complete();
 
+    try {
+      await context.organizationsTaggingService.updateStatusTag(
+        accountId,
+        "Quarantine",
+      );
+    } catch (error) {
+      logTaggingFailure(logger, accountId, ["Status"], error);
+    }
+
     logger.warn(`Account (${accountId}) quarantined: ${reason}`, {
       ...searchableAccountProperties(accountRecord),
-    });
+      logDetailType: "AccountQuarantined",
+      accountId,
+      reasonForQuarantine,
+    } satisfies SubscribableLog);
 
     await eventBridgeClient.sendIsbEvent(
       tracer,
@@ -1126,6 +1394,7 @@ export class InnovationSandbox {
       globalConfig: GlobalConfig;
       blueprintStore: BlueprintStore;
       blueprintDeploymentService: BlueprintDeploymentService;
+      organizationsTaggingService: OrganizationsTaggingService;
     }>,
     props: {
       awsAccountId: string;
@@ -1180,6 +1449,24 @@ export class InnovationSandbox {
     }
   }
 
+  /**
+   * Defense-in-depth: an IDC-grant path (approveLease/publishLease) must never
+   * run for an M2M-assignee lease. The postLeaseHandler entry guard makes this
+   * unreachable in normal operation, so reaching it signals legacy data or a
+   * bypass path — log loudly and fail (maps to HTTP 500).
+   */
+  private static assertAssigneeNotM2m(lease: Lease, logger: Logger): void {
+    if (isSyntheticM2mEmail(lease.userEmail)) {
+      logger.error(
+        "M2M-assignee lease reached an IDC-grant code path — should be impossible",
+        { leaseId: lease.uuid },
+      );
+      throw new M2mAssigneeNotAllowedError(
+        "Lease assignee is an M2M client; this lease cannot be processed by the IDC grant flow. This indicates a data integrity issue.",
+      );
+    }
+  }
+
   private static async acquireAvailableAccount(
     context: IsbContext<{
       sandboxAccountStore: SandboxAccountStore;
@@ -1205,8 +1492,7 @@ export class InnovationSandbox {
     const fallbackAccounts: SandboxAccount[] = [];
 
     for (const account of availableAccounts) {
-      const lastCleanupTime =
-        account.cleanupExecutionContext?.stateMachineExecutionStartTime;
+      const lastCleanupTime = account.lastCleanupCompletedAt;
 
       if (!lastCleanupTime) {
         // No timestamp - preferred (never used or no recent cleanup history)
@@ -1235,21 +1521,21 @@ export class InnovationSandbox {
           Math.floor(Math.random() * fallbackAccounts.length) // NOSONAR typescript:S2245 - pseudorandom number generator is used to introduce randomization to the account selection process
         ]!;
 
-      const lastCleanupTime =
-        selectedAccount.cleanupExecutionContext
-          ?.stateMachineExecutionStartTime!;
-      const lastLeaseDate = parseDatetime(lastCleanupTime);
+      const lastCleanupTime = selectedAccount.lastCleanupCompletedAt;
+      if (lastCleanupTime) {
+        const lastLeaseDate = parseDatetime(lastCleanupTime);
 
-      logger.warn(
-        "The account acquired for the lease has been used within the last 24 hours and may result in inaccurate cost data",
-        {
-          ...searchableAccountProperties(selectedAccount),
-          lastCleanupTime,
-          hoursSinceLastUse: now().diff(lastLeaseDate, "hours").hours,
-          totalAvailableAccounts: availableAccounts.length,
-          preferredAccountsAvailable: preferredAccounts.length,
-        },
-      );
+        logger.warn(
+          "The account acquired for the lease has been used within the last 24 hours and may result in inaccurate cost data",
+          {
+            ...searchableAccountProperties(selectedAccount),
+            lastCleanupTime,
+            hoursSinceLastUse: now().diff(lastLeaseDate, "hours").hours,
+            totalAvailableAccounts: availableAccounts.length,
+            preferredAccountsAvailable: preferredAccounts.length,
+          },
+        );
+      }
     }
 
     return selectedAccount;

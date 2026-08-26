@@ -8,6 +8,7 @@ import { IsbAccountPoolStack } from "@amzn/innovation-sandbox-infrastructure/isb
 import { IsbComputeStack } from "@amzn/innovation-sandbox-infrastructure/isb-compute-stack";
 import { IsbDataStack } from "@amzn/innovation-sandbox-infrastructure/isb-data-stack";
 import { IsbIdcStack } from "@amzn/innovation-sandbox-infrastructure/isb-idc-stack";
+import { IsbM2mClientStack } from "@amzn/innovation-sandbox-infrastructure/isb-m2m-client-stack";
 import { SolutionsEngineeringSynthesizer } from "@amzn/innovation-sandbox-infrastructure/stack-synthesizers/solutions-engineering-synthesizer";
 
 const app = new cdk.App();
@@ -22,22 +23,29 @@ const synthesizer = new SolutionsEngineeringSynthesizer({
   outdir: app.outdir,
 });
 
-new IsbAccountPoolStack(app, "InnovationSandbox-AccountPool", {
+new IsbAccountPoolStack(app, `${context.stackPrefix}-AccountPool`, {
   description: `(${context.solutionId}) ${context.solutionName} ${context.version}`,
   synthesizer: synthesizer,
 });
 
-new IsbIdcStack(app, "InnovationSandbox-IDC", {
+new IsbIdcStack(app, `${context.stackPrefix}-IDC`, {
   description: `(${context.solutionId}-IdcStack) ${context.solutionName} ${context.version}`,
   synthesizer: synthesizer,
 });
 
-new IsbDataStack(app, "InnovationSandbox-Data", {
+new IsbDataStack(app, `${context.stackPrefix}-Data`, {
   description: `(${context.solutionId}-DataStack) ${context.solutionName} ${context.version}`,
   synthesizer: synthesizer,
 });
 
-new IsbComputeStack(app, "InnovationSandbox-Compute", {
+new IsbComputeStack(app, `${context.stackPrefix}-Compute`, {
   description: `(${context.solutionId}-ComputeStack) ${context.solutionName} ${context.version}`,
+  synthesizer: synthesizer,
+});
+
+// Per-client M2M auth stack — customers deploy one instance per automation
+// client, typically via scripts/m2m/deploy-client.sh.
+new IsbM2mClientStack(app, `${context.stackPrefix}-M2mClient`, {
+  description: `(${context.solutionId}-M2mClientStack) ${context.solutionName} ${context.version}`,
   synthesizer: synthesizer,
 });

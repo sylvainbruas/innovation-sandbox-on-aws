@@ -20,7 +20,7 @@ Admins can register CloudFormation StackSets as blueprints. Choose **Register bl
 - StackSet must use **SELF_MANAGED** permission model
 - StackSet must be created in the same AWS account as Innovation Sandbox
 
-For more information, refer to the [Managing blueprints](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/admin-guide.html#managing-blueprints) page.
+For more information, refer to the [Registering and managing blueprints](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/administrator-guide.html#registering-managing-blueprints) page.
 
 ---
 
@@ -46,7 +46,7 @@ To unregister a blueprint, select it from the table and choose **Actions** > **U
 
 **Attach blueprints to lease templates**
 
-See the [Lease Templates](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/manager-guide.html#attaching-blueprints) page for information about attaching blueprints to templates.
+See the [Creating lease templates](https://docs.aws.amazon.com/solutions/latest/innovation-sandbox-on-aws/manager-guide.html#creating-lease-templates) page for information about attaching blueprints to templates.
 
 ---
 
