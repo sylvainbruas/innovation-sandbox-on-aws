@@ -136,7 +136,7 @@ export const AccountCleanupCompletedLogSchema = z.object({
   outcome: z.enum(["SUCCESS", "FAILED"], { error: enumErrorMap }),
   durationMinutes: z.number(),
   reason: CleanupReasonSchema,
-  failedStep: z.string().nullable(),
+  failedStep: z.string().nullable().optional(),
   validationMode: CleanupValidationModeSchema.optional(),
   totalResourcesBefore: z.number().nonnegative(),
   totalResourcesIgnored: z.number().nonnegative(),

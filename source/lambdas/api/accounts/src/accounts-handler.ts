@@ -703,7 +703,6 @@ async function skipCooldownHandler(
   );
 
   logger.info("CooldownSkipped", {
-    logDetailType: "CooldownSkipped",
     accountId: awsAccountId,
     skippedBy: userEmail,
     durableExecutionArn: report.durableExecutionArn,

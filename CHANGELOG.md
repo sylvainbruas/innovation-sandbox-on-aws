@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2026-09-03
+
+### Fixed
+
+- Restored the API WAF allow-list to match on the originating client IP, resolving legitimate requests being incorrectly blocked when the solution is fronted by CloudFront
+- Corrected the account cleaner container image tag (`v1.2` → `v1.3`) so account cleanup runs on the image built for this release
+- Aligned account cleanup structured logging so execution metadata and structured fields reach the log root without losing durable-execution replay suppression
+
+### Changed
+
+- Refreshed transitive npm dependencies to their latest compatible versions (no declared version ranges changed)
+
 ## [1.3.0] - 2026-08-26
 
 ### Added

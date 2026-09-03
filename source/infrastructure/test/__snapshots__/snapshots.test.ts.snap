@@ -131,9 +131,9 @@ exports[`IdcStack Snapshot > matches the snapshot 1`] = `
       "context": {
         "solutionName": "innovation-sandbox-on-aws",
         "solutionId": "SO0284",
-        "version": "v1.3.0",
+        "version": "v1.3.1",
         "publicEcrRegistry": "public.ecr.aws/aws-solutions",
-        "publicEcrTag": "v1.3.0",
+        "publicEcrTag": "v1.3.1",
         "deploymentMode": "prod",
         "stackPrefix": "InnovationSandbox",
         "cloudWatchLogRetentionInDays": 90,
@@ -365,7 +365,7 @@ exports[`IdcStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.1",
             "POWERTOOLS_SERVICE_NAME": "IdcConfigurer",
             "AWS_XRAY_CONTEXT_MISSING": "IGNORE_ERROR"
           }
@@ -3727,7 +3727,7 @@ exports[`IsbAccountPoolStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.1",
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
             "AWS_XRAY_CONTEXT_MISSING": "IGNORE_ERROR",
             "ISB_TAG_NAME": "aws-solutions:isb-id"
@@ -4143,9 +4143,9 @@ exports[`IsbAccountPoolStack Snapshot > matches the snapshot 1`] = `
       "context": {
         "solutionName": "innovation-sandbox-on-aws",
         "solutionId": "SO0284",
-        "version": "v1.3.0",
+        "version": "v1.3.1",
         "publicEcrRegistry": "public.ecr.aws/aws-solutions",
-        "publicEcrTag": "v1.3.0",
+        "publicEcrTag": "v1.3.1",
         "deploymentMode": "prod",
         "stackPrefix": "InnovationSandbox",
         "cloudWatchLogRetentionInDays": 90,
@@ -4381,7 +4381,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.1",
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
             "AWS_XRAY_CONTEXT_MISSING": "IGNORE_ERROR"
           }
@@ -5304,7 +5304,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.1",
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
             "AWS_XRAY_CONTEXT_MISSING": "IGNORE_ERROR"
           }
@@ -6096,7 +6096,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.1",
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
             "AWS_XRAY_CONTEXT_MISSING": "IGNORE_ERROR",
             "ISB_EVENT_BUS": {
@@ -6711,7 +6711,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.1",
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
             "AWS_XRAY_CONTEXT_MISSING": "IGNORE_ERROR",
             "CONFIG_TABLE_NAME": {
@@ -7776,7 +7776,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.1",
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
             "AWS_XRAY_CONTEXT_MISSING": "IGNORE_ERROR",
             "ISB_EVENT_BUS": {
@@ -8268,7 +8268,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.1",
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
             "AWS_XRAY_CONTEXT_MISSING": "IGNORE_ERROR",
             "CONFIG_TABLE_NAME": {
@@ -9687,7 +9687,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
                 "principalTable"
               ]
             },
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.0"
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.1"
           }
         },
         "FunctionName": {
@@ -9760,7 +9760,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         }
       }
     },
-    "AccountCleanerDurableCleanupOrchestrationLambdaFunctionCurrentVersion13E12A3Ee1bee82b2b51ef90a14185668460c184": {
+    "AccountCleanerDurableCleanupOrchestrationLambdaFunctionCurrentVersion13E12A3E20f4218f4d85a70d8f72c3b01ea1ad8f": {
       "Type": "AWS::Lambda::Version",
       "Properties": {
         "FunctionName": {
@@ -10224,7 +10224,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         },
         "FunctionVersion": {
           "Fn::GetAtt": [
-            "AccountCleanerDurableCleanupOrchestrationLambdaFunctionCurrentVersion13E12A3Ee1bee82b2b51ef90a14185668460c184",
+            "AccountCleanerDurableCleanupOrchestrationLambdaFunctionCurrentVersion13E12A3E20f4218f4d85a70d8f72c3b01ea1ad8f",
             "Version"
           ]
         },
@@ -10342,7 +10342,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.1",
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
             "AWS_XRAY_CONTEXT_MISSING": "IGNORE_ERROR"
           }
@@ -10743,7 +10743,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.1",
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
             "AWS_XRAY_CONTEXT_MISSING": "IGNORE_ERROR",
             "ISB_EVENT_BUS": {
@@ -11590,7 +11590,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.1",
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
             "AWS_XRAY_CONTEXT_MISSING": "IGNORE_ERROR",
             "LEASE_TABLE_NAME": {
@@ -12456,7 +12456,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.1",
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
             "AWS_XRAY_CONTEXT_MISSING": "IGNORE_ERROR",
             "PRINCIPAL_TABLE_NAME": {
@@ -13001,7 +13001,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.1",
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
             "AWS_XRAY_CONTEXT_MISSING": "IGNORE_ERROR",
             "PRINCIPAL_TABLE_NAME": {
@@ -13450,7 +13450,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.1",
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
             "AWS_XRAY_CONTEXT_MISSING": "IGNORE_ERROR",
             "ISB_NAMESPACE": {
@@ -13915,7 +13915,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.1",
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
             "AWS_XRAY_CONTEXT_MISSING": "IGNORE_ERROR",
             "ISB_NAMESPACE": {
@@ -19035,7 +19035,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
                     "IPSetForwardedIPConfig": {
                       "FallbackBehavior": "NO_MATCH",
                       "HeaderName": "X-Forwarded-For",
-                      "Position": "LAST"
+                      "Position": "FIRST"
                     }
                   }
                 }
@@ -19766,7 +19766,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.1",
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
             "AWS_XRAY_CONTEXT_MISSING": "IGNORE_ERROR",
             "CONFIG_TABLE_NAME": {
@@ -20617,7 +20617,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.1",
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
             "AWS_XRAY_CONTEXT_MISSING": "IGNORE_ERROR",
             "CONFIG_TABLE_NAME": {
@@ -21311,7 +21311,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.1",
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
             "AWS_XRAY_CONTEXT_MISSING": "IGNORE_ERROR",
             "CONFIG_TABLE_NAME": {
@@ -22119,7 +22119,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.1",
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
             "AWS_XRAY_CONTEXT_MISSING": "IGNORE_ERROR",
             "CONFIG_TABLE_NAME": {
@@ -22687,7 +22687,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.1",
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
             "AWS_XRAY_CONTEXT_MISSING": "IGNORE_ERROR",
             "CONFIG_TABLE_NAME": {
@@ -23053,7 +23053,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.1",
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
             "AWS_XRAY_CONTEXT_MISSING": "IGNORE_ERROR",
             "PRINCIPAL_TABLE_NAME": {
@@ -24736,6 +24736,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
             "Ref": "ISBLogGroupCustomResources63629E09"
           }
         },
+        "MemorySize": 1024,
         "Role": {
           "Fn::GetAtt": [
             "CustomCDKBucketDeployment8693BB64968944B69AAFB0CC9EB8756CServiceRole89A01265",
@@ -25029,7 +25030,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.1",
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
             "AWS_XRAY_CONTEXT_MISSING": "IGNORE_ERROR",
             "CONFIG_TABLE_NAME": {
@@ -25802,7 +25803,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.1",
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
             "AWS_XRAY_CONTEXT_MISSING": "IGNORE_ERROR",
             "METRICS_URL": "https://metrics.awssolutionsbuilder.com/generic",
@@ -26072,7 +26073,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.1",
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
             "AWS_XRAY_CONTEXT_MISSING": "IGNORE_ERROR",
             "ACCOUNT_TABLE_NAME": {
@@ -26768,7 +26769,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.1",
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
             "AWS_XRAY_CONTEXT_MISSING": "IGNORE_ERROR",
             "LEASE_TABLE_NAME": {
@@ -27643,7 +27644,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.1",
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
             "AWS_XRAY_CONTEXT_MISSING": "IGNORE_ERROR",
             "DESTINATION_PREFIX": "isb-archive",
@@ -28031,7 +28032,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.1",
             "POWERTOOLS_SERVICE_NAME": "PreTokenGeneration",
             "AWS_XRAY_CONTEXT_MISSING": "IGNORE_ERROR",
             "INTERMEDIATE_ROLE_ARN": {
@@ -28275,7 +28276,7 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.1",
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
             "AWS_XRAY_CONTEXT_MISSING": "IGNORE_ERROR"
           }
@@ -28596,9 +28597,9 @@ exports[`IsbComputeStack Snapshot > matches the snapshot 1`] = `
       "context": {
         "solutionName": "innovation-sandbox-on-aws",
         "solutionId": "SO0284",
-        "version": "v1.3.0",
+        "version": "v1.3.1",
         "publicEcrRegistry": "public.ecr.aws/aws-solutions",
-        "publicEcrTag": "v1.3.0",
+        "publicEcrTag": "v1.3.1",
         "deploymentMode": "prod",
         "stackPrefix": "InnovationSandbox",
         "cloudWatchLogRetentionInDays": 90,
@@ -30611,7 +30612,7 @@ exports[`IsbDataStack Snapshot > matches the snapshot 1`] = `
         "Environment": {
           "Variables": {
             "NODE_OPTIONS": "--enable-source-maps",
-            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.0",
+            "USER_AGENT_EXTRA": "AwsSolution/SO0284/v1.3.1",
             "POWERTOOLS_SERVICE_NAME": "innovation-sandbox",
             "AWS_XRAY_CONTEXT_MISSING": "IGNORE_ERROR",
             "APP_CONFIG_APPLICATION_ID": {
@@ -31115,9 +31116,9 @@ exports[`IsbDataStack Snapshot > matches the snapshot 1`] = `
       "context": {
         "solutionName": "innovation-sandbox-on-aws",
         "solutionId": "SO0284",
-        "version": "v1.3.0",
+        "version": "v1.3.1",
         "publicEcrRegistry": "public.ecr.aws/aws-solutions",
-        "publicEcrTag": "v1.3.0",
+        "publicEcrTag": "v1.3.1",
         "deploymentMode": "prod",
         "stackPrefix": "InnovationSandbox",
         "cloudWatchLogRetentionInDays": 90,

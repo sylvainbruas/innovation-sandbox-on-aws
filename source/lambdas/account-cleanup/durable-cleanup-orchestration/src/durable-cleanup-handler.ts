@@ -25,6 +25,7 @@ import {
 } from "@aws/durable-execution-sdk-js";
 
 import { CleanupReportWriter } from "./cleanup-report-writer.js";
+import { configureDurableLogger } from "./logging/durable-powertools-logger.js";
 import {
   acquireAccountLock,
   enumerateResourcesAfterCleanup,
@@ -60,6 +61,8 @@ async function durableCleanupHandler(
   event: CleanAccountRequestEvent,
   context: DurableContext,
 ): Promise<void> {
+  configureDurableLogger(context);
+
   const env = DurableCleanupLambdaEnvironmentSchema.parse(process.env);
   const request = CleanAccountRequestSchema.parse(event.detail);
   const accountId = request.accountId;
