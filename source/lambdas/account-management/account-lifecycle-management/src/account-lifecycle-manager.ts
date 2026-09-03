@@ -265,7 +265,6 @@ async function handleAccountCleanupSuccessful(
   logger.info(
     `Account cleanup succeeded for account (${event.Detail.accountId}) after ${minutesSinceCleanupStarted.toFixed(1)} minutes. CleanupExecutionId: ${event.Detail.cleanupExecutionContext.executionArn}`,
     {
-      logDetailType: "AccountCleanupSuccess",
       accountId: event.Detail.accountId,
       durationMinutes: minutesSinceCleanupStarted,
       executionArn: executionArn,
@@ -329,7 +328,6 @@ async function handleAccountCleanupFailure(
   logger.info(
     `Account cleanup failed for account (${event.Detail.accountId}) after ${minutesSinceCleanupStarted.toFixed(1)} minutes. CleanupExecutionId: ${event.Detail.cleanupExecutionContext.executionArn}`,
     {
-      logDetailType: "AccountCleanupFailure",
       accountId: event.Detail.accountId,
       durationMinutes: minutesSinceCleanupStarted,
       executionArn: executionArn,

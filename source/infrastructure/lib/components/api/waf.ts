@@ -86,9 +86,13 @@ export class Waf extends Construct {
                   ipSetForwardedIpConfig: {
                     headerName: "X-Forwarded-For",
                     fallbackBehavior: "NO_MATCH",
-                    // LAST reads the IP appended by the trusted proxy (CloudFront),
-                    // which a client cannot spoof; FIRST is the client-supplied value.
-                    position: "LAST",
+                    // Requests traverse the solution CloudFront distribution and API Gateway's
+                    // edge-optimized CloudFront. LAST therefore selects an AWS CloudFront
+                    // origin-facing IP, not the original client IP or any customer-configured
+                    // proxy's egress IP.
+                    // Note: FIRST is client-supplied and therefore spoofable; treat this
+                    // allow-list as defense-in-depth behind JWT auth + RBAC.
+                    position: "FIRST",
                   },
                 },
               },

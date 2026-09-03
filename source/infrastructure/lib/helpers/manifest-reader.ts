@@ -8,6 +8,7 @@ export interface SolutionManifest {
   name: string;
   id: string;
   version: string;
+  container_images: string[];
 }
 
 export function readManifest(): SolutionManifest {
@@ -25,6 +26,7 @@ export function readManifest(): SolutionManifest {
     name: data.name,
     id: data.id,
     version: data.version,
+    container_images: data.container_images,
   };
 }
 
