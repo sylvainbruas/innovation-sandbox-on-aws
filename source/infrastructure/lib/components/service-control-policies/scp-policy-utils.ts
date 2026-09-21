@@ -78,8 +78,7 @@ export function injectPrincipalExceptions(
     if (!statement.Condition?.ArnNotLike) continue;
 
     const principalArns = statement.Condition.ArnNotLike["aws:PrincipalARN"] as
-      | string[]
-      | undefined;
+      string[] | undefined;
     if (!principalArns || !Array.isArray(principalArns)) continue;
 
     // Check if this statement has the placeholder marker
@@ -142,9 +141,7 @@ export function injectBedrockInferenceProfilePatterns(
 ): void {
   if (!bedrockInferenceProfilePatterns || !hasBedrockConditionId) return;
 
-  const statement = policy.Statement.find(
-    (s) => s.Sid === "DenyRegionAccess",
-  );
+  const statement = policy.Statement.find((s) => s.Sid === "DenyRegionAccess");
   if (!statement?.Condition?.ArnNotLike) return;
 
   const baseKeys = { ...statement.Condition.ArnNotLike };

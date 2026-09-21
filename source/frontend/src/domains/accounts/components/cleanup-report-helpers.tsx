@@ -4,7 +4,7 @@
 import { Box, Popover } from "@cloudscape-design/components";
 import { DateTime } from "luxon";
 
-import { CleanupReport } from "@amzn/innovation-sandbox-frontend/domains/accounts/types";
+import { CleanupReportView } from "@amzn/innovation-sandbox-frontend/domains/accounts/types";
 
 export const renderTimePopover = (date: string) => (
   <Popover
@@ -17,7 +17,7 @@ export const renderTimePopover = (date: string) => (
   </Popover>
 );
 
-export function formatDuration(report: CleanupReport): string {
+export function formatDuration(report: CleanupReportView): string {
   const start = DateTime.fromISO(report.startedAt);
   const end = report.completedAt
     ? DateTime.fromISO(report.completedAt)

@@ -7,16 +7,13 @@ import {
   StatusIndicator,
 } from "@cloudscape-design/components";
 
-import {
-  isActiveLease,
-  isPendingLease,
-  LeaseWithLeaseId,
-} from "@amzn/innovation-sandbox-commons/data/lease/lease";
 import { AccountLoginLink } from "@amzn/innovation-sandbox-frontend/components/AccountLoginLink";
+import { LeaseView } from "@amzn/innovation-sandbox-frontend/domains/leases/model";
 import { useLeaseActions } from "@amzn/innovation-sandbox-frontend/domains/leases/useLeaseActions";
+import { isPendingLease } from "@amzn/innovation-sandbox-shared/types/lease.js";
 
 interface LeaseActionsProps {
-  lease: LeaseWithLeaseId;
+  lease: LeaseView;
   /** Forwarded to useLeaseActions — see LeaseActionsOptions there. */
   includeElevatedActions?: boolean;
 }
@@ -34,6 +31,7 @@ export const LeaseActions = ({
   includeElevatedActions,
 }: LeaseActionsProps) => {
   const {
+    loginAccountId,
     canTerminate,
     canFreeze,
     canUnfreeze,
@@ -55,8 +53,8 @@ export const LeaseActions = ({
   // guessing why the control vanished.
   return (
     <SpaceBetween size="xs" direction="horizontal">
-      {isActiveLease(lease) && (
-        <AccountLoginLink accountId={lease.awsAccountId} variant="normal" />
+      {loginAccountId && (
+        <AccountLoginLink accountId={loginAccountId} variant="normal" />
       )}
       {canFreeze && (
         <Button

@@ -5,11 +5,7 @@ import { DateTime } from "luxon";
 import { describe, expect, it } from "vitest";
 
 import {
-  ExpiredLease,
-  Lease,
-  MonitoredLease,
-} from "@amzn/innovation-sandbox-commons/data/lease/lease";
-import {
+  canLoginToLease,
   enrichLeasesWithName,
   getLeaseDisplayName,
   getLeaseStatusDisplayName,
@@ -18,6 +14,11 @@ import {
   isTerminationLockActive,
   leaseExpirySortingComparator,
 } from "@amzn/innovation-sandbox-frontend/domains/leases/helpers";
+import {
+  ExpiredLeaseView,
+  LeaseView,
+  MonitoredLeaseView,
+} from "@amzn/innovation-sandbox-frontend/domains/leases/model";
 import {
   createActiveLease,
   createExpiredLease,
@@ -35,7 +36,7 @@ describe("leaseExpirySortingComparator", () => {
       expirationDate: now.plus({ days: 30 }).toISO()!,
     });
 
-    const leases: MonitoredLease[] = [later, earlier];
+    const leases: MonitoredLeaseView[] = [later, earlier];
     leases.sort(leaseExpirySortingComparator);
 
     expect(leases[0]).toBe(earlier);
@@ -50,7 +51,7 @@ describe("leaseExpirySortingComparator", () => {
       endDate: now.minus({ days: 1 }).toISO()!,
     });
 
-    const leases: ExpiredLease[] = [later, earlier];
+    const leases: ExpiredLeaseView[] = [later, earlier];
     leases.sort(leaseExpirySortingComparator);
 
     expect(leases[0]).toBe(earlier);
@@ -61,7 +62,7 @@ describe("leaseExpirySortingComparator", () => {
     const short = createPendingLease({ leaseDurationInHours: 2 });
     const long = createPendingLease({ leaseDurationInHours: 48 });
 
-    const leases: Lease[] = [long, short];
+    const leases: LeaseView[] = [long, short];
     leases.sort(leaseExpirySortingComparator);
 
     expect(leases[0]).toBe(short);
@@ -74,7 +75,7 @@ describe("leaseExpirySortingComparator", () => {
     });
     const pending = createPendingLease({ leaseDurationInHours: 48 });
 
-    const leases: Lease[] = [pending, active];
+    const leases: LeaseView[] = [pending, active];
     leases.sort(leaseExpirySortingComparator);
 
     expect(leases[0]).toBe(active);
@@ -87,7 +88,7 @@ describe("leaseExpirySortingComparator", () => {
     });
     const pending = createPendingLease({ leaseDurationInHours: 1 });
 
-    const leases: Lease[] = [pending, expired];
+    const leases: LeaseView[] = [pending, expired];
     leases.sort(leaseExpirySortingComparator);
 
     expect(leases[0]).toBe(expired);
@@ -103,7 +104,7 @@ describe("leaseExpirySortingComparator", () => {
     });
     const pending = createPendingLease({ leaseDurationInHours: 720 });
 
-    const leases: Lease[] = [pending, active, expired];
+    const leases: LeaseView[] = [pending, active, expired];
     leases.sort(leaseExpirySortingComparator);
 
     // expired (past) < active (now+7d) < pending (now+720h ≈ 30d)
@@ -336,5 +337,46 @@ describe("isTerminationLockActive", () => {
     expect(
       isTerminationLockActive(createActiveLease({ resourceLock: undefined })),
     ).toBe(false);
+  });
+});
+
+describe("canLoginToLease", () => {
+  const userPermissions = { isAdmin: false, isManager: false };
+  const managerPermissions = { isAdmin: false, isManager: true };
+  const adminPermissions = { isAdmin: true, isManager: false };
+
+  it.each([
+    ["user", userPermissions, "Active", true],
+    ["user", userPermissions, "Frozen", false],
+    ["user", userPermissions, "Provisioning", false],
+    ["manager", managerPermissions, "Active", true],
+    ["manager", managerPermissions, "Frozen", true],
+    ["manager", managerPermissions, "Provisioning", false],
+    ["admin", adminPermissions, "Active", true],
+    ["admin", adminPermissions, "Frozen", true],
+    ["admin", adminPermissions, "Provisioning", true],
+  ] as const)(
+    "%s %s login eligibility is %s",
+    (_role, permissions, status, expected) => {
+      expect(canLoginToLease(createActiveLease({ status }), permissions)).toBe(
+        expected,
+      );
+    },
+  );
+
+  it.each([
+    "Expired",
+    "BudgetExceeded",
+    "ManuallyTerminated",
+    "UserTerminated",
+    "AccountQuarantined",
+    "Ejected",
+    "ProvisioningFailed",
+  ] as const)("denies every viewer for %s leases", (status) => {
+    const lease = createExpiredLease({ status });
+
+    expect(canLoginToLease(lease, userPermissions)).toBe(false);
+    expect(canLoginToLease(lease, managerPermissions)).toBe(false);
+    expect(canLoginToLease(lease, adminPermissions)).toBe(false);
   });
 });

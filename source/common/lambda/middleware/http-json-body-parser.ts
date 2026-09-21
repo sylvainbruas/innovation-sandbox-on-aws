@@ -26,6 +26,7 @@ export function httpJsonBodyParser(): MiddlewareObj<
     if (!mimePattern.test(contentType)) {
       throw createHttpJSendError({
         statusCode: 415,
+        errorType: "UnsupportedMediaTypeError",
         data: {
           errors: [{ message: `Unsupported Media Type.` }],
         },
@@ -34,7 +35,8 @@ export function httpJsonBodyParser(): MiddlewareObj<
 
     if (body === null) {
       throw createHttpJSendError({
-        statusCode: 415,
+        statusCode: 400,
+        errorType: "ValidationError",
         data: {
           errors: [{ message: "Body not provided." }],
         },
@@ -49,7 +51,8 @@ export function httpJsonBodyParser(): MiddlewareObj<
       request.event.body = typeof data === "string" ? JSON.parse(data) : data;
     } catch (err) {
       throw createHttpJSendError({
-        statusCode: 415,
+        statusCode: 400,
+        errorType: "ValidationError",
         data: {
           errors: [
             {

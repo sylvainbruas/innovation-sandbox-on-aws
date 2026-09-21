@@ -21,6 +21,7 @@ import { injectSanitizedLambdaContext } from "@amzn/innovation-sandbox-commons/l
 import { isbConfigMiddleware } from "@amzn/innovation-sandbox-commons/lambda/middleware/isb-config-middleware.js";
 import { rbacAuthorizer } from "@amzn/innovation-sandbox-commons/lambda/middleware/rbac-authorizer.js";
 import { JSendResponse } from "@amzn/innovation-sandbox-commons/types/isb-types.js";
+import { parseM2mAssumedRoleArn } from "@amzn/innovation-sandbox-commons/utils/m2m-role-arn.js";
 import {
   type IsbUser,
   COGNITO_IDC_USER_ID_CLAIM,
@@ -29,8 +30,7 @@ import {
   m2mRoleTierToRoles,
   parseRolesClaim,
   resolveEmailFromClaims,
-} from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
-import { parseM2mAssumedRoleArn } from "@amzn/innovation-sandbox-commons/utils/m2m-role-arn.js";
+} from "@amzn/innovation-sandbox-shared/utils/auth-utils.js";
 import { MiddlewareFn } from "@aws-lambda-powertools/commons/types";
 import { Logger } from "@aws-lambda-powertools/logger";
 import { captureLambdaHandler } from "@aws-lambda-powertools/tracer/middleware";
@@ -135,6 +135,7 @@ function captureIsbUser<T extends BaseApiLambdaEnvironment>(): MiddlewareObj<
       if (readIdentityHeader(request.event)) {
         throw createHttpJSendError({
           statusCode: 400,
+          errorType: "ValidationError",
           data: {
             errors: [
               {
@@ -150,6 +151,7 @@ function captureIsbUser<T extends BaseApiLambdaEnvironment>(): MiddlewareObj<
       if (roles.length === 0) {
         throw createHttpJSendError({
           statusCode: 403,
+          errorType: "AccessDeniedError",
           data: { errors: [{ message: "No valid ISB role on M2M caller." }] },
         });
       }
@@ -168,6 +170,10 @@ function captureIsbUser<T extends BaseApiLambdaEnvironment>(): MiddlewareObj<
         if (err instanceof IdentityTokenError) {
           throw createHttpJSendError({
             statusCode: err.kind === "SubMismatch" ? 403 : 401,
+            errorType:
+              err.kind === "SubMismatch"
+                ? "AccessDeniedError"
+                : "UnauthenticatedError",
             data: { errors: [{ message: err.message }] },
           });
         }
@@ -180,6 +186,7 @@ function captureIsbUser<T extends BaseApiLambdaEnvironment>(): MiddlewareObj<
     if (!email || !parsedClaims.success) {
       throw createHttpJSendError({
         statusCode: 401,
+        errorType: "UnauthenticatedError",
         data: {
           errors: [
             {
@@ -195,6 +202,7 @@ function captureIsbUser<T extends BaseApiLambdaEnvironment>(): MiddlewareObj<
     if (roles.length === 0) {
       throw createHttpJSendError({
         statusCode: 403,
+        errorType: "AccessDeniedError",
         data: { errors: [{ message: "No valid ISB role on user token." }] },
       });
     }

@@ -5,7 +5,7 @@ import { build as buildArn } from "@aws-sdk/util-arn-parser";
 import {
   IsbRole,
   IsbRoleSchema,
-} from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
+} from "@amzn/innovation-sandbox-shared/utils/auth-utils.js";
 
 /**
  * Tags the CDK stamps on every M2M client IAM role; M2M clients have no

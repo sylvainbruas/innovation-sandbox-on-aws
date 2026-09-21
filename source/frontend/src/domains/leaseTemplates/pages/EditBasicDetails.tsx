@@ -13,7 +13,6 @@ import { useEffect } from "react";
 import { FormProvider, useForm } from "react-hook-form";
 import { useNavigate, useParams } from "react-router-dom";
 
-import { LeaseTemplate } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template";
 import { useAppLayoutContext } from "@amzn/innovation-sandbox-frontend/components/AppLayout/AppLayoutContext";
 import { ContentLayout } from "@amzn/innovation-sandbox-frontend/components/ContentLayout";
 import { ErrorPanel } from "@amzn/innovation-sandbox-frontend/components/ErrorPanel";
@@ -31,6 +30,7 @@ import {
   useGetLeaseTemplateById,
   useUpdateLeaseTemplate,
 } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/hooks";
+import { LeaseTemplateView } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/model";
 import { BasicDetailsValidationSchema } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/validation";
 import { useGetConfigurations } from "@amzn/innovation-sandbox-frontend/domains/settings/hooks";
 import { useBreadcrumb } from "@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb";
@@ -97,7 +97,7 @@ export const EditBasicDetails = () => {
     if (!leaseTemplate) return;
 
     try {
-      const updatedLeaseTemplate: LeaseTemplate = {
+      const updatedLeaseTemplate: LeaseTemplateView = {
         ...leaseTemplate,
         name: data.name,
         description: data.description || "",

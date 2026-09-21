@@ -5,8 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DynamoLeaseStore } from "@amzn/innovation-sandbox-commons/data/lease/dynamo-lease-store.js";
 import {
-  MonitoredLeaseSchema,
-  PendingLeaseSchema,
+  PersistedMonitoredLeaseSchema,
+  PersistedPendingLeaseSchema,
 } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import { DynamoSandboxAccountStore } from "@amzn/innovation-sandbox-commons/data/sandbox-account/dynamo-sandbox-account-store.js";
 import { EventDetailTypes } from "@amzn/innovation-sandbox-commons/events/index.js";
@@ -76,7 +76,7 @@ describe("AccountLifecycleManager handler", () => {
 
   describe("LeaseBudgetExceededAlert", () => {
     it("loads the lease and routes to InnovationSandbox.terminateLease with BudgetExceeded status", async () => {
-      const lease = generateSchemaData(MonitoredLeaseSchema, {
+      const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
         status: "Active",
       });
       vi.spyOn(DynamoLeaseStore.prototype, "get").mockResolvedValue({
@@ -126,7 +126,7 @@ describe("AccountLifecycleManager handler", () => {
 
     it("throws when the lease is not monitored", async () => {
       vi.spyOn(DynamoLeaseStore.prototype, "get").mockResolvedValue({
-        result: generateSchemaData(PendingLeaseSchema, {
+        result: generateSchemaData(PersistedPendingLeaseSchema, {
           status: "PendingApproval",
         }),
       });
@@ -149,7 +149,7 @@ describe("AccountLifecycleManager handler", () => {
 
   describe("LeaseExpiredAlert", () => {
     it("routes to InnovationSandbox.terminateLease with Expired status", async () => {
-      const lease = generateSchemaData(MonitoredLeaseSchema, {
+      const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
         status: "Active",
       });
       vi.spyOn(DynamoLeaseStore.prototype, "get").mockResolvedValue({
@@ -177,7 +177,7 @@ describe("AccountLifecycleManager handler", () => {
 
   describe("LeaseFreezingThresholdBreachedAlert", () => {
     it("routes to InnovationSandbox.freezeLease", async () => {
-      const lease = generateSchemaData(MonitoredLeaseSchema, {
+      const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
         status: "Active",
       });
       vi.spyOn(DynamoLeaseStore.prototype, "get").mockResolvedValue({

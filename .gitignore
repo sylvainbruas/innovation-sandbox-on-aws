@@ -24,6 +24,8 @@ temp/
 .test-reports
 .patch-artifacts/
 scratch/
+scripts/m2m/internal/smithy-c2j-workspace/
+scripts/m2m/internal/smithy-c2j-workspace.lock
 
 # Kiro
 .kiro/reviews/
@@ -50,3 +52,17 @@ CLAUDE.md
 
 # security scanner artifacts
 .security-scan/
+
+# Generated Smithy packages. Produced by `npm run smithy:generate`; the model in
+# source/api-model/ is the source of truth. Ignore generated contents directly so
+# committed package manifests and server tsconfigs remain visible to both Git and
+# rsync without a separate allowlist.
+source/api-client/.gitignore
+source/api-client/LICENSE
+source/api-client/README.md
+source/api-client/api-extractor.json
+source/api-client/src/
+source/api-client/dist-*/
+source/api-client/tsconfig*.json
+source/api-server/domains/
+source/api-server/dist-*/

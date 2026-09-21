@@ -12,7 +12,6 @@ import {
 import { useEffect, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 
-import { LeaseWithLeaseId as Lease } from "@amzn/innovation-sandbox-commons/data/lease/lease";
 import { useAppLayoutContext } from "@amzn/innovation-sandbox-frontend/components/AppLayout/AppLayoutContext";
 import { ContentLayout } from "@amzn/innovation-sandbox-frontend/components/ContentLayout";
 import { FilterableTable } from "@amzn/innovation-sandbox-frontend/components/FilterableTable";
@@ -35,7 +34,10 @@ import {
   useGetSharedLeases,
   useLeasesForCurrentUser,
 } from "@amzn/innovation-sandbox-frontend/domains/leases/hooks";
-import { SharedLeaseAccessType } from "@amzn/innovation-sandbox-frontend/domains/leases/types";
+import {
+  LeaseView,
+  SharedLeaseAccessType,
+} from "@amzn/innovation-sandbox-frontend/domains/leases/model";
 import { useBreadcrumb } from "@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb";
 import { useUser } from "@amzn/innovation-sandbox-frontend/hooks/useUser";
 
@@ -46,7 +48,7 @@ type LeaseTab = "all" | "my" | "shared";
  * annotations. Sources are processed in priority order — first occurrence wins.
  */
 function mergeWithAccessType(
-  sources: { leases: Lease[]; accessType: SharedLeaseAccessType }[],
+  sources: { leases: LeaseView[]; accessType: SharedLeaseAccessType }[],
 ): LeaseTableItem[] {
   const seen = new Set<string>();
   const result: LeaseTableItem[] = [];
@@ -140,17 +142,38 @@ export const ListLeases = () => {
           {
             id: "all",
             label: "All Leases",
-            content: <LeaseTabContent tab="all" isElevated={isElevated} />,
+            content: (
+              <LeaseTabContent
+                tab="all"
+                isAdmin={isAdmin}
+                isElevated={isElevated}
+                isManager={isManager}
+              />
+            ),
           },
           {
             id: "my",
             label: "My Leases",
-            content: <LeaseTabContent tab="my" isElevated={isElevated} />,
+            content: (
+              <LeaseTabContent
+                tab="my"
+                isAdmin={isAdmin}
+                isElevated={isElevated}
+                isManager={isManager}
+              />
+            ),
           },
           {
             id: "shared",
             label: "Shared with me",
-            content: <LeaseTabContent tab="shared" isElevated={isElevated} />,
+            content: (
+              <LeaseTabContent
+                tab="shared"
+                isAdmin={isAdmin}
+                isElevated={isElevated}
+                isManager={isManager}
+              />
+            ),
           },
         ]}
       />
@@ -160,14 +183,21 @@ export const ListLeases = () => {
 
 interface LeaseTabContentProps {
   tab: LeaseTab;
+  isAdmin: boolean;
   isElevated: boolean;
+  isManager: boolean;
 }
 
 /**
  * Single component that renders the FilterableTable with parameters based on
  * the active tab and user role.
  */
-const LeaseTabContent = ({ tab, isElevated }: LeaseTabContentProps) => {
+const LeaseTabContent = ({
+  tab,
+  isAdmin,
+  isElevated,
+  isManager,
+}: LeaseTabContentProps) => {
   const { user } = useUser();
   const { selectionType, selectedItems, onSelectionChange, headerActions } =
     useBulkLeaseActions();
@@ -301,7 +331,7 @@ const LeaseTabContent = ({ tab, isElevated }: LeaseTabContentProps) => {
       title={title}
       description={description}
       items={enrichedItems}
-      columnDefinitions={getLeaseColumnDefinitions()}
+      columnDefinitions={getLeaseColumnDefinitions({ isAdmin, isManager })}
       filteringProperties={getLeaseFilteringProperties()}
       loading={isFetching}
       loadingText={`Loading ${title.toLowerCase()}...`}

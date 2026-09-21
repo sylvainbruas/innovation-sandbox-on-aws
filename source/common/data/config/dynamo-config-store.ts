@@ -19,14 +19,10 @@ import {
   ConflictError,
 } from "@amzn/innovation-sandbox-commons/data/config/config-store.js";
 import {
-  ConfigMetadata,
-  ConfigSchemas,
   ConfigSchemaVersion,
-  ConfigSection,
-  ConfigSectionData,
-  ConfigWriteSchemas,
-  LastSavedBy,
-  LastSavedBySchema,
+  PersistedConfigSectionData,
+  PersistedLastSavedBy,
+  PersistedLastSavedBySchema,
 } from "@amzn/innovation-sandbox-commons/data/config/config.js";
 import { BatchGetUnprocessedKeysError } from "@amzn/innovation-sandbox-commons/data/errors.js";
 import {
@@ -36,6 +32,11 @@ import {
   SchemaMismatchException,
 } from "@amzn/innovation-sandbox-commons/data/metadata.js";
 import { nowAsIsoDatetimeString } from "@amzn/innovation-sandbox-commons/utils/time-utils.js";
+import {
+  ConfigSchemas,
+  ConfigSection,
+  ConfigWriteSchemas,
+} from "@amzn/innovation-sandbox-shared/types/configuration.js";
 
 const CURRENT_SK = "current";
 
@@ -43,6 +44,14 @@ const SUPPORTED_VERSIONS_SCHEMA = createVersionRangeSchema(
   1,
   ConfigSchemaVersion,
 );
+
+// The store always writes all three meta fields together; a stored record
+// missing any is corruption.
+const StoredMetaSchema = z.object({
+  createdTime: z.iso.datetime(),
+  lastEditTime: z.iso.datetime(),
+  schemaVersion: z.number().int(),
+});
 
 const ALL_SECTIONS = Object.keys(ConfigSchemas) as ConfigSection[];
 
@@ -63,7 +72,7 @@ export class DynamoConfigStore implements ConfigStore {
   }
 
   public async getAllSections(): Promise<{
-    [K in ConfigSection]?: ConfigSectionData<K>;
+    [K in ConfigSection]?: PersistedConfigSectionData<K>;
   }> {
     const found: Record<string, any>[] = [];
     let keys: { section: string; sk: string }[] = ALL_SECTIONS.map(
@@ -80,8 +89,7 @@ export class DynamoConfigStore implements ConfigStore {
         found.push(...(result.Responses?.[this.tableName] ?? []));
 
         const unprocessed = result.UnprocessedKeys?.[this.tableName]?.Keys as
-          | { section: string; sk: string }[]
-          | undefined;
+          { section: string; sk: string }[] | undefined;
         if (unprocessed && unprocessed.length > 0) {
           keys = unprocessed;
           throw new BatchGetUnprocessedKeysError(unprocessed.length);
@@ -96,15 +104,23 @@ export class DynamoConfigStore implements ConfigStore {
       },
     );
 
-    const sections: { [K in ConfigSection]?: ConfigSectionData<K> } = {};
+    const sections: { [K in ConfigSection]?: PersistedConfigSectionData<K> } =
+      {};
     for (const item of found) {
       const section = item.section as ConfigSection;
       try {
-        (sections as Record<ConfigSection, ConfigSectionData<ConfigSection>>)[
-          section
-        ] = this.toSectionData(section, item);
+        (
+          sections as Record<
+            ConfigSection,
+            PersistedConfigSectionData<ConfigSection>
+          >
+        )[section] = this.toSectionData(section, item);
       } catch {
-        // Skip a malformed section; missing sections fall back to code defaults.
+        // Resilience: a corrupt/unsupported section falls back to code defaults so
+        // one bad record can't fail the fleet-wide config load (getAllSections feeds
+        // isbConfigMiddleware). This is intentionally NOT surfaced here; the
+        // per-section read used for editing (getSection) is not resilient and
+        // surfaces the same corruption as a 500 naming the section.
       }
     }
     return sections;
@@ -112,7 +128,7 @@ export class DynamoConfigStore implements ConfigStore {
 
   public async getSection<T extends ConfigSection>(
     section: T,
-  ): Promise<ConfigSectionData<T> | null> {
+  ): Promise<PersistedConfigSectionData<T> | null> {
     const result = await this.ddbClient.send(
       new GetCommand({
         TableName: this.tableName,
@@ -128,10 +144,10 @@ export class DynamoConfigStore implements ConfigStore {
   public async putSection<T extends ConfigSection>(
     section: T,
     data: z.infer<(typeof ConfigWriteSchemas)[T]>,
-    editedBy: LastSavedBy,
+    editedBy: PersistedLastSavedBy,
     expectedLastEditTime?: string,
-  ): Promise<ConfigSectionData<T>> {
-    const validatedEditedBy = LastSavedBySchema.parse(editedBy);
+  ): Promise<PersistedConfigSectionData<T>> {
+    const validatedEditedBy = PersistedLastSavedBySchema.parse(editedBy);
     const now = nowAsIsoDatetimeString();
 
     // Enforce `.strict()` + field bounds at runtime before any write.
@@ -206,9 +222,9 @@ export class DynamoConfigStore implements ConfigStore {
 
   public async migrateSections(
     sections: { [K in ConfigSection]?: z.infer<(typeof ConfigSchemas)[K]> },
-    editedBy: LastSavedBy,
+    editedBy: PersistedLastSavedBy,
   ): Promise<{ migrated: boolean }> {
-    const validatedEditedBy = LastSavedBySchema.parse(editedBy);
+    const validatedEditedBy = PersistedLastSavedBySchema.parse(editedBy);
     const now = nowAsIsoDatetimeString();
 
     const transactItems = (
@@ -262,7 +278,7 @@ export class DynamoConfigStore implements ConfigStore {
   }
 
   /**
-   * Reassembles a stored item into a typed {@link ConfigSectionData}: enforces
+   * Reassembles a stored item into a typed {@link PersistedConfigSectionData}: enforces
    * the supported schema version, validates the config fields against the
    * section's `.strict()` read schema (key/audit/meta attributes excluded), and
    * normalizes a missing `lastSavedBy` to `null`.
@@ -270,11 +286,16 @@ export class DynamoConfigStore implements ConfigStore {
   private toSectionData<T extends ConfigSection>(
     section: T,
     item: Record<string, any>,
-  ): ConfigSectionData<T> {
+  ): PersistedConfigSectionData<T> {
     checkSchemaVersion(item as ItemWithMetadata, SUPPORTED_VERSIONS_SCHEMA);
     const { section: _section, sk: _sk, lastSavedBy, meta, ...fields } = item;
-    if (!meta) {
-      throw new SchemaMismatchException("Stored config item is missing meta.");
+    // Reject a corrupt (incomplete) meta here rather than forwarding a
+    // half-populated one, which would drop the concurrency token downstream.
+    const metaResult = StoredMetaSchema.safeParse(meta);
+    if (!metaResult.success) {
+      throw new SchemaMismatchException(
+        `Stored config item for section '${section}' has invalid meta.`,
+      );
     }
     const parsedFields = (ConfigSchemas[section] as z.ZodTypeAny).parse(
       fields,
@@ -282,7 +303,7 @@ export class DynamoConfigStore implements ConfigStore {
     return {
       ...parsedFields,
       lastSavedBy: lastSavedBy ?? null,
-      meta: meta as ConfigMetadata,
+      meta: metaResult.data,
     };
   }
 }

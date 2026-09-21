@@ -1,8 +1,8 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { CostReportingConfig } from "@amzn/innovation-sandbox-commons/data/config/config.js";
 import { ValidationException } from "@amzn/innovation-sandbox-commons/data/global-config/global-config-utils.js";
+import { CostReportingConfig } from "@amzn/innovation-sandbox-shared/types/configuration.js";
 
 export function validateCostReportGroup(
   costReportGroup: string | undefined,

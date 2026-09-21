@@ -4,16 +4,18 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  LeaseTemplate,
-  LeaseTemplateSchema,
   LeaseTemplateSchemaVersion,
-  Visibility,
+  PersistedLeaseTemplate,
+  PersistedLeaseTemplateSchema,
 } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
+import type { Visibility } from "@amzn/innovation-sandbox-shared/types/lease-template.js";
 
 const VALID_UUID = "00000000-0000-4000-8000-000000000001";
 const NOW = "2024-01-01T00:00:00Z";
 
-function validTemplate(overrides: Partial<LeaseTemplate> = {}): LeaseTemplate {
+function validTemplate(
+  overrides: Partial<PersistedLeaseTemplate> = {},
+): PersistedLeaseTemplate {
   return {
     uuid: VALID_UUID,
     name: "Test Template",
@@ -38,14 +40,16 @@ function validTemplate(overrides: Partial<LeaseTemplate> = {}): LeaseTemplate {
   };
 }
 
-describe("LeaseTemplateSchema", () => {
+describe("PersistedLeaseTemplateSchema", () => {
   it("should accept a valid template", () => {
-    expect(LeaseTemplateSchema.safeParse(validTemplate()).success).toBe(true);
+    expect(
+      PersistedLeaseTemplateSchema.safeParse(validTemplate()).success,
+    ).toBe(true);
   });
 
   it("should accept with only required fields", () => {
     expect(
-      LeaseTemplateSchema.safeParse({
+      PersistedLeaseTemplateSchema.safeParse({
         uuid: VALID_UUID,
         name: "Minimal",
         requiresApproval: true,
@@ -58,13 +62,16 @@ describe("LeaseTemplateSchema", () => {
   describe("uuid", () => {
     it("should reject when missing", () => {
       const { uuid: _, ...withoutUuid } = validTemplate();
-      expect(LeaseTemplateSchema.safeParse(withoutUuid).success).toBe(false);
+      expect(PersistedLeaseTemplateSchema.safeParse(withoutUuid).success).toBe(
+        false,
+      );
     });
 
     it("should reject non-UUID string", () => {
       expect(
-        LeaseTemplateSchema.safeParse(validTemplate({ uuid: "not-a-uuid" }))
-          .success,
+        PersistedLeaseTemplateSchema.safeParse(
+          validTemplate({ uuid: "not-a-uuid" }),
+        ).success,
       ).toBe(false);
     });
   });
@@ -72,8 +79,9 @@ describe("LeaseTemplateSchema", () => {
   describe("name", () => {
     it("should accept name at max length", () => {
       expect(
-        LeaseTemplateSchema.safeParse(validTemplate({ name: "A".repeat(50) }))
-          .success,
+        PersistedLeaseTemplateSchema.safeParse(
+          validTemplate({ name: "A".repeat(50) }),
+        ).success,
       ).toBe(true);
     });
 
@@ -82,7 +90,7 @@ describe("LeaseTemplateSchema", () => {
       ["exceeding 50 chars", "A".repeat(51)],
     ])("should reject %s", (_label, name) => {
       expect(
-        LeaseTemplateSchema.safeParse(validTemplate({ name })).success,
+        PersistedLeaseTemplateSchema.safeParse(validTemplate({ name })).success,
       ).toBe(false);
     });
   });
@@ -90,12 +98,12 @@ describe("LeaseTemplateSchema", () => {
   describe("description", () => {
     it("should accept when omitted", () => {
       const { description: _, ...rest } = validTemplate();
-      expect(LeaseTemplateSchema.safeParse(rest).success).toBe(true);
+      expect(PersistedLeaseTemplateSchema.safeParse(rest).success).toBe(true);
     });
 
     it("should reject when exceeding 1000 chars", () => {
       expect(
-        LeaseTemplateSchema.safeParse(
+        PersistedLeaseTemplateSchema.safeParse(
           validTemplate({ description: "A".repeat(1001) }),
         ).success,
       ).toBe(false);
@@ -105,7 +113,7 @@ describe("LeaseTemplateSchema", () => {
   describe("requiresApproval", () => {
     it.each([true, false])("should accept %s", (value) => {
       expect(
-        LeaseTemplateSchema.safeParse(
+        PersistedLeaseTemplateSchema.safeParse(
           validTemplate({ requiresApproval: value }),
         ).success,
       ).toBe(true);
@@ -113,15 +121,16 @@ describe("LeaseTemplateSchema", () => {
 
     it("should reject missing", () => {
       const { requiresApproval: _, ...rest } = validTemplate();
-      expect(LeaseTemplateSchema.safeParse(rest).success).toBe(false);
+      expect(PersistedLeaseTemplateSchema.safeParse(rest).success).toBe(false);
     });
   });
 
   describe("createdBy", () => {
     it("should reject invalid email", () => {
       expect(
-        LeaseTemplateSchema.safeParse(validTemplate({ createdBy: "not-email" }))
-          .success,
+        PersistedLeaseTemplateSchema.safeParse(
+          validTemplate({ createdBy: "not-email" }),
+        ).success,
       ).toBe(false);
     });
   });
@@ -131,15 +140,16 @@ describe("LeaseTemplateSchema", () => {
       "should accept %s",
       (value) => {
         expect(
-          LeaseTemplateSchema.safeParse(validTemplate({ visibility: value }))
-            .success,
+          PersistedLeaseTemplateSchema.safeParse(
+            validTemplate({ visibility: value }),
+          ).success,
         ).toBe(true);
       },
     );
 
     it("should reject invalid value", () => {
       expect(
-        LeaseTemplateSchema.safeParse(
+        PersistedLeaseTemplateSchema.safeParse(
           validTemplate({ visibility: "INTERNAL" as any }),
         ).success,
       ).toBe(false);
@@ -149,7 +159,7 @@ describe("LeaseTemplateSchema", () => {
   describe("costReportGroup", () => {
     it("should accept when omitted", () => {
       const { costReportGroup: _, ...rest } = validTemplate();
-      expect(LeaseTemplateSchema.safeParse(rest).success).toBe(true);
+      expect(PersistedLeaseTemplateSchema.safeParse(rest).success).toBe(true);
     });
 
     it.each([
@@ -157,8 +167,9 @@ describe("LeaseTemplateSchema", () => {
       ["exceeding 50 chars", "A".repeat(51)],
     ])("should reject %s", (_label, value) => {
       expect(
-        LeaseTemplateSchema.safeParse(validTemplate({ costReportGroup: value }))
-          .success,
+        PersistedLeaseTemplateSchema.safeParse(
+          validTemplate({ costReportGroup: value }),
+        ).success,
       ).toBe(false);
     });
   });
@@ -169,13 +180,14 @@ describe("LeaseTemplateSchema", () => {
       ["valid UUID", { blueprintId: "00000000-0000-4000-8000-000000000002" }],
     ])("should accept %s", (_label, overrides) => {
       expect(
-        LeaseTemplateSchema.safeParse(validTemplate(overrides)).success,
+        PersistedLeaseTemplateSchema.safeParse(validTemplate(overrides))
+          .success,
       ).toBe(true);
     });
 
     it("should reject non-UUID string", () => {
       expect(
-        LeaseTemplateSchema.safeParse(
+        PersistedLeaseTemplateSchema.safeParse(
           validTemplate({ blueprintId: "not-uuid" }),
         ).success,
       ).toBe(false);
@@ -183,7 +195,7 @@ describe("LeaseTemplateSchema", () => {
 
     it("should accept when omitted", () => {
       const { blueprintId: _, ...rest } = validTemplate();
-      expect(LeaseTemplateSchema.safeParse(rest).success).toBe(true);
+      expect(PersistedLeaseTemplateSchema.safeParse(rest).success).toBe(true);
     });
   });
 
@@ -193,20 +205,21 @@ describe("LeaseTemplateSchema", () => {
       ["string", { blueprintName: "My Blueprint" }],
     ])("should accept %s", (_label, overrides) => {
       expect(
-        LeaseTemplateSchema.safeParse(validTemplate(overrides)).success,
+        PersistedLeaseTemplateSchema.safeParse(validTemplate(overrides))
+          .success,
       ).toBe(true);
     });
 
     it("should accept when omitted", () => {
       const { blueprintName: _, ...rest } = validTemplate();
-      expect(LeaseTemplateSchema.safeParse(rest).success).toBe(true);
+      expect(PersistedLeaseTemplateSchema.safeParse(rest).success).toBe(true);
     });
   });
 
   describe("allowOwnerToShareLease", () => {
     it.each([true, false])("should accept %s", (value) => {
       expect(
-        LeaseTemplateSchema.safeParse(
+        PersistedLeaseTemplateSchema.safeParse(
           validTemplate({ allowOwnerToShareLease: value }),
         ).success,
       ).toBe(true);
@@ -214,13 +227,13 @@ describe("LeaseTemplateSchema", () => {
 
     it("should default to false when omitted", () => {
       const { allowOwnerToShareLease: _, ...rest } = validTemplate();
-      const result = LeaseTemplateSchema.parse(rest);
+      const result = PersistedLeaseTemplateSchema.parse(rest);
       expect(result.allowOwnerToShareLease).toBe(false);
     });
 
     it("should reject non-boolean", () => {
       expect(
-        LeaseTemplateSchema.safeParse(
+        PersistedLeaseTemplateSchema.safeParse(
           validTemplate({ allowOwnerToShareLease: "yes" as any }),
         ).success,
       ).toBe(false);
@@ -243,7 +256,7 @@ describe("LeaseTemplateSchema", () => {
           lastEditTime: NOW,
         },
       };
-      const result = LeaseTemplateSchema.parse(legacyRecord);
+      const result = PersistedLeaseTemplateSchema.parse(legacyRecord);
       expect(result.allowOwnerToShareLease).toBe(false);
     });
   });
@@ -251,14 +264,16 @@ describe("LeaseTemplateSchema", () => {
   describe("maxSpend", () => {
     it("should accept positive number", () => {
       expect(
-        LeaseTemplateSchema.safeParse(validTemplate({ maxSpend: 100 })).success,
+        PersistedLeaseTemplateSchema.safeParse(validTemplate({ maxSpend: 100 }))
+          .success,
       ).toBe(true);
     });
 
     it.each([0, -1])("should reject %s", (value) => {
       expect(
-        LeaseTemplateSchema.safeParse(validTemplate({ maxSpend: value }))
-          .success,
+        PersistedLeaseTemplateSchema.safeParse(
+          validTemplate({ maxSpend: value }),
+        ).success,
       ).toBe(false);
     });
   });
@@ -266,7 +281,7 @@ describe("LeaseTemplateSchema", () => {
   describe("leaseDurationInHours", () => {
     it("should accept positive number", () => {
       expect(
-        LeaseTemplateSchema.safeParse(
+        PersistedLeaseTemplateSchema.safeParse(
           validTemplate({ leaseDurationInHours: 24 }),
         ).success,
       ).toBe(true);
@@ -274,7 +289,7 @@ describe("LeaseTemplateSchema", () => {
 
     it.each([0, -1])("should reject %s", (value) => {
       expect(
-        LeaseTemplateSchema.safeParse(
+        PersistedLeaseTemplateSchema.safeParse(
           validTemplate({ leaseDurationInHours: value }),
         ).success,
       ).toBe(false);
@@ -284,7 +299,7 @@ describe("LeaseTemplateSchema", () => {
   describe("budgetThresholds", () => {
     it("should accept valid thresholds", () => {
       expect(
-        LeaseTemplateSchema.safeParse(
+        PersistedLeaseTemplateSchema.safeParse(
           validTemplate({
             budgetThresholds: [
               { dollarsSpent: 50, action: "ALERT" },
@@ -297,7 +312,7 @@ describe("LeaseTemplateSchema", () => {
 
     it("should reject threshold with zero dollarsSpent", () => {
       expect(
-        LeaseTemplateSchema.safeParse(
+        PersistedLeaseTemplateSchema.safeParse(
           validTemplate({
             budgetThresholds: [{ dollarsSpent: 0, action: "ALERT" }],
           }),
@@ -307,7 +322,7 @@ describe("LeaseTemplateSchema", () => {
 
     it("should reject threshold with invalid action", () => {
       expect(
-        LeaseTemplateSchema.safeParse(
+        PersistedLeaseTemplateSchema.safeParse(
           validTemplate({
             budgetThresholds: [
               { dollarsSpent: 50, action: "TERMINATE" as any },
@@ -321,7 +336,7 @@ describe("LeaseTemplateSchema", () => {
   describe("durationThresholds", () => {
     it("should accept valid thresholds", () => {
       expect(
-        LeaseTemplateSchema.safeParse(
+        PersistedLeaseTemplateSchema.safeParse(
           validTemplate({
             durationThresholds: [
               { hoursRemaining: 4, action: "ALERT" },
@@ -334,7 +349,7 @@ describe("LeaseTemplateSchema", () => {
 
     it("should reject threshold with zero hoursRemaining", () => {
       expect(
-        LeaseTemplateSchema.safeParse(
+        PersistedLeaseTemplateSchema.safeParse(
           validTemplate({
             durationThresholds: [{ hoursRemaining: 0, action: "ALERT" }],
           }),
@@ -345,7 +360,7 @@ describe("LeaseTemplateSchema", () => {
 
   it("should reject unknown fields (strict mode)", () => {
     expect(
-      LeaseTemplateSchema.safeParse(
+      PersistedLeaseTemplateSchema.safeParse(
         validTemplate({ unknownField: "value" } as any),
       ).success,
     ).toBe(false);

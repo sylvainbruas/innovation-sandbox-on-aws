@@ -6,10 +6,14 @@ import { ColumnLayout, KeyValuePairs } from "@cloudscape-design/components";
 import NumberField from "@amzn/innovation-sandbox-frontend/components/FormFields/NumberField";
 import RadioGroupField from "@amzn/innovation-sandbox-frontend/components/FormFields/RadioGroupField";
 import { SectionForm } from "@amzn/innovation-sandbox-frontend/domains/settings/components/forms/SectionForm";
-import { SectionData } from "@amzn/innovation-sandbox-frontend/domains/settings/service";
+import { ConfigurationSectionView } from "@amzn/innovation-sandbox-frontend/domains/settings/model";
 import { CONFIG_CONSTRAINTS } from "@amzn/innovation-sandbox-frontend/domains/settings/validation";
 
-export function CleanupForm({ data }: { data: SectionData<"cleanup"> }) {
+export function CleanupForm({
+  data,
+}: {
+  data: ConfigurationSectionView<"cleanup">;
+}) {
   return (
     <SectionForm
       section="cleanup"

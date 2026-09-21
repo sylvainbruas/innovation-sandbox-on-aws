@@ -14,8 +14,7 @@ export class CleanupStepError extends Error {
   public override readonly cause: unknown;
 
   constructor(stepName: string, cause: unknown) {
-    const message =
-      cause instanceof Error ? cause.message : String(cause);
+    const message = cause instanceof Error ? cause.message : String(cause);
     super(message);
     this.name = "CleanupStepError";
     this.stepName = stepName;

@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
-  Lease,
-  LeaseSchema,
   LeaseSchemaVersion,
+  PersistedLease,
+  PersistedLeaseSchema,
 } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import {
   validateItem,
@@ -14,16 +14,16 @@ import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/genera
 import { describe, expect, test } from "vitest";
 
 class TestClass {
-  @validateItem(LeaseSchema)
+  @validateItem(PersistedLeaseSchema)
   @withMetadata(LeaseSchemaVersion)
-  public static metaEnhancedFunction(lease: Lease): Lease {
+  public static metaEnhancedFunction(lease: PersistedLease): PersistedLease {
     return lease;
   }
 }
 
 describe("meta decorators", () => {
   test("applies meta to lease", () => {
-    const lease = generateSchemaData(LeaseSchema, {
+    const lease = generateSchemaData(PersistedLeaseSchema, {
       status: "PendingApproval",
       meta: undefined,
     });

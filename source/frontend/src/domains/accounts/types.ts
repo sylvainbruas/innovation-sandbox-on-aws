@@ -1,67 +1,79 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { CleanupValidationMode } from "@amzn/innovation-sandbox-commons/data/config/config";
+import { z } from "zod";
 
-export type UnregisteredAccount = {
-  Id: string;
-  Email: string;
-  Name?: string;
-};
+import { CleanupValidationModeSchema } from "@amzn/innovation-sandbox-shared/types/sandbox-account";
 
-export interface CleanupReportStep {
-  name: string;
-  startedAt: string;
-  completedAt?: string;
-  meta?: {
-    codeBuildExecutionArn?: string;
-    outcome?: "SUCCEEDED" | "FAILED";
-    cooldownDurationHours?: number;
-    skippedBy?: string;
-    skippedAt?: string;
-    [key: string]: unknown;
-  };
-}
+const CleanupReportStepMetaViewSchema = z
+  .object({
+    codeBuildExecutionArn: z.string().optional(),
+    outcome: z.enum(["SUCCEEDED", "FAILED"]).optional(),
+    cooldownDurationHours: z.number().optional(),
+    skippedBy: z.string().optional(),
+    skippedAt: z.string().optional(),
+  })
+  .catchall(z.unknown());
 
-export interface CleanupResourceSummary {
-  validationMode?: CleanupValidationMode;
-  beforeCleanup?: {
-    totalCount: number;
-    ignoredCount: number;
-    byType: Record<string, number>;
-  };
-  afterCooldown?: {
-    totalCount: number;
-    ignoredCount: number;
-    byType: Record<string, number>;
-  };
-  remainingTypes: string[];
-  remainingResources?: CleanupRemainingResource[];
-  remainingResourcesTotalCount?: number;
-  ignoredResources?: CleanupRemainingResource[];
-  ignoredResourcesTotalCount?: number;
-}
+export const CleanupReportStepViewSchema = z.strictObject({
+  name: z.string(),
+  startedAt: z.string(),
+  completedAt: z.string().optional(),
+  meta: CleanupReportStepMetaViewSchema.optional(),
+});
 
-export interface CleanupRemainingResource {
-  arn: string;
-  resourceType: string;
-  region: string;
-}
+export type CleanupReportStepView = z.infer<typeof CleanupReportStepViewSchema>;
 
-export interface CleanupReport {
-  accountId: string;
-  durableExecutionArn: string;
-  status: "IN_PROGRESS" | "COMPLETED" | "FAILED";
-  cleanupStatus: string;
-  startedAt: string;
-  completedAt?: string;
-  reasonForCleanup: string;
-  initiatedBy?: string;
-  resourceSummary?: CleanupResourceSummary;
-  steps: CleanupReportStep[];
-  cooldownSkippedBy?: string;
-  error?: {
-    step: string;
-    message: string;
-  };
-}
+const CleanupResourceCountViewSchema = z.strictObject({
+  totalCount: z.number(),
+  ignoredCount: z.number(),
+  byType: z.record(z.string(), z.number()),
+});
+
+export const CleanupRemainingResourceViewSchema = z.strictObject({
+  arn: z.string(),
+  resourceType: z.string(),
+  region: z.string(),
+});
+
+export type CleanupRemainingResourceView = z.infer<
+  typeof CleanupRemainingResourceViewSchema
+>;
+
+export const CleanupResourceSummaryViewSchema = z.strictObject({
+  validationMode: CleanupValidationModeSchema.optional(),
+  beforeCleanup: CleanupResourceCountViewSchema.optional(),
+  afterCleanup: CleanupResourceCountViewSchema.optional(),
+  afterCooldown: CleanupResourceCountViewSchema.optional(),
+  remainingTypes: z.array(z.string()).optional(),
+  remainingResources: z.array(CleanupRemainingResourceViewSchema).optional(),
+  remainingResourcesTotalCount: z.number().optional(),
+  ignoredResources: z.array(CleanupRemainingResourceViewSchema).optional(),
+  ignoredResourcesTotalCount: z.number().optional(),
+});
+
+export type CleanupResourceSummaryView = z.infer<
+  typeof CleanupResourceSummaryViewSchema
+>;
+
+const CleanupReportErrorViewSchema = z.strictObject({
+  step: z.string(),
+  message: z.string(),
+});
+
+export const CleanupReportViewSchema = z.strictObject({
+  accountId: z.string(),
+  durableExecutionArn: z.string(),
+  status: z.enum(["IN_PROGRESS", "COMPLETED", "FAILED"]),
+  cleanupStatus: z.string(),
+  startedAt: z.string(),
+  completedAt: z.string().optional(),
+  reasonForCleanup: z.string(),
+  initiatedBy: z.string().optional(),
+  resourceSummary: CleanupResourceSummaryViewSchema.optional(),
+  steps: z.array(CleanupReportStepViewSchema),
+  cooldownSkippedBy: z.string().optional(),
+  error: CleanupReportErrorViewSchema.optional(),
+});
+
+export type CleanupReportView = z.infer<typeof CleanupReportViewSchema>;

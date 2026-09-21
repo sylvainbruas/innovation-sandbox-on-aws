@@ -10,7 +10,7 @@ import {
 import { mockClient } from "aws-sdk-client-mock";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { MonitoredLeaseSchema } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
+import { PersistedMonitoredLeaseSchema } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import { OrganizationsTaggingService } from "@amzn/innovation-sandbox-commons/isb-services/organizations-tagging-service.js";
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
 import {
@@ -142,7 +142,7 @@ describe("OrganizationsTaggingService", () => {
   describe("applyLeaseTags()", () => {
     it("writes the 4 lease tags + Status=Active in a single TagResource call", async () => {
       mockOrganizationsClient.on(TagResourceCommand).resolves({});
-      const lease = generateSchemaData(MonitoredLeaseSchema, {
+      const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
         awsAccountId: ACCOUNT_ID,
         status: "Active",
         costReportGroup: "team-alpha",
@@ -168,7 +168,7 @@ describe("OrganizationsTaggingService", () => {
 
     it("falls back to the no-cost-report-group sentinel when the lease has none", async () => {
       mockOrganizationsClient.on(TagResourceCommand).resolves({});
-      const lease = generateSchemaData(MonitoredLeaseSchema, {
+      const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
         awsAccountId: ACCOUNT_ID,
         status: "Active",
         costReportGroup: undefined,
@@ -191,7 +191,9 @@ describe("OrganizationsTaggingService", () => {
 
       await expect(
         service.applyLeaseTags(
-          generateSchemaData(MonitoredLeaseSchema, { status: "Active" }),
+          generateSchemaData(PersistedMonitoredLeaseSchema, {
+            status: "Active",
+          }),
           "idc-user-123",
         ),
       ).rejects.toBe(apiError);

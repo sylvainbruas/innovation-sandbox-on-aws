@@ -7,10 +7,7 @@ export default defineConfig({
   test: {
     hookTimeout: 30_000,
     setupFiles: [
-      path.resolve(
-        __dirname,
-        "../../../common/test/lambdas/api-test-setup.ts",
-      ),
+      path.resolve(__dirname, "../../../common/test/lambdas/api-test-setup.ts"),
     ],
     coverage: {
       include: ["*.ts"],

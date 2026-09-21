@@ -7,15 +7,15 @@ import { z } from "zod";
 
 import { IdcStackConfigStore } from "@amzn/innovation-sandbox-commons/data/idc-stack-config/ssm-idc-stack-config-store.js";
 import { LeaseStore } from "@amzn/innovation-sandbox-commons/data/lease/lease-store.js";
-import {
-  Lease,
-  LeaseLockIntentSchema,
-  type LeaseResourceLock,
-} from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
+import { PersistedLease } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import { PrincipalStore } from "@amzn/innovation-sandbox-commons/data/principal/principal-store.js";
-import { PrincipalType } from "@amzn/innovation-sandbox-commons/data/principal/principal.js";
 import { IdcService } from "@amzn/innovation-sandbox-commons/isb-services/idc-service.js";
 import { IsbEventBridgeClient } from "@amzn/innovation-sandbox-commons/sdk-clients/event-bridge-client.js";
+import {
+  LeaseLockIntentSchema,
+  type LeaseResourceLock,
+} from "@amzn/innovation-sandbox-shared/types/lease.js";
+import type { PrincipalType } from "@amzn/innovation-sandbox-shared/types/principal.js";
 
 export type LeaseLockIntent = z.infer<typeof LeaseLockIntentSchema>;
 
@@ -39,8 +39,7 @@ export interface EnrichedGroupAssignment {
 }
 
 export type EnrichedAssignment =
-  | EnrichedUserAssignment
-  | EnrichedGroupAssignment;
+  EnrichedUserAssignment | EnrichedGroupAssignment;
 
 export interface UpdateAssignmentsResult {
   desiredCount: number;
@@ -223,7 +222,7 @@ export interface GetLeasesForUserViaGroupsServices {
 
 export type SharedLeaseAccessType = "direct" | "group";
 
-export type SharedLease = Lease & {
+export type SharedLease = PersistedLease & {
   accessType: SharedLeaseAccessType;
   sourceGroupName?: string;
 };

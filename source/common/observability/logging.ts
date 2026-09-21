@@ -1,14 +1,11 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
-import { BlueprintWithStackSets } from "@amzn/innovation-sandbox-commons/data/blueprint/blueprint.js";
-import { LeaseTemplate } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
-import {
-  isMonitoredLease,
-  Lease,
-} from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
-import { SandboxAccount } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
+import { PersistedBlueprintWithStackSets } from "@amzn/innovation-sandbox-commons/data/blueprint/blueprint.js";
+import { PersistedLease } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
+import { PersistedSandboxAccount } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
 import { SubscribableLog } from "@amzn/innovation-sandbox-commons/observability/log-types.js";
 import { IsbAccountTagSuffix } from "@amzn/innovation-sandbox-commons/utils/isb-account-tags.js";
+import { isMonitoredLease } from "@amzn/innovation-sandbox-shared/types/lease.js";
 import { Logger } from "@aws-lambda-powertools/logger";
 import { ConstraintViolationException } from "@aws-sdk/client-organizations";
 import { diff, IChange } from "json-diff-ts";
@@ -39,7 +36,9 @@ export function addCorrelationContext(
 /*
  * common properties that can be searched in log insights to group logs by
  */
-export function searchableAccountProperties(sandboxAccount: SandboxAccount) {
+export function searchableAccountProperties(
+  sandboxAccount: PersistedSandboxAccount,
+) {
   return {
     accountId: sandboxAccount.awsAccountId,
     accountEmail: sandboxAccount.email,
@@ -47,7 +46,7 @@ export function searchableAccountProperties(sandboxAccount: SandboxAccount) {
   };
 }
 
-export function searchableLeaseProperties(lease: Lease) {
+export function searchableLeaseProperties(lease: PersistedLease) {
   const baseProps = {
     endUser: lease.userEmail,
     leaseId: lease.uuid,
@@ -66,9 +65,10 @@ export function searchableLeaseProperties(lease: Lease) {
   }
 }
 
-export function searchableLeaseTemplateProperties(
-  leaseTemplate: LeaseTemplate,
-) {
+export function searchableLeaseTemplateProperties(leaseTemplate: {
+  uuid: string;
+  name: string;
+}) {
   return {
     leaseTemplateId: leaseTemplate.uuid,
     leaseTemplateName: leaseTemplate.name,
@@ -100,7 +100,7 @@ export function searchableAssignmentProperties(
 }
 
 export function searchableBlueprintProperties(
-  blueprintWithStackSets: BlueprintWithStackSets,
+  blueprintWithStackSets: PersistedBlueprintWithStackSets,
 ) {
   const baseProperties = {
     blueprintId: blueprintWithStackSets.blueprint.blueprintId,

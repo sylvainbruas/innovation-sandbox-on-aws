@@ -5,11 +5,7 @@ import { Tracer } from "@aws-lambda-powertools/tracer";
 import { Context, EventBridgeEvent } from "aws-lambda";
 import { DateTime } from "luxon";
 
-import {
-  BudgetThreshold,
-  DurationThreshold,
-} from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
-import { MonitoredLease } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
+import { PersistedMonitoredLease } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import {
   collect,
   stream,
@@ -34,9 +30,17 @@ import { searchableLeaseProperties } from "@amzn/innovation-sandbox-commons/obse
 import { IsbEvent } from "@amzn/innovation-sandbox-commons/sdk-clients/event-bridge-client.js";
 import { fromTemporaryIsbOrgManagementCredentials } from "@amzn/innovation-sandbox-commons/utils/cross-account-roles.js";
 import { now } from "@amzn/innovation-sandbox-commons/utils/time-utils.js";
+import {
+  BudgetThreshold,
+  DurationThreshold,
+} from "@amzn/innovation-sandbox-shared/types/lease-template.js";
 
 const serviceName = "LeaseMonitoring";
 const tracer = new Tracer();
+
+type BreachedDurationThreshold = DurationThreshold & {
+  leaseExpirationDate: string;
+};
 const logger = new Logger({ serviceName });
 
 export const handler = baseMiddlewareBundle({
@@ -68,7 +72,7 @@ export async function performAccountMonitoringScan(
         status: "Frozen",
       }),
     )),
-  ] as MonitoredLease[];
+  ] as PersistedMonitoredLease[];
   logger.debug(
     `Running cost monitoring for ${JSON.stringify(
       monitoredLeases.map((lease) => [lease.awsAccountId, lease.uuid]),
@@ -123,16 +127,21 @@ export async function performAccountMonitoringScan(
  **/
 async function getLatestCostReport(
   costExplorerService: CostExplorerService,
-  monitoredLeases: MonitoredLease[],
+  monitoredLeases: PersistedMonitoredLease[],
   currentDateTime: DateTime<true>,
 ): Promise<AccountsCostReport> {
   if (monitoredLeases.length === 0) {
     return new AccountsCostReport();
   }
 
-  const earliestStart = monitoredLeases
-    .map((l) => DateTime.fromISO(l.startDate, { zone: "utc" }))
-    .reduce((a, b) => (a < b ? a : b), DateTime.fromISO(monitoredLeases[0]!.startDate, { zone: "utc" }));
+  const earliestStart = DateTime.fromMillis(
+    Math.min(
+      ...monitoredLeases.map((lease) =>
+        DateTime.fromISO(lease.startDate, { zone: "utc" }).toMillis(),
+      ),
+    ),
+    { zone: "utc" },
+  );
 
   const tagReport = await costExplorerService.getCostForLeasesByTag(
     monitoredLeases.map((l) => l.uuid),
@@ -181,7 +190,7 @@ async function getLatestCostReport(
 }
 
 function determineLeaseEvents(props: {
-  lease: MonitoredLease;
+  lease: PersistedMonitoredLease;
   latestCostReport: AccountsCostReport;
   currentDateTime: DateTime<true>;
 }): IsbEvent[] {
@@ -347,10 +356,10 @@ function determineLeaseEvents(props: {
         triggeredDurationThreshold:
           latestBreachedDurationTheshold.hoursRemaining,
         leaseDurationInHours: Math.round(
-          DateTime.fromISO(lease.expirationDate!, { zone: "utc" }).diff(
-            DateTime.fromISO(lease.startDate, { zone: "utc" }),
-            "hour",
-          ).hours,
+          DateTime.fromISO(latestBreachedDurationTheshold.leaseExpirationDate, {
+            zone: "utc",
+          }).diff(DateTime.fromISO(lease.startDate, { zone: "utc" }), "hour")
+            .hours,
         ),
         actionRequested: latestBreachedDurationTheshold.action,
       }),
@@ -361,9 +370,9 @@ function determineLeaseEvents(props: {
 }
 
 function isExpired(
-  lease: MonitoredLease,
+  lease: PersistedMonitoredLease,
   currentDate: DateTime,
-): lease is MonitoredLease & { expirationDate: string } {
+): lease is PersistedMonitoredLease & { expirationDate: string } {
   return (
     lease.expirationDate !== undefined &&
     DateTime.fromISO(lease.expirationDate, { zone: "utc" }) < currentDate
@@ -371,9 +380,9 @@ function isExpired(
 }
 
 function maxBudgetExceeded(
-  lease: MonitoredLease,
+  lease: PersistedMonitoredLease,
   costs: AccountsCostReport,
-): lease is MonitoredLease & { maxSpend: number } {
+): lease is PersistedMonitoredLease & { maxSpend: number } {
   return (
     lease.maxSpend !== undefined &&
     costs.getCost(lease.awsAccountId) >= lease.maxSpend
@@ -381,7 +390,7 @@ function maxBudgetExceeded(
 }
 
 function detectNewlyBreachedBudgetThresholds(
-  lease: MonitoredLease,
+  lease: PersistedMonitoredLease,
   costs: AccountsCostReport,
 ) {
   const newlyExceededThresholds = [];
@@ -399,14 +408,15 @@ function detectNewlyBreachedBudgetThresholds(
 }
 
 function detectNewlyBreachedDurationThresholds(
-  lease: MonitoredLease,
+  lease: PersistedMonitoredLease,
   currentDate: DateTime,
 ) {
-  if (lease.expirationDate === undefined) {
+  const leaseExpirationDate = lease.expirationDate;
+  if (leaseExpirationDate === undefined) {
     return [];
   }
-  const newlyExceededThresholds = [];
-  const expirationDate = DateTime.fromISO(lease.expirationDate, {
+  const newlyExceededThresholds: BreachedDurationThreshold[] = [];
+  const expirationDate = DateTime.fromISO(leaseExpirationDate, {
     zone: "utc",
   });
   const lastCheckedDate = DateTime.fromISO(lease.lastCheckedDate, {
@@ -422,7 +432,10 @@ function detectNewlyBreachedDurationThresholds(
       lastCheckedDate < thresholdDate && //newly exceeded
       thresholdDate <= currentDate
     ) {
-      newlyExceededThresholds.push(durationThreshold);
+      newlyExceededThresholds.push({
+        ...durationThreshold,
+        leaseExpirationDate,
+      });
     }
   }
 
@@ -430,17 +443,23 @@ function detectNewlyBreachedDurationThresholds(
 }
 
 function getLargestBudgetThreshold(budgetThresholds: BudgetThreshold[]) {
-  if (budgetThresholds.length == 0) return undefined;
-  return budgetThresholds.reduce(
-    (prev, current) => (prev.dollarsSpent > current.dollarsSpent ? prev : current),
-    budgetThresholds[0]!,
+  const [firstThreshold, ...remainingThresholds] = budgetThresholds;
+  if (firstThreshold === undefined) return undefined;
+  return remainingThresholds.reduce(
+    (prev, current) =>
+      prev.dollarsSpent > current.dollarsSpent ? prev : current,
+    firstThreshold,
   );
 }
 
-function getLatestDurationThreshold(durationThresholds: DurationThreshold[]) {
-  if (durationThresholds.length == 0) return undefined;
-  return durationThresholds.reduce(
-    (prev, current) => (prev.hoursRemaining < current.hoursRemaining ? prev : current),
-    durationThresholds[0]!,
+function getLatestDurationThreshold(
+  durationThresholds: BreachedDurationThreshold[],
+) {
+  const [firstThreshold, ...remainingThresholds] = durationThresholds;
+  if (firstThreshold === undefined) return undefined;
+  return remainingThresholds.reduce(
+    (prev, current) =>
+      prev.hoursRemaining < current.hoursRemaining ? prev : current,
+    firstThreshold,
   );
 }

@@ -3,7 +3,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { BlueprintService } from "@amzn/innovation-sandbox-frontend/domains/blueprints/service";
+import { getBlueprintService } from "@amzn/innovation-sandbox-frontend/domains/blueprints/service";
 import {
   RegisterBlueprintRequest,
   UpdateBlueprintRequest,
@@ -12,7 +12,7 @@ import {
 export const useGetBlueprints = () => {
   return useQuery({
     queryKey: ["blueprints"],
-    queryFn: async () => await new BlueprintService().getBlueprints(),
+    queryFn: async () => await getBlueprintService().getBlueprints(),
   });
 };
 
@@ -20,7 +20,7 @@ export const useGetBlueprintById = (blueprintId?: string | null) => {
   return useQuery({
     queryKey: ["blueprints", blueprintId],
     queryFn: async () =>
-      await new BlueprintService().getBlueprintById(blueprintId!),
+      await getBlueprintService().getBlueprintById(blueprintId!),
     enabled: !!blueprintId,
   });
 };
@@ -29,7 +29,7 @@ export const useRegisterBlueprint = () => {
   const client = useQueryClient();
   return useMutation({
     mutationFn: async (blueprint: RegisterBlueprintRequest) =>
-      await new BlueprintService().registerBlueprint(blueprint),
+      await getBlueprintService().registerBlueprint(blueprint),
     onSuccess: () =>
       client.invalidateQueries({
         queryKey: ["blueprints"],
@@ -47,7 +47,7 @@ export const useUpdateBlueprint = () => {
     }: {
       id: string;
       updates: UpdateBlueprintRequest;
-    }) => await new BlueprintService().updateBlueprint(id, updates),
+    }) => await getBlueprintService().updateBlueprint(id, updates),
     onSuccess: () =>
       client.invalidateQueries({
         queryKey: ["blueprints"],
@@ -60,7 +60,7 @@ export const useUnregisterBlueprint = () => {
   const client = useQueryClient();
   return useMutation({
     mutationFn: async (blueprintId: string) =>
-      await new BlueprintService().unregisterBlueprint(blueprintId),
+      await getBlueprintService().unregisterBlueprint(blueprintId),
     onSuccess: () =>
       client.invalidateQueries({
         queryKey: ["blueprints"],
@@ -75,7 +75,7 @@ export const useUnregisterBlueprints = (options?: {
   const client = useQueryClient();
   return useMutation({
     mutationFn: async (blueprintIds: string[]) =>
-      await new BlueprintService().unregisterBlueprints(blueprintIds),
+      await getBlueprintService().unregisterBlueprints(blueprintIds),
     onSuccess: () => {
       if (!options?.skipInvalidation) {
         client.invalidateQueries({
@@ -93,7 +93,7 @@ export const useListStackSets = (params?: {
 }) => {
   return useQuery({
     queryKey: ["stacksets", params],
-    queryFn: async () => await new BlueprintService().listStackSets(params),
+    queryFn: async () => await getBlueprintService().listStackSets(params),
     staleTime: 5 * 60 * 1000, // 5 minutes - StackSets are relatively static
   });
 };

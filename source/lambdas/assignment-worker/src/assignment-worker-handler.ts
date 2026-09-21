@@ -10,8 +10,6 @@ import type { SQSBatchResponse, SQSEvent, SQSRecord } from "aws-lambda";
 import pThrottle from "p-throttle";
 import { z } from "zod";
 
-import { LeaseLockIntentSchema } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
-import { PrincipalTypeSchema } from "@amzn/innovation-sandbox-commons/data/principal/principal.js";
 import { IsbServices } from "@amzn/innovation-sandbox-commons/isb-services/index.js";
 import {
   processAssignment,
@@ -31,6 +29,8 @@ import {
 } from "@amzn/innovation-sandbox-commons/observability/logging.js";
 import { IsbClients } from "@amzn/innovation-sandbox-commons/sdk-clients/index.js";
 import { fromTemporaryIsbIdcCredentials } from "@amzn/innovation-sandbox-commons/utils/cross-account-roles.js";
+import { LeaseLockIntentSchema } from "@amzn/innovation-sandbox-shared/types/lease.js";
+import { PrincipalTypeSchema } from "@amzn/innovation-sandbox-shared/types/principal.js";
 
 const serviceName = "AssignmentWorker";
 const tracer = new Tracer({ serviceName });

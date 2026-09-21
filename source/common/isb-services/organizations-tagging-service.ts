@@ -7,7 +7,7 @@ import {
   UntagResourceCommand,
 } from "@aws-sdk/client-organizations";
 
-import { MonitoredLease } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
+import { PersistedMonitoredLease } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import {
   buildLeaseTagSet,
   ISB_LEASE_TAG_SUFFIXES,
@@ -63,7 +63,10 @@ export class OrganizationsTaggingService {
     await this.tagAccount(accountId, { Status: status });
   }
 
-  async applyLeaseTags(lease: MonitoredLease, userId: string): Promise<void> {
+  async applyLeaseTags(
+    lease: PersistedMonitoredLease,
+    userId: string,
+  ): Promise<void> {
     await this.tagAccount(lease.awsAccountId, {
       ...buildLeaseTagSet(lease, userId),
       Status: "Active",

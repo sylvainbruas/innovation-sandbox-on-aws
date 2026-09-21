@@ -1,17 +1,14 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 import { Aws } from "aws-cdk-lib";
-import { LambdaIntegration } from "aws-cdk-lib/aws-apigateway";
 import { PolicyStatement, Role } from "aws-cdk-lib/aws-iam";
+import { IFunction } from "aws-cdk-lib/aws-lambda";
 import { Construct } from "constructs";
 import path from "path";
 
 import { AccountLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/account-lambda-environment.js";
-import {
-  RestApi,
-  RestApiProps,
-} from "@amzn/innovation-sandbox-infrastructure/components/api/rest-api-all";
-import { IsbLambdaFunction } from "@amzn/innovation-sandbox-infrastructure/components/isb-lambda-function";
+import type { RestApiProps } from "@amzn/innovation-sandbox-infrastructure/components/api/rest-api-all";
+import { IsbApiLambdaFunction } from "@amzn/innovation-sandbox-infrastructure/components/isb-lambda-function";
 import { IsbKmsKeys } from "@amzn/innovation-sandbox-infrastructure/components/kms";
 import {
   getIdcRoleArn,
@@ -28,7 +25,9 @@ import {
 import { IsbComputeStack } from "@amzn/innovation-sandbox-infrastructure/isb-compute-stack";
 
 export class AccountsApi {
-  constructor(restApi: RestApi, scope: Construct, props: RestApiProps) {
+  public readonly lambdaFunction: IFunction;
+
+  constructor(scope: Construct, props: RestApiProps) {
     const { namespace } = props;
     const {
       configTableName,
@@ -40,7 +39,7 @@ export class AccountsApi {
       cognitoAppClientId,
     } = IsbComputeStack.sharedSpokeConfig.data;
 
-    const accountsLambdaFunction = new IsbLambdaFunction(
+    const accountsLambdaFunction = new IsbApiLambdaFunction(
       scope,
       "AccountsLambdaFunction",
       {
@@ -74,11 +73,7 @@ export class AccountsApi {
             namespace,
             props.orgMgtAccountId,
           ),
-          IDC_ROLE_ARN: getIdcRoleArn(
-            scope,
-            namespace,
-            props.idcAccountId,
-          ),
+          IDC_ROLE_ARN: getIdcRoleArn(scope, namespace, props.idcAccountId),
           ACCOUNT_POOL_CONFIG_PARAM_ARN:
             IsbComputeStack.sharedSpokeConfig.parameterArns
               .accountPoolConfigParamArn,
@@ -91,10 +86,10 @@ export class AccountsApi {
           COGNITO_USER_POOL_ID: cognitoUserPoolId,
           COGNITO_APP_CLIENT_ID: cognitoAppClientId,
         },
-        logGroup: restApi.logGroup,
         envSchema: AccountLambdaEnvironmentSchema,
       },
     );
+    this.lambdaFunction = accountsLambdaFunction.lambdaFunction;
 
     grantIsbSsmParameterRead(
       accountsLambdaFunction.lambdaFunction.role! as Role,
@@ -135,39 +130,5 @@ export class AccountsApi {
         resources: [`${props.durableCleanupFunctionArn}:*/durable-execution/*`],
       }),
     );
-
-    const accountsResource = restApi.root.addResource("accounts", {
-      defaultIntegration: new LambdaIntegration(
-        accountsLambdaFunction.lambdaFunction,
-        { allowTestInvoke: true, proxy: true },
-      ),
-    });
-    accountsResource.addMethod("GET");
-    accountsResource.addMethod("POST");
-
-    const accountIdResource = accountsResource.addResource("{awsAccountId}");
-    accountIdResource.addMethod("GET");
-
-    const accountRetryCleanupResource =
-      accountIdResource.addResource("retryCleanup");
-    accountRetryCleanupResource.addMethod("POST");
-
-    const accountEjectResource = accountIdResource.addResource("eject");
-    accountEjectResource.addMethod("POST");
-
-    const accountQuarantineResource =
-      accountIdResource.addResource("quarantine");
-    accountQuarantineResource.addMethod("POST");
-
-    const accountsUnregisteredResource =
-      accountsResource.addResource("unregistered");
-    accountsUnregisteredResource.addMethod("GET");
-
-    const cleanupReportsResource =
-      accountIdResource.addResource("cleanup-reports");
-    cleanupReportsResource.addMethod("GET");
-
-    const skipCooldownResource = accountIdResource.addResource("skipCooldown");
-    skipCooldownResource.addMethod("POST");
   }
 }

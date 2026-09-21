@@ -7,7 +7,7 @@ import {
   PRINCIPAL_CACHE_GROUP_SK_PREFIX,
   PRINCIPAL_CACHE_PK,
   PRINCIPAL_CACHE_USER_SK_PREFIX,
-  PrincipalCacheItem,
+  PersistedPrincipalCacheItem,
 } from "@amzn/innovation-sandbox-commons/data/principal/principal.js";
 import { IsbServices } from "@amzn/innovation-sandbox-commons/isb-services/index.js";
 import {
@@ -79,7 +79,7 @@ async function handlePrincipalCacheSync(_event: unknown, context: SyncContext) {
       syncedAt: now,
       ttl,
     })),
-  ] satisfies PrincipalCacheItem[];
+  ] satisfies PersistedPrincipalCacheItem[];
 
   const existingItems = await principalStore.getCacheItems({});
   const existingSks = new Set(existingItems.map((item) => item.sk));

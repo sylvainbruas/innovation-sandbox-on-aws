@@ -3,11 +3,11 @@
 
 import { PaginatedQueryResult } from "@amzn/innovation-sandbox-commons/data/common-types.js";
 import {
-  Lease,
-  MonitoredLease,
-  MonitoredLeaseSchema,
+  PersistedLease,
+  PersistedMonitoredLease,
+  PersistedMonitoredLeaseSchema,
 } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
-import { SandboxAccountSchema } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
+import { PersistedSandboxAccountSchema } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
 import { AccountQuarantinedEvent } from "@amzn/innovation-sandbox-commons/events/account-quarantined-event.js";
 import { CleanAccountRequest } from "@amzn/innovation-sandbox-commons/events/clean-account-request.js";
 import { EventDetailTypes } from "@amzn/innovation-sandbox-commons/events/index.js";
@@ -29,7 +29,7 @@ import { createMockOf } from "@amzn/innovation-sandbox-commons/test/mocking/mock
 import {
   type IdcIdentity,
   IdcIdentitySchema,
-} from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
+} from "@amzn/innovation-sandbox-shared/utils/auth-utils.js";
 import { Logger } from "@aws-lambda-powertools/logger";
 import { Tracer } from "@aws-lambda-powertools/tracer";
 import { DateTime } from "luxon";
@@ -84,7 +84,7 @@ describe("InnovationSandbox.quarantineAccount()", () => {
   });
 
   test("quarantine an account without an attached lease", async () => {
-    const mockAccount = generateSchemaData(SandboxAccountSchema, {
+    const mockAccount = generateSchemaData(PersistedSandboxAccountSchema, {
       status: "Frozen", //expected to be frozen, but was found in available OU
     });
 
@@ -135,10 +135,10 @@ describe("InnovationSandbox.quarantineAccount()", () => {
   });
 
   test("quarantine an account with an attached active lease", async () => {
-    const mockAccount = generateSchemaData(SandboxAccountSchema, {
+    const mockAccount = generateSchemaData(PersistedSandboxAccountSchema, {
       status: "Active",
     });
-    const activeLease = generateSchemaData(MonitoredLeaseSchema, {
+    const activeLease = generateSchemaData(PersistedMonitoredLeaseSchema, {
       awsAccountId: mockAccount.awsAccountId,
       status: "Active",
       userEmail: mockUser.email,
@@ -156,7 +156,7 @@ describe("InnovationSandbox.quarantineAccount()", () => {
     mockContext.leaseStore.findByStatusAndAccountID.mockResolvedValue({
       nextPageIdentifier: null,
       result: [activeLease],
-    } as PaginatedQueryResult<MonitoredLease>);
+    } as PaginatedQueryResult<PersistedMonitoredLease>);
 
     await InnovationSandbox.quarantineAccount(
       {
@@ -180,7 +180,7 @@ describe("InnovationSandbox.quarantineAccount()", () => {
       ttl: Math.floor(currentDateTime.plus({ days: 30 }).valueOf() / 1000),
       status: "AccountQuarantined",
       endDate: currentDateTime.toISO(),
-    } satisfies Partial<Lease>);
+    } satisfies Partial<PersistedLease>);
 
     expect(mockContext.eventBridgeClient.sendIsbEvent).toHaveBeenCalledWith(
       mockContext.tracer,
@@ -211,7 +211,7 @@ describe("InnovationSandbox.quarantineAccount()", () => {
   });
 
   test("writes the Status tag as Quarantine after the OU move", async () => {
-    const mockAccount = generateSchemaData(SandboxAccountSchema, {
+    const mockAccount = generateSchemaData(PersistedSandboxAccountSchema, {
       status: "Frozen",
     });
     mockContext.sandboxAccountStore.get.mockResolvedValue({
@@ -234,7 +234,7 @@ describe("InnovationSandbox.quarantineAccount()", () => {
   });
 
   test("status-tag failure does not block the lifecycle", async () => {
-    const mockAccount = generateSchemaData(SandboxAccountSchema, {
+    const mockAccount = generateSchemaData(PersistedSandboxAccountSchema, {
       status: "Frozen",
     });
     mockContext.sandboxAccountStore.get.mockResolvedValue({

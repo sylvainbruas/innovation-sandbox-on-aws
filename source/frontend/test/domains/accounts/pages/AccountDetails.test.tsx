@@ -7,7 +7,7 @@ import { http, HttpResponse } from "msw";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { describe, expect, test, vi } from "vitest";
 
-import { SandboxAccount } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
+import { SandboxAccountView } from "@amzn/innovation-sandbox-frontend/domains/accounts/model";
 import { AccountDetails } from "@amzn/innovation-sandbox-frontend/domains/accounts/pages/AccountDetails";
 import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import { ModalProvider } from "@amzn/innovation-sandbox-frontend/hooks/useModal";
@@ -46,7 +46,7 @@ vi.mock(
   }),
 );
 
-function setupAccountApi(account: SandboxAccount) {
+function setupAccountApi(account: SandboxAccountView) {
   server.use(
     http.get(`${getConfig().ApiUrl}/accounts/${account.awsAccountId}`, () => {
       return HttpResponse.json({

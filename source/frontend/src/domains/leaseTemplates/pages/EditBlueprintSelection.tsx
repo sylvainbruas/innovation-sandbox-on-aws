@@ -13,7 +13,6 @@ import { useEffect } from "react";
 import { FormProvider, useForm } from "react-hook-form";
 import { useNavigate, useParams } from "react-router-dom";
 
-import { LeaseTemplate } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template";
 import { useAppLayoutContext } from "@amzn/innovation-sandbox-frontend/components/AppLayout/AppLayoutContext";
 import { ContentLayout } from "@amzn/innovation-sandbox-frontend/components/ContentLayout";
 import { ErrorPanel } from "@amzn/innovation-sandbox-frontend/components/ErrorPanel";
@@ -32,6 +31,7 @@ import {
   useGetLeaseTemplateById,
   useUpdateLeaseTemplate,
 } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/hooks";
+import { LeaseTemplateView } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/model";
 import { useBreadcrumb } from "@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb";
 
 export const EditBlueprintSelection = () => {
@@ -89,9 +89,11 @@ export const EditBlueprintSelection = () => {
     if (!leaseTemplate) return;
 
     try {
-      const updatedLeaseTemplate: LeaseTemplate = {
+      const updatedLeaseTemplate: LeaseTemplateView = {
         ...leaseTemplate,
-        blueprintId: data.blueprintEnabled ? data.blueprintId || null : null,
+        blueprintId: data.blueprintEnabled
+          ? (data.blueprintId ?? undefined)
+          : undefined,
       };
 
       await updateLeaseTemplate(updatedLeaseTemplate);

@@ -28,7 +28,7 @@ describe("httpJsonBodyParser", () => {
     expect(request.event.body).toEqual({ name: "test", value: 123 });
   });
 
-  it("should return 415 for malformed JSON", async () => {
+  it("should return 400 ValidationError for malformed JSON", async () => {
     const request = {
       event: createAPIGatewayProxyEvent({
         httpMethod: "POST",
@@ -39,12 +39,29 @@ describe("httpJsonBodyParser", () => {
     };
 
     await expect(middleware.before!(request as any)).rejects.toMatchObject({
-      statusCode: 415,
+      statusCode: 400,
+      headers: { "x-amzn-errortype": "ValidationError" },
       message: expect.stringContaining("Invalid JSON"),
     });
   });
 
-  it("should return 415 for non-JSON content type", async () => {
+  it("should return 400 ValidationError when the body is absent", async () => {
+    const request = {
+      event: createAPIGatewayProxyEvent({
+        httpMethod: "POST",
+        path: "/test",
+        headers: { "content-type": "application/json" },
+      }),
+    };
+
+    await expect(middleware.before!(request as any)).rejects.toMatchObject({
+      statusCode: 400,
+      headers: { "x-amzn-errortype": "ValidationError" },
+      message: expect.stringContaining("Body not provided"),
+    });
+  });
+
+  it("should return 415 UnsupportedMediaTypeError for non-JSON content type", async () => {
     const request = {
       event: createAPIGatewayProxyEvent({
         httpMethod: "POST",
@@ -56,6 +73,7 @@ describe("httpJsonBodyParser", () => {
 
     await expect(middleware.before!(request as any)).rejects.toMatchObject({
       statusCode: 415,
+      headers: { "x-amzn-errortype": "UnsupportedMediaTypeError" },
     });
   });
 });

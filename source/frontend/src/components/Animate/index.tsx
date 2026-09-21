@@ -28,11 +28,7 @@ const AnimationTypes: Record<string, HTMLMotionProps<"div">> = {
 };
 
 type AnimationType =
-  | "SlideLeft"
-  | "SlideRight"
-  | "FadeIn"
-  | "SlideDown"
-  | "None";
+  "SlideLeft" | "SlideRight" | "FadeIn" | "SlideDown" | "None";
 
 interface AnimateProps {
   isHidden?: boolean;

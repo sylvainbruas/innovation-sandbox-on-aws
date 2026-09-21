@@ -7,16 +7,19 @@ import userEvent from "@testing-library/user-event";
 import { BrowserRouter } from "react-router-dom";
 import { describe, expect, test, vi } from "vitest";
 
-import { LEASE_NOT_PENDING_REVIEW_ERROR } from "@amzn/innovation-sandbox-commons/data/lease/lease";
 import {
   ListApprovals,
   reconcileSelectedRequests,
 } from "@amzn/innovation-sandbox-frontend/domains/leases/pages/ListApprovals";
 import { ModalProvider } from "@amzn/innovation-sandbox-frontend/hooks/useModal";
-import { createPendingLease } from "@amzn/innovation-sandbox-frontend/mocks/factories/leaseFactory";
+import {
+  createPendingLease,
+  withLeaseId,
+} from "@amzn/innovation-sandbox-frontend/mocks/factories/leaseFactory";
 import { mockLeaseApi } from "@amzn/innovation-sandbox-frontend/mocks/mockApi";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
 import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
+import { LEASE_NOT_PENDING_REVIEW_ERROR } from "@amzn/innovation-sandbox-shared/types/lease.js";
 
 // Mock ResizeObserver
 class ResizeObserver {
@@ -26,6 +29,11 @@ class ResizeObserver {
 }
 
 window.ResizeObserver = ResizeObserver;
+
+const OWNER_PRINCIPAL_ID = "11111111-1111-4111-8111-111111111111";
+const USER_ONE_PRINCIPAL_ID = "22222222-2222-4222-8222-222222222222";
+const GROUP_PRINCIPAL_ID = "33333333-3333-4333-8333-333333333333";
+const USER_TWO_PRINCIPAL_ID = "44444444-4444-4444-8444-444444444444";
 
 // Mock the useBreadcrumb hook
 vi.mock("@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb", () => ({
@@ -42,11 +50,11 @@ describe("ListApprovals", () => {
       </ModalProvider>,
     );
 
-  const mockPendingLease = createPendingLease();
+  const mockPendingLease = withLeaseId(createPendingLease(), "pending-lease-1");
 
   describe("reconcileSelectedRequests", () => {
-    const leaseA = { ...createPendingLease(), leaseId: "lease-a" } as any;
-    const leaseB = { ...createPendingLease(), leaseId: "lease-b" } as any;
+    const leaseA = withLeaseId(createPendingLease(), "lease-a");
+    const leaseB = withLeaseId(createPendingLease(), "lease-b");
 
     test("drops selections that are no longer pending", () => {
       // leaseA was approved elsewhere and is absent from the latest fetch.
@@ -238,13 +246,13 @@ describe("ListApprovals", () => {
     // so 4 entries = owner + 3 shared principals
     const leaseWithAssignments = createPendingLease({
       desiredAssignments: [
-        { principalId: "owner-1", principalType: "USER" },
-        { principalId: "user-1", principalType: "USER" },
-        { principalId: "group-1", principalType: "GROUP" },
-        { principalId: "user-2", principalType: "USER" },
+        { principalId: OWNER_PRINCIPAL_ID, principalType: "USER" },
+        { principalId: USER_ONE_PRINCIPAL_ID, principalType: "USER" },
+        { principalId: GROUP_PRINCIPAL_ID, principalType: "GROUP" },
+        { principalId: USER_TWO_PRINCIPAL_ID, principalType: "USER" },
       ],
     });
-    const leaseWithId = { ...leaseWithAssignments, leaseId: "test-lease-123" };
+    const leaseWithId = withLeaseId(leaseWithAssignments, "test-lease-123");
     mockLeaseApi.returns([leaseWithId] as any);
     server.use(mockLeaseApi.getHandler());
 
@@ -286,7 +294,9 @@ describe("ListApprovals", () => {
   test("displays dash when lease has only the owner in desired assignments", async () => {
     // Only the owner entry (no additional shared principals)
     const leaseWithOwnerOnly = createPendingLease({
-      desiredAssignments: [{ principalId: "owner-1", principalType: "USER" }],
+      desiredAssignments: [
+        { principalId: OWNER_PRINCIPAL_ID, principalType: "USER" },
+      ],
     });
     mockLeaseApi.returns([leaseWithOwnerOnly]);
     server.use(mockLeaseApi.getHandler());
@@ -309,8 +319,8 @@ describe("ListApprovals", () => {
     // Owner + 1 shared = 2 entries, displays "1 principal"
     const leaseWithOneShared = createPendingLease({
       desiredAssignments: [
-        { principalId: "owner-1", principalType: "USER" },
-        { principalId: "user-2", principalType: "USER" },
+        { principalId: OWNER_PRINCIPAL_ID, principalType: "USER" },
+        { principalId: USER_TWO_PRINCIPAL_ID, principalType: "USER" },
       ],
     });
     mockLeaseApi.returns([leaseWithOneShared]);

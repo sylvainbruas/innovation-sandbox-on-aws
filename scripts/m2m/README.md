@@ -14,6 +14,7 @@
   - [`smoke-test`](#smoke-test)
   - [`list-clients`](#list-clients)
   - [`revoke-m2m-role`](#revoke-m2m-role)
+  - [`aws isb` CLI](#aws-isb-cli)
 - [How It Works](#how-it-works)
 
 Machine-to-machine (M2M) clients call the ISB API by assuming an IAM role (one role per client) and signing requests with SigV4.
@@ -77,17 +78,19 @@ That's the whole flow. Read on for the details of each command, troubleshooting,
 https://solutions-reference.s3.amazonaws.com/innovation-sandbox-on-aws/latest/InnovationSandbox-M2mClient.template
 ```
 
-Pass the same parameters (`Namespace`, `ClientName`, `Role`, `TrustedPrincipal`, `RestApiId`) and use the same stack name (`<stackPrefix>-M2mClient-<Role>-<clientName>`) so the discovery scripts find it. Steps (2) and (3) are unchanged.
+Pass the same parameters (`Namespace`, `ClientName`, `Role`, `TrustedPrincipal`) plus `RestApiIdSsmParam` set to `InnovationSandbox_<namespace>_Compute_RestApiId` (the Compute stack's SSM parameter name, also published as its `RestApiIdSsmParamName` output; `deploy-client.sh` fills this in for you), and use the same stack name (`<stackPrefix>-M2mClient-<Role>-<clientName>`) so `--client-stack` lookups resolve it (discovery via `list-clients`/`revoke` is tag-based and works regardless). `RestApiIdSsmParam` is an `AWS::SSM::Parameter::Value<String>`, so CloudFormation resolves the current API ID at deploy time. Steps (2) and (3) are unchanged.
 
 ## Concepts (quick reference)
 
 **Per-client stack.** One CFN stack per automation client. Stack name `<stackPrefix>-M2mClient-<Role>-<clientName>` (e.g. `InnovationSandbox-M2mClient-Admin-deploy-pipeline`). The IAM role inside the stack is named `<namespace>-isb-m2m-<role>-<clientName>` (lowercased role) — the middleware uses this shape to recognize M2M callers.
 
 **TrustedPrincipal.** Who's allowed to assume the role:
+
 - IAM ARN — pins to a specific principal (e.g. `arn:aws:iam::123:role/codebuild-pipeline`)
 - 12-digit account ID — trusts any principal in that account with `sts:AssumeRole` permission (looser; gated by per-client ExternalId)
 
 **Two profiles, two purposes.** Don't confuse the two:
+
 - **Source profile** = creds that match the `TrustedPrincipal`. Used to call `sts:AssumeRole`. Pass via `--profile` to `assume-m2m-role.sh`, or rely on the default chain (env vars / `AWS_PROFILE` / IMDS / SSO).
 - **Assumed-role profile** = the M2M role's short-lived creds. Written by `assume-m2m-role.sh --output profile` (defaults to `isb-m2m-<clientName>`). Used to call the API via `call-api.sh --profile <name>`. Never assume into the `default` profile (the script refuses).
 
@@ -132,15 +135,15 @@ If you need an immediate cut-off WITHOUT destroying and recreating the role (e.g
 
 ## Scripts
 
-| Script | Purpose |
-|--------|---------|
-| `deploy-client.sh` | Deploy one client stack |
-| `assume-m2m-role.sh` | Assume the client role; output creds as JSON / `export` / profile |
-| `call-api.sh` | Sign and send an API request with existing credentials |
-| `smoke-test.sh` | Verify one client's RBAC end-to-end |
-| `list-clients.sh` | List deployed clients (table or JSON) |
+| Script               | Purpose                                                                       |
+| -------------------- | ----------------------------------------------------------------------------- |
+| `deploy-client.sh`   | Deploy one client stack                                                       |
+| `assume-m2m-role.sh` | Assume the client role; output creds as JSON / `export` / profile             |
+| `call-api.sh`        | Sign and send an API request with existing credentials                        |
+| `smoke-test.sh`      | Verify one client's RBAC end-to-end                                           |
+| `list-clients.sh`    | List deployed clients (table or JSON)                                         |
 | `revoke-m2m-role.sh` | Incident response — deny / restore client access without destroying the stack |
-| `_common.sh` | Sourced helpers; not executed directly |
+| `_common.sh`         | Sourced helpers; not executed directly                                        |
 
 Every script accepts `--verbose` / `-v` to print AWS calls and resolved values to stderr (credentials and signed headers are never printed). Use it as the first debugging step.
 
@@ -179,20 +182,21 @@ Deploys one client stack. Two modes:
 aws s3 cp s3://my-bucket/isb-m2m-client.template.json ./template.json
 ```
 
-**Raw `cdk deploy`** if you want full control. Name the stack `<stackPrefix>-M2mClient-<Role>-<clientName>` so discovery finds it, and pass `RestApiId` from the Compute stack's SSM export:
+**Raw `cdk deploy`** can deploy the single M2M stack defined by the current CDK app:
 
 ```bash
-REST_API_ID=$(aws ssm get-parameter \
-  --name "InnovationSandbox_myisb_Compute_RestApiId" \
-  --query Parameter.Value --output text)
-
-cdk deploy IsbM2mClient \
+npm run --workspace @amzn/innovation-sandbox-infrastructure cdk -- \
+  deploy InnovationSandbox-M2mClient \
   --parameters Namespace=myisb \
   --parameters ClientName=deploy-pipeline \
   --parameters Role=Admin \
   --parameters TrustedPrincipal=arn:aws:iam::123456789012:role/codebuild-deploy-pipeline \
-  --parameters RestApiId="$REST_API_ID"
+  --parameters RestApiIdSsmParam=InnovationSandbox_myisb_Compute_RestApiId
 ```
+
+The positional stack name selects the synthesized `InnovationSandbox-M2mClient` stack; it does not rename the deployed CloudFormation stack. Repeating this command with different parameters updates that same stack. Use `deploy-client.sh` (or deploy the synthesized template with `aws cloudformation deploy --stack-name`) to create multiple, distinctly named client stacks.
+
+The `<stackPrefix>-M2mClient-<Role>-<clientName>` naming shape is an operational convention for readability and auditing, not an authentication or discovery requirement. Discovery follows the tags on the IAM role, including the tag that contains the stack's actual name.
 
 `--max-session-duration` accepts 3600-43200 seconds (default 3600 / 1 hour). Use `--stack-prefix MyIsb` (or `STACK_PREFIX` env var) if your deployment uses a non-default prefix.
 
@@ -200,13 +204,14 @@ cdk deploy IsbM2mClient \
 
 The `IsbM2mClient` template tags the IAM role with three CDK-emitted tags. `list-clients.sh` and `revoke-m2m-role.sh deny-all/restore-all` query IAM directly for roles whose name contains `isb-m2m-`, then filter:
 
-| Tag | Value | Purpose |
-|-----|-------|---------|
-| `aws-solutions:isb-stack-type` | `M2mClient` | Identifies an M2M client role |
-| `aws-solutions:isb-stack-name` | `<stackName>` | Resolves the role to its owning stack (CFN doesn't auto-tag IAM roles with `aws:cloudformation:stack-name`) |
-| `aws-solutions:isb-id` | `<namespace>_isb` | Scopes to one ISB deployment |
+| Tag                            | Value             | Purpose                                                                                                     |
+| ------------------------------ | ----------------- | ----------------------------------------------------------------------------------------------------------- |
+| `aws-solutions:isb-stack-type` | `M2mClient`       | Identifies an M2M client role                                                                               |
+| `aws-solutions:isb-stack-name` | `<stackName>`     | Resolves the role to its owning stack (CFN doesn't auto-tag IAM roles with `aws:cloudformation:stack-name`) |
+| `aws-solutions:isb-id`         | `<namespace>_isb` | Scopes to one ISB deployment                                                                                |
 
 Why IAM-direct, not `resourcegroupstaggingapi`:
+
 - **Strong consistency.** `resourcegroupstaggingapi` is eventually consistent for IAM (lags minutes to hours). `iam:list-role-tags` is strongly consistent.
 - **Deploy-path independence.** Resource-level tags always land in the template, so they survive every deploy path (`cdk deploy`, `aws cloudformation deploy`, console). Stack-level tags via the CDK manifest don't.
 
@@ -218,11 +223,11 @@ The source credentials need permission to call `sts:AssumeRole` on the client ro
 
 ### Output Modes (`--output`, `-o`)
 
-| Mode | Behavior |
-|------|----------|
-| `json` (default) | Prints credentials as JSON to stdout |
-| `export` | Prints shell `export` statements — use with `source <(...)` or `eval $(...)` |
-| `profile` | Writes credentials to `~/.aws/credentials` under a named profile |
+| Mode             | Behavior                                                                     |
+| ---------------- | ---------------------------------------------------------------------------- |
+| `json` (default) | Prints credentials as JSON to stdout                                         |
+| `export`         | Prints shell `export` statements — use with `source <(...)` or `eval $(...)` |
+| `profile`        | Writes credentials to `~/.aws/credentials` under a named profile             |
 
 ### Examples
 
@@ -265,17 +270,17 @@ The assumed-role credentials are **never written to your environment or your def
 
 ### Flags
 
-| Flag | Description |
-|------|-------------|
-| `--client-stack`, `-c` | Client stack name (resolves role ARN + ExternalId from outputs) |
-| `--role-arn` | Full role ARN (required if no `--client-stack`) |
-| `--external-id`, `-e` | ExternalId (required if no `--client-stack`) |
-| `--output`, `-o` | Output mode: `json`, `export`, `profile` (default: `json`) |
-| `--profile` | **SOURCE** AWS profile to use for `sts:AssumeRole` (CLI convention) |
-| `--write-profile` | **DEST** profile name for `-o profile` (default: derived from client stack name; cannot be `default`) |
-| `--session-name`, `-s` | STS session name (default: `isb-m2m-session`) |
+| Flag                       | Description                                                                                                                  |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `--client-stack`, `-c`     | Client stack name (resolves role ARN + ExternalId from outputs)                                                              |
+| `--role-arn`               | Full role ARN (required if no `--client-stack`)                                                                              |
+| `--external-id`, `-e`      | ExternalId (required if no `--client-stack`)                                                                                 |
+| `--output`, `-o`           | Output mode: `json`, `export`, `profile` (default: `json`)                                                                   |
+| `--profile`                | **SOURCE** AWS profile to use for `sts:AssumeRole` (CLI convention)                                                          |
+| `--write-profile`          | **DEST** profile name for `-o profile` (default: derived from client stack name; cannot be `default`)                        |
+| `--session-name`, `-s`     | STS session name (default: `isb-m2m-session`)                                                                                |
 | `--duration-seconds`, `-d` | Session duration in seconds (900-43200; default: STS default of 3600). Capped at the role's `MaxSessionDuration` regardless. |
-| `--region` | AWS region (default: `$AWS_REGION` or `us-east-1`) |
+| `--region`                 | AWS region (default: `$AWS_REGION` or `us-east-1`)                                                                           |
 
 ## call-api
 
@@ -322,15 +327,15 @@ source <(./scripts/m2m/assume-m2m-role.sh --client-stack <stack> -o export)
 
 ### Flags
 
-| Flag | Description |
-|------|-------------|
-| `--path`, `-p` | API path, e.g. `/leases` **(required)** |
-| `--client-stack`, `-c` | Client stack name — resolves API URL from outputs (uses default credential chain, not `--profile`) |
-| `--api-url` | API Gateway URL with stage (required if no `--client-stack`); skips the CFN lookup |
-| `--profile` | AWS profile used to **sign** the API request (typically the assumed-role profile from `assume-m2m-role`). Not used for `describe-stacks`. |
-| `--method`, `-m` | HTTP method (default: `GET`) |
-| `--body`, `-b` | JSON request body |
-| `--region` | AWS region (default: `$AWS_REGION` or `us-east-1`) |
+| Flag                   | Description                                                                                                                               |
+| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `--path`, `-p`         | API path, e.g. `/leases` **(required)**                                                                                                   |
+| `--client-stack`, `-c` | Client stack name — resolves API URL from outputs (uses default credential chain, not `--profile`)                                        |
+| `--api-url`            | API Gateway URL with stage (required if no `--client-stack`); skips the CFN lookup                                                        |
+| `--profile`            | AWS profile used to **sign** the API request (typically the assumed-role profile from `assume-m2m-role`). Not used for `describe-stacks`. |
+| `--method`, `-m`       | HTTP method (default: `GET`)                                                                                                              |
+| `--body`, `-b`         | JSON request body                                                                                                                         |
+| `--region`             | AWS region (default: `$AWS_REGION` or `us-east-1`)                                                                                        |
 
 ## smoke-test
 
@@ -363,12 +368,12 @@ Read-only view over CloudFormation. Lists deployed M2M client stacks (discovered
 ./scripts/m2m/list-clients.sh --output json
 ```
 
-| Flag | Description |
-|------|-------------|
+| Flag                | Description                                                            |
+| ------------------- | ---------------------------------------------------------------------- |
 | `--namespace`, `-n` | Filter to one ISB deployment (matches `aws-solutions:isb-id=<ns>_isb`) |
-| `--output`, `-o` | `table` (default) or `json` |
-| `--region` | AWS region (default: `$AWS_REGION` or `us-east-1`) |
-| `--profile` | AWS profile to use (CLI default chain otherwise) |
+| `--output`, `-o`    | `table` (default) or `json`                                            |
+| `--region`          | AWS region (default: `$AWS_REGION` or `us-east-1`)                     |
+| `--profile`         | AWS profile to use (CLI default chain otherwise)                       |
 
 ## revoke-m2m-role
 
@@ -376,13 +381,13 @@ Revoke or restore an M2M client's role access without destroying the stack. For 
 
 ### Actions
 
-| Action | Effect | Blocks Existing Sessions? | Blocks New Sessions? |
-|--------|--------|--------------------------|---------------------|
-| `deny` | Attaches inline Deny policy to one client's role | Yes (immediate) | Yes |
-| `deny-all` | `deny` applied to every discovered client stack | Yes (immediate) | Yes |
-| `revoke-sessions` | Denies sessions issued before now (one client) | Yes (before invocation) | No |
-| `restore` | Removes the revocation policy from one client's role | N/A | N/A |
-| `restore-all` | `restore` applied to every discovered client stack | N/A | N/A |
+| Action            | Effect                                               | Blocks Existing Sessions? | Blocks New Sessions? |
+| ----------------- | ---------------------------------------------------- | ------------------------- | -------------------- |
+| `deny`            | Attaches inline Deny policy to one client's role     | Yes (immediate)           | Yes                  |
+| `deny-all`        | `deny` applied to every discovered client stack      | Yes (immediate)           | Yes                  |
+| `revoke-sessions` | Denies sessions issued before now (one client)       | Yes (before invocation)   | No                   |
+| `restore`         | Removes the revocation policy from one client's role | N/A                       | N/A                  |
+| `restore-all`     | `restore` applied to every discovered client stack   | N/A                       | N/A                  |
 
 ### Examples
 
@@ -414,15 +419,65 @@ Revoke or restore an M2M client's role access without destroying the stack. For 
 
 Bulk actions (`deny-all`, `restore-all`) prompt for `y/N` confirmation before touching every client. Pass `--skip-confirmation` for non-interactive use (CI / runbook automation).
 
+## `aws isb` CLI
+
+Instead of hand-signing with `call-api.sh`, an M2M caller can install the generated AWS CLI model and persist the deployment endpoint. With ambient/default credentials, no profile or endpoint flag is needed:
+
+```bash
+./scripts/m2m/aws-cli/install-aws-isb-cli.py \
+  --client-stack InnovationSandbox-M2mClient-Admin-deploy-pipeline \
+  --region us-east-1
+
+aws isb list-lease-templates
+```
+
+Pass optional `--profile` to write that named profile's services pointer instead:
+
+```bash
+./scripts/m2m/aws-cli/install-aws-isb-cli.py \
+  --profile isb-m2m-deploy-pipeline \
+  --client-stack InnovationSandbox-M2mClient-Admin-deploy-pipeline --region us-east-1
+
+aws isb list-lease-templates --profile isb-m2m-deploy-pipeline
+```
+
+Prerequisites: AWS CLI **v2.13.0+** and `python3` (standard library only). Endpoint discovery uses ambient operator credentials and never the optional target `--profile`. The installer rejects a confirmed stale client-stack API, but warns and continues when the optional SSM drift check is unavailable. Cross-account or no-CFN-access callers can provide `--api-url https://<api-id>.execute-api.<region>.amazonaws.com/prod` instead of `--client-stack`.
+
+Once installed, `aws isb` calls are equivalent to the hand-signed `call-api.sh` requests — both are SigV4-signed by the caller's resolved M2M credentials against the same API. Equivalent examples (add `--client-stack <stack>` or `--api-url <url>` to `call-api.sh`; `aws isb` uses the endpoint the installer configured):
+
+```bash
+# List lease templates (GET /leaseTemplates)
+./call-api.sh -p /leaseTemplates --profile isb-m2m-deploy-pipeline
+aws isb list-lease-templates --profile isb-m2m-deploy-pipeline
+
+# Get one lease (GET /leases/{leaseId})
+./call-api.sh -p /leases/abc123 --profile isb-m2m-deploy-pipeline
+aws isb get-lease --lease-id abc123 --profile isb-m2m-deploy-pipeline
+
+# Create a lease template (POST /leaseTemplates)
+./call-api.sh -m POST -p /leaseTemplates \
+  -b '{"name":"Basic","requiresApproval":true,"maxSpend":50,"leaseDurationInHours":24}' \
+  --profile isb-m2m-deploy-pipeline
+aws isb create-lease-template \
+  --name Basic --requires-approval --max-spend 50 --lease-duration-in-hours 24 \
+  --profile isb-m2m-deploy-pipeline
+
+# List lease templates with pagination (GET /leaseTemplates, following data.nextPageIdentifier)
+aws isb list-lease-templates --page-size 20 --max-items 100 --profile isb-m2m-deploy-pipeline
+```
+
+`aws isb` renders request members as flags (`maxSpend` → `--max-spend`) and auto-paginates list operations; `--page-size` bounds each request and `--max-items` caps the total.
+
+See **[`aws-cli/README.md`](aws-cli/README.md)** for model generation, profile-scoped endpoint configuration, module layout, the full flag reference, testing, and the manual fallback.
+
 ## How It Works
 
-1. Operator deploys an `IsbM2mClient` stack named `<stackPrefix>-M2mClient-<Role>-<clientName>` with parameters identifying the client (Namespace, ClientName, Role, TrustedPrincipal, RestApiId)
+1. Operator deploys an `IsbM2mClient` stack named `<stackPrefix>-M2mClient-<Role>-<clientName>` with parameters identifying the client (Namespace, ClientName, Role, TrustedPrincipal)
 2. Stack creates one IAM role `<namespace>-isb-m2m-<role>-<clientName>` (lowercased) with a per-stack ExternalId and the operator-supplied trust principal
-3. Stack scopes role permissions to the API Gateway derived from the operator-supplied REST API ID (read from SSM `InnovationSandbox_<namespace>_Compute_RestApiId` by `deploy-client.sh`)
+3. CloudFormation resolves the current API ID from SSM `InnovationSandbox_<namespace>_Compute_RestApiId` via an `AWS::SSM::Parameter::Value<String>` parameter (re-resolved on every deploy), and scopes the role permissions and API URL output to that API. If the API is later replaced — e.g. a Compute-stack API Gateway cutover changes the REST API ID — redeploy the client stack (`deploy-client.sh`) and CloudFormation re-resolves the new ID and re-scopes the role. A 403 `not authorized to perform: execute-api:Invoke` after such a cutover means the client stack predates the new API and just needs a redeploy.
 4. Caller invokes `assume-m2m-role` with `--client-stack <name>`, which:
    - Reads `M2MRoleArn` and `M2MExternalId` from the client stack outputs
    - Calls `STS.AssumeRole` with the role ARN and ExternalId
    - Outputs credentials in the chosen format
 5. Caller uses the credentials to sign API requests with SigV4 (via `call-api`, `curl --aws-sigv4`, or any AWS SDK)
 6. API Gateway validates the SigV4 signature; the handler middleware extracts the role and client name from the role ARN pattern (namespace-anchored regex)
-

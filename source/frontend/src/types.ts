@@ -19,9 +19,7 @@ export interface ApiErrorResponse {
 }
 
 export type ApiResponse<T> =
-  | ApiSuccessResponse<T>
-  | ApiFailResponse
-  | ApiErrorResponse;
+  ApiSuccessResponse<T> | ApiFailResponse | ApiErrorResponse;
 
 export interface ApiPaginatedResult<T> {
   result: T[];

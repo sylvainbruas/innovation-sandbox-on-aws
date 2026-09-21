@@ -5,10 +5,10 @@ import { screen } from "@testing-library/react";
 import { BrowserRouter as Router } from "react-router-dom";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-import { IdcIdentity } from "@amzn/innovation-sandbox-commons/utils/auth-utils";
+import { authenticated } from "@amzn/innovation-sandbox-frontend-test/utils/cognitoFixtures";
 import { BaseLayout } from "@amzn/innovation-sandbox-frontend/components/AppLayout/BaseLayout";
 import { useGetConfigurations } from "@amzn/innovation-sandbox-frontend/domains/settings/hooks";
-import { AdminConfig } from "@amzn/innovation-sandbox-frontend/domains/settings/service";
+import { AdminConfigurationView } from "@amzn/innovation-sandbox-frontend/domains/settings/model";
 import { CognitoAuthService } from "@amzn/innovation-sandbox-frontend/helpers/CognitoAuthService";
 import {
   adminConfigGetHandler,
@@ -16,10 +16,10 @@ import {
 } from "@amzn/innovation-sandbox-frontend/mocks/handlers/configurationHandlers";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
 import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
-import { authenticated } from "@amzn/innovation-sandbox-frontend-test/utils/cognitoFixtures";
+import { IdcIdentity } from "@amzn/innovation-sandbox-shared/utils/auth-utils";
 
-// Builds an AdminConfig with the maintenance section toggled on or off.
-const configWithMaintenance = (enabled: boolean): AdminConfig => {
+// Builds the aggregate configuration view with maintenance toggled on or off.
+const configWithMaintenance = (enabled: boolean): AdminConfigurationView => {
   const config = createAdminConfig();
   return {
     ...config,
@@ -47,14 +47,13 @@ const userWithRoles = (roles: IdcIdentity["roles"]): IdcIdentity => ({
 // vi.mock is hoisted above every import, so the factory body cannot close over
 // top-level variables; it pulls the shared mock in via dynamic import() once
 // Vitest first resolves the mocked module. The helper supplies
-// getCredentials/getIdToken for the SigV4 signing path in ApiProxy; per-test
+// getCredentials/getIdToken for the SigV4 signing path in the API client; per-test
 // role switching is done below via vi.mocked(CognitoAuthService.getCurrentUser).
 vi.mock(
   "@amzn/innovation-sandbox-frontend/helpers/CognitoAuthService",
   async () => {
-    const { buildCognitoAuthServiceMock } = await import(
-      "@amzn/innovation-sandbox-frontend-test/utils/cognitoServiceMock"
-    );
+    const { buildCognitoAuthServiceMock } =
+      await import("@amzn/innovation-sandbox-frontend-test/utils/cognitoServiceMock");
     return { CognitoAuthService: buildCognitoAuthServiceMock() };
   },
 );

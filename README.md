@@ -50,6 +50,7 @@ In order to test, build, and deploy the solution from source the following prere
 - MacOS or Amazon Linux 2023 Operating System
 - Cloned Repository
 - Node 24
+- Java 21 (Amazon Corretto 21 recommended)
 - Python (Optional)
 - Pre-Commit (Optional)
 - Docker (Optional)
@@ -59,6 +60,13 @@ Once your development environment meets the minimum requirements install the nec
 ```shell
 npm install
 ```
+
+The source distribution intentionally includes the bootstrap manifests
+`source/api-client/package.json` and `source/api-server/package.json` without
+their generated sources. npm reads these manifests during installation so
+`npm run build` can generate and compile both packages with their locked
+TypeScript, Node, and Smithy dependencies. The model in `source/api-model`
+remains the source of truth.
 
 > **Note:** Many of the commands in this file expect you to have appropriate AWS CLI access to the target accounts configured. If you have a multi-account deployment you will need to switch between account credentials to perform the commands on the appropriate accounts.
 

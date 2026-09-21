@@ -136,7 +136,10 @@ export class IntermediateRole {
     return IntermediateRole.instance;
   }
   public static addTrustedRole(role: Role) {
-    if (!IntermediateRole.instance || IntermediateRole.namespace === undefined) {
+    if (
+      !IntermediateRole.instance ||
+      IntermediateRole.namespace === undefined
+    ) {
       throw new Error("IntermediateRole not created yet");
     }
     const cfnRole = IntermediateRole.instance.node.defaultChild as CfnRole;

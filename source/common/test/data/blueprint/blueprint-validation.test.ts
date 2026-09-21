@@ -4,9 +4,13 @@
 import { describe, expect, test } from "vitest";
 
 import {
-  BlueprintItemSchema,
-  StackSetItemSchema,
+  PersistedBlueprintItemSchema,
+  PersistedStackSetItemSchema,
 } from "@amzn/innovation-sandbox-commons/data/blueprint/blueprint.js";
+import {
+  createTestBlueprintItem,
+  createTestStackSetItem,
+} from "@amzn/innovation-sandbox-commons/test/fixtures/blueprint-fixtures.js";
 
 describe("Blueprint Validation", () => {
   describe("Name Validation", () => {
@@ -19,7 +23,9 @@ describe("Blueprint Validation", () => {
       ];
 
       validNames.forEach((name) => {
-        const result = BlueprintItemSchema.pick({ name: true }).safeParse({
+        const result = PersistedBlueprintItemSchema.pick({
+          name: true,
+        }).safeParse({
           name,
         });
         expect(result.success).toBe(true);
@@ -27,7 +33,9 @@ describe("Blueprint Validation", () => {
     });
 
     test("should reject names not starting with a letter", () => {
-      const result = BlueprintItemSchema.pick({ name: true }).safeParse({
+      const result = PersistedBlueprintItemSchema.pick({
+        name: true,
+      }).safeParse({
         name: "123-invalid",
       });
 
@@ -40,7 +48,9 @@ describe("Blueprint Validation", () => {
     });
 
     test("should reject names with invalid characters", () => {
-      const result = BlueprintItemSchema.pick({ name: true }).safeParse({
+      const result = PersistedBlueprintItemSchema.pick({
+        name: true,
+      }).safeParse({
         name: "invalid_name",
       });
 
@@ -53,7 +63,9 @@ describe("Blueprint Validation", () => {
     });
 
     test("should reject empty name", () => {
-      const result = BlueprintItemSchema.pick({ name: true }).safeParse({
+      const result = PersistedBlueprintItemSchema.pick({
+        name: true,
+      }).safeParse({
         name: "",
       });
 
@@ -64,7 +76,9 @@ describe("Blueprint Validation", () => {
     });
 
     test("should reject names exceeding maximum length", () => {
-      const result = BlueprintItemSchema.pick({ name: true }).safeParse({
+      const result = PersistedBlueprintItemSchema.pick({
+        name: true,
+      }).safeParse({
         name: "A" + "b".repeat(50), // 51 characters
       });
 
@@ -79,7 +93,9 @@ describe("Blueprint Validation", () => {
 
   describe("Regions Validation", () => {
     test("should accept unique regions", () => {
-      const result = StackSetItemSchema.pick({ regions: true }).safeParse({
+      const result = PersistedStackSetItemSchema.pick({
+        regions: true,
+      }).safeParse({
         regions: ["us-east-1", "us-west-2", "eu-west-1"],
       });
 
@@ -87,7 +103,9 @@ describe("Blueprint Validation", () => {
     });
 
     test("should accept single region", () => {
-      const result = StackSetItemSchema.pick({ regions: true }).safeParse({
+      const result = PersistedStackSetItemSchema.pick({
+        regions: true,
+      }).safeParse({
         regions: ["us-east-1"],
       });
 
@@ -95,7 +113,9 @@ describe("Blueprint Validation", () => {
     });
 
     test("should reject duplicate regions", () => {
-      const result = StackSetItemSchema.pick({ regions: true }).safeParse({
+      const result = PersistedStackSetItemSchema.pick({
+        regions: true,
+      }).safeParse({
         regions: ["us-east-1", "us-west-2", "us-east-1"],
       });
 
@@ -106,7 +126,9 @@ describe("Blueprint Validation", () => {
     });
 
     test("should reject empty regions array", () => {
-      const result = StackSetItemSchema.pick({ regions: true }).safeParse({
+      const result = PersistedStackSetItemSchema.pick({
+        regions: true,
+      }).safeParse({
         regions: [],
       });
 
@@ -116,6 +138,26 @@ describe("Blueprint Validation", () => {
           "At least one region",
         );
       }
+    });
+  });
+  describe("Metadata Version Validation", () => {
+    test("should reject unsupported schema versions", () => {
+      const unsupportedMeta = {
+        schemaVersion: 2,
+        createdTime: "2024-01-01T00:00:00.000Z",
+        lastEditTime: "2024-01-01T00:00:00.000Z",
+      };
+
+      expect(
+        PersistedBlueprintItemSchema.safeParse(
+          createTestBlueprintItem({ meta: unsupportedMeta }),
+        ).success,
+      ).toBe(false);
+      expect(
+        PersistedStackSetItemSchema.safeParse(
+          createTestStackSetItem({ meta: unsupportedMeta }),
+        ).success,
+      ).toBe(false);
     });
   });
 });

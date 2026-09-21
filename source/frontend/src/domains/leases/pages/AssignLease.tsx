@@ -1,11 +1,6 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { zodResolver } from "@hookform/resolvers/zod";
-import { useEffect, useState } from "react";
-import { FormProvider, useForm } from "react-hook-form";
-import { useNavigate } from "react-router-dom";
-
 import {
   Container,
   Header,
@@ -13,6 +8,10 @@ import {
   Wizard,
   WizardProps,
 } from "@cloudscape-design/components";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useEffect, useState } from "react";
+import { FormProvider, useForm } from "react-hook-form";
+import { useNavigate } from "react-router-dom";
 
 import { useAppLayoutContext } from "@amzn/innovation-sandbox-frontend/components/AppLayout/AppLayoutContext";
 import { ContentLayout } from "@amzn/innovation-sandbox-frontend/components/ContentLayout";
@@ -39,6 +38,7 @@ import {
 import { useGetLeaseTemplateById } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/hooks";
 import { useGetConfigurations } from "@amzn/innovation-sandbox-frontend/domains/settings/hooks";
 import { useBreadcrumb } from "@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb";
+import { DEFAULT_GROUP_ASSIGNMENT_MODE } from "@amzn/innovation-sandbox-shared/types/configuration.js";
 
 export const AssignLease = () => {
   const navigate = useNavigate();
@@ -183,6 +183,10 @@ export const AssignLease = () => {
         <AssignmentsForm
           enablePrincipalSearch={
             globalConfig?.leases?.enablePrincipalSearch ?? false
+          }
+          groupAssignmentMode={
+            globalConfig?.leases?.groupAssignmentMode ??
+            DEFAULT_GROUP_ASSIGNMENT_MODE
           }
           ownerEmail={watch("userEmail")}
         />

@@ -10,7 +10,8 @@ import {
 } from "@cloudscape-design/components";
 
 import { getCleanupStatusConfig } from "@amzn/innovation-sandbox-frontend/domains/accounts/helpers";
-import { CleanupReport } from "@amzn/innovation-sandbox-frontend/domains/accounts/types";
+import { CleanupReportView } from "@amzn/innovation-sandbox-frontend/domains/accounts/types";
+
 import {
   formatDuration,
   formatReason,
@@ -18,14 +19,25 @@ import {
 } from "./cleanup-report-helpers";
 
 interface RecentCleanupsTableProps {
-  reports: CleanupReport[];
-  selectedReport: CleanupReport;
-  onSelect: (report: CleanupReport) => void;
+  reports: CleanupReportView[];
+  selectedReport: CleanupReportView;
+  onSelect: (report: CleanupReportView) => void;
   hasNextPage: boolean;
   isFetchingNextPage: boolean;
   onLoadMore: () => void;
   onRefresh: () => void;
 }
+
+const renderCleanupStatusCell = (report: CleanupReportView) => {
+  if (report.status === "COMPLETED") {
+    return <StatusIndicator type="success">Completed</StatusIndicator>;
+  }
+  if (report.status === "FAILED") {
+    return <StatusIndicator type="error">Failed</StatusIndicator>;
+  }
+  const config = getCleanupStatusConfig(report.cleanupStatus);
+  return <StatusIndicator type={config.type}>{config.label}</StatusIndicator>;
+};
 
 export const RecentCleanupsTable = ({
   reports,
@@ -57,39 +69,25 @@ export const RecentCleanupsTable = ({
         {
           id: "status",
           header: "Status",
-          cell: (report: CleanupReport) => {
-            if (report.status === "COMPLETED") {
-              return (
-                <StatusIndicator type="success">Completed</StatusIndicator>
-              );
-            }
-            if (report.status === "FAILED") {
-              return <StatusIndicator type="error">Failed</StatusIndicator>;
-            }
-            const config = getCleanupStatusConfig(report.cleanupStatus);
-            return (
-              <StatusIndicator type={config.type}>
-                {config.label}
-              </StatusIndicator>
-            );
-          },
+          cell: renderCleanupStatusCell,
           width: 160,
         },
         {
           id: "reason",
           header: "Cleanup reason",
-          cell: (report: CleanupReport) =>
+          cell: (report: CleanupReportView) =>
             formatReason(report.reasonForCleanup),
         },
         {
           id: "started",
           header: "Started",
-          cell: (report: CleanupReport) => renderTimePopover(report.startedAt),
+          cell: (report: CleanupReportView) =>
+            renderTimePopover(report.startedAt),
         },
         {
           id: "duration",
           header: "Duration",
-          cell: (report: CleanupReport) => formatDuration(report),
+          cell: (report: CleanupReportView) => formatDuration(report),
         },
       ]}
       items={reports}

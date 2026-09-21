@@ -9,9 +9,10 @@ import { http, HttpResponse } from "msw";
 import { BrowserRouter as Router } from "react-router-dom";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-import { LeaseTemplate } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
 import { RequestLease } from "@amzn/innovation-sandbox-frontend/domains/leases/pages/RequestLease";
+import { LeaseTemplateView } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/model";
 import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
+import { createConfiguration } from "@amzn/innovation-sandbox-frontend/mocks/factories/configurationFactory";
 import {
   adminConfigGetHandler,
   createAdminConfig,
@@ -356,7 +357,7 @@ describe("RequestLease", () => {
   test("displays error when no lease templates are available", async () => {
     server.use(
       http.get(`${getConfig().ApiUrl}/leaseTemplates`, () => {
-        const response: ApiResponse<ApiPaginatedResult<LeaseTemplate>> = {
+        const response: ApiResponse<ApiPaginatedResult<LeaseTemplateView>> = {
           status: "success",
           data: {
             result: [],
@@ -384,18 +385,18 @@ describe("RequestLease", () => {
       http.get(`${getConfig().ApiUrl}/configurations`, () =>
         HttpResponse.json({
           status: "success",
-          data: {
+          data: createConfiguration({
             leases: {
               leaseSharingEnabled: true,
               enablePrincipalSearch: true,
             },
-          },
+          }),
         }),
       ),
     );
 
     // Override templates list with one that has allowOwnerToShareLease: true
-    const sharingTemplate: LeaseTemplate = {
+    const sharingTemplate: LeaseTemplateView = {
       ...mockBasicLeaseTemplate,
       allowOwnerToShareLease: true,
     };
@@ -440,7 +441,7 @@ describe("RequestLease", () => {
     const user = userEvent.setup();
 
     // Template explicitly without sharing
-    const nonSharingTemplate: LeaseTemplate = {
+    const nonSharingTemplate: LeaseTemplateView = {
       ...mockBasicLeaseTemplate,
       allowOwnerToShareLease: false,
     };
@@ -450,12 +451,12 @@ describe("RequestLease", () => {
       http.get(`${getConfig().ApiUrl}/configurations`, () =>
         HttpResponse.json({
           status: "success",
-          data: {
+          data: createConfiguration({
             leases: {
               leaseSharingEnabled: true,
               enablePrincipalSearch: true,
             },
-          },
+          }),
         }),
       ),
       http.get(`${getConfig().ApiUrl}/leaseTemplates`, () =>

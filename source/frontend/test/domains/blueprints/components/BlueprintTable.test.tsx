@@ -231,13 +231,13 @@ describe("BlueprintTable", () => {
   test("displays multiple blueprints with multi-selection enabled", async () => {
     const blueprint1 = createBlueprintWithStackSets({
       blueprint: createBlueprint({
-        name: "Blueprint 1",
+        name: "Blueprint-1",
         blueprintId: "650e8400-e29b-41d4-a716-446655440001",
       }),
     });
     const blueprint2 = createBlueprintWithStackSets({
       blueprint: createBlueprint({
-        name: "Blueprint 2",
+        name: "Blueprint-2",
         blueprintId: "650e8400-e29b-41d4-a716-446655440002",
       }),
     });
@@ -257,8 +257,8 @@ describe("BlueprintTable", () => {
     renderComponent();
 
     await waitFor(() => {
-      expect(screen.getByText("Blueprint 1")).toBeInTheDocument();
-      expect(screen.getByText("Blueprint 2")).toBeInTheDocument();
+      expect(screen.getByText("Blueprint-1")).toBeInTheDocument();
+      expect(screen.getByText("Blueprint-2")).toBeInTheDocument();
     });
 
     const wrapper = createWrapper();
@@ -280,7 +280,7 @@ describe("BlueprintTable", () => {
                 : [
                     mockBlueprintWithDeployments,
                     createBlueprintWithStackSets({
-                      blueprint: createBlueprint({ name: "New Blueprint" }),
+                      blueprint: createBlueprint({ name: "New-Blueprint" }),
                     }),
                   ],
             nextPageIdentifier: null,
@@ -294,7 +294,7 @@ describe("BlueprintTable", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Test-Blueprint")).toBeInTheDocument();
-      expect(screen.queryByText("New Blueprint")).not.toBeInTheDocument();
+      expect(screen.queryByText("New-Blueprint")).not.toBeInTheDocument();
     });
 
     const wrapper = createWrapper();
@@ -310,7 +310,7 @@ describe("BlueprintTable", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Test-Blueprint")).toBeInTheDocument();
-      expect(screen.getByText("New Blueprint")).toBeInTheDocument();
+      expect(screen.getByText("New-Blueprint")).toBeInTheDocument();
     });
   });
 
@@ -347,7 +347,7 @@ describe("BlueprintTable", () => {
   test("displays blueprint tags", async () => {
     const blueprintWithTags = createBlueprintWithStackSets({
       blueprint: createBlueprint({
-        name: "Tagged Blueprint",
+        name: "Tagged-Blueprint",
         tags: { environment: "production", team: "platform" },
       }),
     });
@@ -367,11 +367,11 @@ describe("BlueprintTable", () => {
     renderComponent();
 
     await waitFor(() => {
-      expect(screen.getByText("Tagged Blueprint")).toBeInTheDocument();
+      expect(screen.getByText("Tagged-Blueprint")).toBeInTheDocument();
     });
 
     // Tags are not displayed in the table - they're shown in the details page
     // This test verifies the blueprint with tags loads correctly
-    expect(screen.getByText("Tagged Blueprint")).toBeInTheDocument();
+    expect(screen.getByText("Tagged-Blueprint")).toBeInTheDocument();
   });
 });

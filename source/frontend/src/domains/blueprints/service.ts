@@ -2,63 +2,55 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
-  ApiProxy,
-  IApiProxy,
-} from "@amzn/innovation-sandbox-frontend/helpers/ApiProxy";
-
+  BlueprintView,
+  BlueprintWithStackSetsView,
+} from "@amzn/innovation-sandbox-frontend/domains/blueprints/model";
 import {
-  Blueprint,
   BlueprintDetailResponse,
   BlueprintListResponse,
   RegisterBlueprintRequest,
   StackSetListResponse,
   UpdateBlueprintRequest,
-} from "./types";
+} from "@amzn/innovation-sandbox-frontend/domains/blueprints/types";
+import { registerApiSingletonReset } from "@amzn/innovation-sandbox-frontend/helpers/apiSingletons";
+
+import {
+  createBlueprintClient,
+  SmithyBlueprintApi,
+  SmithyBlueprintClient,
+} from "./smithy-client";
 
 export class BlueprintService {
-  private api: IApiProxy;
-
-  constructor(apiProxy?: IApiProxy) {
-    this.api = apiProxy ?? new ApiProxy();
-  }
+  constructor(private readonly api: SmithyBlueprintApi) {}
 
   async getBlueprints(): Promise<BlueprintListResponse> {
-    const response = await this.api.get<BlueprintListResponse>("/blueprints");
-    return response;
+    return this.api.getBlueprints();
   }
 
   async getBlueprintById(id: string): Promise<BlueprintDetailResponse> {
-    const response = await this.api.get<BlueprintDetailResponse>(
-      `/blueprints/${id}`,
-    );
-    return response;
+    return this.api.getBlueprintById(id);
   }
 
   async registerBlueprint(
     blueprint: RegisterBlueprintRequest,
-  ): Promise<Blueprint> {
-    const response = await this.api.post<Blueprint>("/blueprints", blueprint);
-    return response;
+  ): Promise<BlueprintView> {
+    return this.api.registerBlueprint(blueprint);
   }
 
   async updateBlueprint(
     id: string,
     updates: UpdateBlueprintRequest,
-  ): Promise<Blueprint> {
-    const response = await this.api.put<Blueprint>(
-      `/blueprints/${id}`,
-      updates,
-    );
-    return response;
+  ): Promise<BlueprintWithStackSetsView> {
+    return this.api.updateBlueprint(id, updates);
   }
 
   async unregisterBlueprint(id: string): Promise<void> {
-    await this.api.delete(`/blueprints/${id}`);
+    await this.api.unregisterBlueprint(id);
   }
 
   async unregisterBlueprints(ids: string[]): Promise<void> {
     for (const id of ids) {
-      await this.api.delete(`/blueprints/${id}`);
+      await this.api.unregisterBlueprint(id);
     }
   }
 
@@ -66,23 +58,20 @@ export class BlueprintService {
     pageIdentifier?: string;
     maxResults?: number;
   }): Promise<StackSetListResponse> {
-    let url = "/blueprints/stacksets";
-
-    if (params) {
-      const queryParams = new URLSearchParams();
-      if (params.pageIdentifier) {
-        queryParams.append("pageIdentifier", params.pageIdentifier);
-      }
-      if (params.maxResults) {
-        queryParams.append("maxResults", params.maxResults.toString());
-      }
-      const queryString = queryParams.toString();
-      if (queryString) {
-        url = `${url}?${queryString}`;
-      }
-    }
-
-    const response = await this.api.get<StackSetListResponse>(url);
-    return response;
+    return this.api.listStackSets(params);
   }
 }
+
+let blueprintService: BlueprintService | undefined;
+
+// Lazily-initialized singleton.
+export function getBlueprintService(): BlueprintService {
+  blueprintService ??= new BlueprintService(
+    new SmithyBlueprintClient(createBlueprintClient()),
+  );
+  return blueprintService;
+}
+
+registerApiSingletonReset(() => {
+  blueprintService = undefined;
+});

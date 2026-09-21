@@ -37,7 +37,7 @@ import {
   PRINCIPAL_CACHE_GROUP_SK_PREFIX,
   PRINCIPAL_CACHE_PK,
   PRINCIPAL_CACHE_USER_SK_PREFIX,
-  PrincipalCacheItem,
+  PersistedPrincipalCacheItem,
 } from "@amzn/innovation-sandbox-commons/data/principal/principal.js";
 import {
   cacheAdmins,
@@ -48,16 +48,17 @@ import {
   getCachedUsers,
 } from "@amzn/innovation-sandbox-commons/isb-services/idc-cache.js";
 import { assertDefined } from "@amzn/innovation-sandbox-commons/utils/assertions.js";
-import type {
-  IdcIdentity,
-  IsbRole,
-  IsbUser,
-} from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
 import {
   calculateTtlInEpochSeconds,
   nowAsIsoDatetimeString,
 } from "@amzn/innovation-sandbox-commons/utils/time-utils.js";
 import { Transaction } from "@amzn/innovation-sandbox-commons/utils/transactions.js";
+import type { IdcPrincipal } from "@amzn/innovation-sandbox-shared/types/principal.js";
+import type {
+  IdcIdentity,
+  IsbRole,
+  IsbUser,
+} from "@amzn/innovation-sandbox-shared/utils/auth-utils.js";
 import pThrottle from "p-throttle";
 
 // IDC supports 20 TPS for all requests
@@ -74,13 +75,6 @@ const paginationThrottle = pThrottle({
 });
 
 const throttledPage = paginationThrottle(() => Promise.resolve());
-
-export interface IdcPrincipal {
-  principalId: string;
-  principalType: "USER" | "GROUP";
-  displayName?: string;
-  email?: string;
-}
 
 export class IdcService {
   readonly identityStoreClient;
@@ -553,7 +547,7 @@ export class IdcService {
         ? PRINCIPAL_CACHE_USER_SK_PREFIX
         : PRINCIPAL_CACHE_GROUP_SK_PREFIX;
 
-    const cacheItem: PrincipalCacheItem = {
+    const cacheItem: PersistedPrincipalCacheItem = {
       pk: PRINCIPAL_CACHE_PK,
       sk: `${skPrefix}${resolved.principalId}`,
       principalId: resolved.principalId,

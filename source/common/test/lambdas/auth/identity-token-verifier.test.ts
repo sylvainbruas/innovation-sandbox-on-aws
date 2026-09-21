@@ -13,7 +13,7 @@ import {
   buildCognitoAuthProvider,
   createAPIGatewayProxyEvent,
 } from "@amzn/innovation-sandbox-commons/test/lambdas/fixtures.js";
-import { IDENTITY_HEADER } from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
+import { IDENTITY_HEADER } from "@amzn/innovation-sandbox-shared/utils/auth-utils.js";
 
 const SUB = "abc12345-6789-4abc-9def-0123456789ab";
 const POOL_ID = "us-east-1_TEST";
@@ -55,7 +55,9 @@ describe("identity-token-verifier", () => {
 
     it("returns null when format is unrecognized", () => {
       expect(
-        extractSubFromAuthProvider("cognito-identity.amazonaws.com,SomethingElse"),
+        extractSubFromAuthProvider(
+          "cognito-identity.amazonaws.com,SomethingElse",
+        ),
       ).toBeNull();
       expect(extractSubFromAuthProvider("totally-unrelated")).toBeNull();
     });
@@ -110,7 +112,10 @@ describe("identity-token-verifier", () => {
           }),
           env,
         ),
-      ).rejects.toMatchObject({ name: "IdentityTokenError", kind: "SubMismatch" });
+      ).rejects.toMatchObject({
+        name: "IdentityTokenError",
+        kind: "SubMismatch",
+      });
     });
 
     it("falls open (returns payload) when cognitoAuthenticationProvider is absent", async () => {
@@ -143,9 +148,10 @@ describe("identity-token-verifier", () => {
       const event = {
         requestContext: { identity: { cognitoAuthenticationProvider: null } },
       } as unknown as Parameters<typeof verifyAndExtractClaims>[0];
-      await expect(
-        verifyAndExtractClaims(event, env),
-      ).rejects.toMatchObject({ name: "IdentityTokenError", kind: "Missing" });
+      await expect(verifyAndExtractClaims(event, env)).rejects.toMatchObject({
+        name: "IdentityTokenError",
+        kind: "Missing",
+      });
     });
   });
 });

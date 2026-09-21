@@ -14,7 +14,6 @@ import {
 } from "react-router-dom";
 import { ToastContainer } from "react-toastify/unstyled";
 
-import type { IsbRole } from "@amzn/innovation-sandbox-commons/utils/auth-utils";
 import { AppLayout } from "@amzn/innovation-sandbox-frontend/components/AppLayout";
 import { Authenticator } from "@amzn/innovation-sandbox-frontend/components/Authenticator";
 import { OAuthCallback } from "@amzn/innovation-sandbox-frontend/components/OAuthCallback";
@@ -49,6 +48,7 @@ import { LeaseTemplateDetails } from "@amzn/innovation-sandbox-frontend/domains/
 import { ListLeaseTemplates } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/pages/ListLeaseTemplates";
 import { AdminSettings } from "@amzn/innovation-sandbox-frontend/domains/settings/pages/AdminSettings";
 import { ModalProvider } from "@amzn/innovation-sandbox-frontend/hooks/useModal";
+import type { IsbRole } from "@amzn/innovation-sandbox-shared/utils/auth-utils";
 
 interface RouteConfig {
   path: string;

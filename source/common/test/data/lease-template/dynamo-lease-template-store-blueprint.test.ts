@@ -15,7 +15,7 @@ import { mockClient } from "aws-sdk-client-mock";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { DynamoLeaseTemplateStore } from "@amzn/innovation-sandbox-commons/data/lease-template/dynamo-lease-template-store.js";
-import { LeaseTemplateSchema } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
+import { PersistedLeaseTemplateSchema } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
 
 const mockDynamoClient = mockClient(DynamoDBDocumentClient);
@@ -41,7 +41,7 @@ describe("DynamoLeaseTemplateStore - blueprintId transformation", () => {
 
   describe("create() - blueprintId transformation", () => {
     test("should remove blueprintId field when value is null", async () => {
-      const template = generateSchemaData(LeaseTemplateSchema, {
+      const template = generateSchemaData(PersistedLeaseTemplateSchema, {
         uuid: "550e8400-e29b-41d4-a716-446655440000",
         name: "Template Without Blueprint",
         blueprintId: null, // Explicitly null
@@ -63,7 +63,7 @@ describe("DynamoLeaseTemplateStore - blueprintId transformation", () => {
 
     test("should preserve blueprintId field when value is a UUID", async () => {
       const blueprintId = "660e8400-e29b-41d4-a716-446655440001";
-      const template = generateSchemaData(LeaseTemplateSchema, {
+      const template = generateSchemaData(PersistedLeaseTemplateSchema, {
         uuid: "550e8400-e29b-41d4-a716-446655440000",
         name: "Template With Blueprint",
         blueprintId, // UUID value
@@ -86,7 +86,7 @@ describe("DynamoLeaseTemplateStore - blueprintId transformation", () => {
 
   describe("update() - blueprintId transformation", () => {
     test("should remove blueprintId field when updating to null", async () => {
-      const template = generateSchemaData(LeaseTemplateSchema, {
+      const template = generateSchemaData(PersistedLeaseTemplateSchema, {
         uuid: "550e8400-e29b-41d4-a716-446655440000",
         name: "Template",
         blueprintId: null, // Changed to null
@@ -109,7 +109,7 @@ describe("DynamoLeaseTemplateStore - blueprintId transformation", () => {
 
     test("should preserve blueprintId when updating to a UUID", async () => {
       const blueprintId = "660e8400-e29b-41d4-a716-446655440001";
-      const template = generateSchemaData(LeaseTemplateSchema, {
+      const template = generateSchemaData(PersistedLeaseTemplateSchema, {
         uuid: "550e8400-e29b-41d4-a716-446655440000",
         name: "Template",
         blueprintId, // Changed to UUID
@@ -131,13 +131,13 @@ describe("DynamoLeaseTemplateStore - blueprintId transformation", () => {
     });
 
     test("should handle update with expected value and null blueprintId", async () => {
-      const template = generateSchemaData(LeaseTemplateSchema, {
+      const template = generateSchemaData(PersistedLeaseTemplateSchema, {
         uuid: "550e8400-e29b-41d4-a716-446655440000",
         name: "Template",
         blueprintId: null,
       });
 
-      const expected = generateSchemaData(LeaseTemplateSchema, {
+      const expected = generateSchemaData(PersistedLeaseTemplateSchema, {
         uuid: template.uuid,
         name: "Old Name",
         blueprintId: "old-blueprint-id",
@@ -161,7 +161,7 @@ describe("DynamoLeaseTemplateStore - blueprintId transformation", () => {
       const originalCreatedBy = "original.author@example.com";
       const originalCreatedTime = "2020-01-01T00:00:00.000Z";
 
-      const persisted = generateSchemaData(LeaseTemplateSchema, {
+      const persisted = generateSchemaData(PersistedLeaseTemplateSchema, {
         uuid,
         createdBy: originalCreatedBy,
         meta: {
@@ -171,7 +171,7 @@ describe("DynamoLeaseTemplateStore - blueprintId transformation", () => {
         },
       });
 
-      const forgedUpdate = generateSchemaData(LeaseTemplateSchema, {
+      const forgedUpdate = generateSchemaData(PersistedLeaseTemplateSchema, {
         uuid,
         createdBy: "attacker@example.com",
         meta: {

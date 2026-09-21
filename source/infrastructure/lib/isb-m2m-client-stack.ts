@@ -40,8 +40,7 @@ export class IsbM2mClientStack extends Stack {
         label: "Trusted Principal",
         description:
           "An IAM ARN (arn:aws:iam::<accountId>:role/<name> or :user/<name>) to pin to a specific principal, OR a 12-digit account ID to trust any principal in that account that has sts:AssumeRole permission. Both forms also require the per-stack ExternalId.",
-        allowedPattern:
-          "^(arn:aws:iam::[0-9]{12}:(role|user)/.+|[0-9]{12})$",
+        allowedPattern: "^(arn:aws:iam::[0-9]{12}:(role|user)/.+|[0-9]{12})$",
         constraintDescription:
           "TrustedPrincipal must be either an IAM ARN (arn:aws:iam::<accountId>:role/<name> or arn:aws:iam::<accountId>:user/<name>) or a 12-digit AWS account ID.",
       },
@@ -61,6 +60,20 @@ export class IsbM2mClientStack extends Stack {
       },
     );
 
+    // Re-read on every deploy (AWS::SSM::Parameter::Value<String>), so the
+    // execute-api scope follows an API replacement. The namespace is a
+    // parameter, so the name can't be a static default.
+    const restApiIdSsmParam = new ParameterWithLabel(
+      this,
+      "RestApiIdSsmParam",
+      {
+        label: "REST API ID SSM Parameter Name",
+        description:
+          "Name of the Compute stack's SSM parameter holding the API Gateway REST API ID (InnovationSandbox_<namespace>_Compute_RestApiId), resolved to the current API ID at every deploy.",
+        type: "AWS::SSM::Parameter::Value<String>",
+      },
+    );
+
     addParameterGroup(this, {
       label: "M2M Client Configuration",
       parameters: [
@@ -69,6 +82,7 @@ export class IsbM2mClientStack extends Stack {
         roleParam,
         trustedPrincipalParam,
         maxSessionDurationParam,
+        restApiIdSsmParam,
       ],
     });
 
@@ -78,6 +92,7 @@ export class IsbM2mClientStack extends Stack {
       role: roleParam.valueAsString,
       trustedPrincipal: trustedPrincipalParam.valueAsString,
       maxSessionDuration: maxSessionDurationParam.valueAsNumber,
+      restApiId: restApiIdSsmParam.valueAsString,
     });
 
     applyIsbTag(this, namespaceParam.valueAsString);
@@ -99,7 +114,7 @@ export class IsbM2mClientStack extends Stack {
       key: "ApiGatewayArn",
       value: m2mResources.apiArn,
       description:
-        "API Gateway ARN this client role is scoped to. Constructed from the REST API ID parameter.",
+        "API Gateway ARN this client role is scoped to. The API ID is resolved from the Compute stack's SSM parameter.",
     });
 
     new CfnOutput(this, "ApiGatewayUrlOutput", {

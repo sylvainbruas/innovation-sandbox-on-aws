@@ -2,8 +2,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { z } from "zod";
 
-import { VisibilitySchema } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
-import { FreeTextSchema } from "@amzn/innovation-sandbox-commons/utils/zod.js";
 // Import shared validation schemas and factories
 import {
   BlueprintSelectionValidationSchema,
@@ -15,6 +13,8 @@ import {
   createDurationSettingsValidationRefinement,
   DurationSettingsValidationSchema,
 } from "@amzn/innovation-sandbox-frontend/components/Forms/validation";
+import { VisibilitySchema } from "@amzn/innovation-sandbox-shared/types/lease-template.js";
+import { FreeTextSchema } from "@amzn/innovation-sandbox-shared/utils/zod.js";
 
 /**
  * Validation schemas for lease template forms.

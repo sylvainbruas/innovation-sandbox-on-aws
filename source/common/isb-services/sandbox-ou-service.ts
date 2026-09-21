@@ -13,12 +13,12 @@ import {
 
 import { AccountPoolStackConfigStore } from "@amzn/innovation-sandbox-commons/data/account-pool-stack-config/ssm-account-pool-stack-config-store.js";
 import { SandboxAccountStore } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account-store.js";
+import { PersistedSandboxAccount } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
+import { Transaction } from "@amzn/innovation-sandbox-commons/utils/transactions.js";
 import {
   IsbOu,
-  SandboxAccount,
   SandboxAccountStatus,
-} from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
-import { Transaction } from "@amzn/innovation-sandbox-commons/utils/transactions.js";
+} from "@amzn/innovation-sandbox-shared/types/sandbox-account.js";
 import { backOff } from "exponential-backoff";
 
 export class SandboxOuService {
@@ -96,7 +96,7 @@ export class SandboxOuService {
   }
 
   public async moveAccount(
-    account: SandboxAccount,
+    account: PersistedSandboxAccount,
     sourceOu: IsbOu,
     destinationOu: IsbOu,
   ) {
@@ -112,7 +112,7 @@ export class SandboxOuService {
   }
 
   public transactionalMoveAccount(
-    account: SandboxAccount,
+    account: PersistedSandboxAccount,
     sourceOu: IsbOu,
     destinationOu: IsbOu,
   ) {

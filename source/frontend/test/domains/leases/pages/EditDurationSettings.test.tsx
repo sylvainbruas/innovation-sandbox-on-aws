@@ -7,9 +7,10 @@ import { http, HttpResponse } from "msw";
 import { BrowserRouter as Router } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { MonitoredLeaseView } from "@amzn/innovation-sandbox-frontend/domains/leases/model";
 import { EditDurationSettings } from "@amzn/innovation-sandbox-frontend/domains/leases/pages/EditDurationSettings";
-import { MonitoredLeaseWithLeaseId } from "@amzn/innovation-sandbox-frontend/domains/leases/types";
 import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
+import { createConfiguration } from "@amzn/innovation-sandbox-frontend/mocks/factories/configurationFactory";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
 import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
 import { ApiResponse } from "@amzn/innovation-sandbox-frontend/types";
@@ -34,8 +35,8 @@ vi.mock("@amzn/innovation-sandbox-frontend/components/Toast", () => ({
   showErrorToast: vi.fn(),
 }));
 
-const mockLease: MonitoredLeaseWithLeaseId = {
-  uuid: "lease-123",
+const mockLease: MonitoredLeaseView = {
+  uuid: "11111111-1111-4111-8111-111111111111",
   leaseId: "lease-123",
   userEmail: "user@example.com",
   startDate: "2024-01-01T00:00:00.000Z",
@@ -53,18 +54,18 @@ const mockLease: MonitoredLeaseWithLeaseId = {
   totalCostAccrued: 0,
 };
 
-const mockConfig = {
-  costReportGroups: [],
-  requireCostReportGroup: false,
+// Full AdminConfig via the shared factory (the generated client's
+// `getConfigurations` requires every section); overrides carry the leases values
+// this suite asserts.
+const mockConfig = createConfiguration({
   leases: {
     maxDurationHours: 720,
     requireMaxDuration: false,
     maxBudget: 500,
     requireMaxBudget: false,
   },
-  termsOfService: "Terms",
   isbManagedRegions: ["us-east-1"],
-};
+});
 
 describe("EditDurationSettings", () => {
   const renderComponent = () =>
@@ -80,7 +81,7 @@ describe("EditDurationSettings", () => {
     // Setup default MSW handlers
     server.use(
       http.get(`${getConfig().ApiUrl}/leases/lease-123`, () => {
-        const response: ApiResponse<MonitoredLeaseWithLeaseId> = {
+        const response: ApiResponse<MonitoredLeaseView> = {
           status: "success",
           data: mockLease,
         };
@@ -147,7 +148,7 @@ describe("EditDurationSettings", () => {
     // Test retry functionality
     server.use(
       http.get(`${getConfig().ApiUrl}/leases/lease-123`, () => {
-        const response: ApiResponse<MonitoredLeaseWithLeaseId> = {
+        const response: ApiResponse<MonitoredLeaseView> = {
           status: "success",
           data: mockLease,
         };
@@ -284,7 +285,7 @@ describe("EditDurationSettings", () => {
   });
 
   it("handles lease with no duration settings", async () => {
-    const leaseWithNoDuration: MonitoredLeaseWithLeaseId = {
+    const leaseWithNoDuration: MonitoredLeaseView = {
       ...mockLease,
       expirationDate: undefined,
       durationThresholds: [],
@@ -292,7 +293,7 @@ describe("EditDurationSettings", () => {
 
     server.use(
       http.get(`${getConfig().ApiUrl}/leases/lease-123`, () => {
-        const response: ApiResponse<MonitoredLeaseWithLeaseId> = {
+        const response: ApiResponse<MonitoredLeaseView> = {
           status: "success",
           data: leaseWithNoDuration,
         };
@@ -331,17 +332,15 @@ describe("EditDurationSettings", () => {
     });
   });
 
-  it("handles lease without start date", async () => {
-    const leaseWithoutStartDate = {
-      ...mockLease,
-      startDate: undefined,
-    };
-
+  it("shows an error for an active lease without a start date", async () => {
     server.use(
       http.get(`${getConfig().ApiUrl}/leases/lease-123`, () => {
-        const response: ApiResponse<MonitoredLeaseWithLeaseId> = {
+        const response: ApiResponse<MonitoredLeaseView> = {
           status: "success",
-          data: leaseWithoutStartDate as any,
+          data: {
+            ...mockLease,
+            startDate: undefined,
+          } as unknown as MonitoredLeaseView,
         };
         return HttpResponse.json(response);
       }),
@@ -349,11 +348,8 @@ describe("EditDurationSettings", () => {
 
     renderComponent();
 
-    await waitFor(() => {
-      expect(screen.getByText("Edit Duration Settings")).toBeInTheDocument();
-    });
-
-    // Form should still render
-    expect(screen.getByRole("checkbox")).toBeInTheDocument();
+    expect(
+      await screen.findByText("There was a problem loading this lease."),
+    ).toBeInTheDocument();
   });
 });

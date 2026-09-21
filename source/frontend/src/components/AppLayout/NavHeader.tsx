@@ -7,12 +7,12 @@ import TopNavigation, {
 import { Density, Mode } from "@cloudscape-design/global-styles";
 import { FC, useMemo } from "react";
 
+import { useAppContext } from "@amzn/innovation-sandbox-frontend/components/AppContext/context";
 import {
   type IsbUser,
   getUserEmail,
   getUserLabel,
-} from "@amzn/innovation-sandbox-commons/utils/auth-utils";
-import { useAppContext } from "@amzn/innovation-sandbox-frontend/components/AppContext/context";
+} from "@amzn/innovation-sandbox-shared/utils/auth-utils";
 
 export interface NavHeaderProps {
   title: string;

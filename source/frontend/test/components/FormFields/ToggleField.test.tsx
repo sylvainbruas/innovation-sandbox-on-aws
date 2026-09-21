@@ -224,7 +224,11 @@ describe("ToggleField", () => {
   test("renders an Enabled/Disabled state label from the live value when stateLabel is set", async () => {
     const user = userEvent.setup();
 
-    function TestStateLabel({ defaultValue = false }: { defaultValue?: boolean }) {
+    function TestStateLabel({
+      defaultValue = false,
+    }: {
+      defaultValue?: boolean;
+    }) {
       const { control } = useForm<TestFormValues>({
         defaultValues: { isEnabled: defaultValue },
       });

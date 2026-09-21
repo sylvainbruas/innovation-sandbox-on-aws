@@ -27,9 +27,31 @@ import { LambdaLayers } from "@amzn/innovation-sandbox-infrastructure/components
 import { addCfnGuardSuppression } from "@amzn/innovation-sandbox-infrastructure/helpers/cfn-guard";
 import { isDevMode } from "@amzn/innovation-sandbox-infrastructure/helpers/deployment-mode";
 import { getCustomUserAgent } from "@amzn/innovation-sandbox-infrastructure/helpers/manifest-reader";
+import { IsbComputeResources } from "@amzn/innovation-sandbox-infrastructure/isb-compute-resources";
 
-export interface IsbLambdaFunctionProps<T extends z.ZodSchema<any>>
-  extends Omit<NodejsFunctionProps, "role" | "runtime"> {
+/**
+ * Modules esbuild must NOT inline for a Lambda served by the generated Smithy server SDK.
+ *
+ * `re2-wasm` ships a JavaScript wrapper plus a separate `re2.wasm` binary, and the
+ * Smithy server SDK's validation module imports it eagerly for regex validation. If
+ * esbuild bundles the JavaScript, `re2-wasm` tries to locate `re2.wasm` relative to
+ * `/var/task` (the inlined `__dirname`), where the binary was never copied, so the
+ * Lambda fails during cold start before handling any request. It must therefore be:
+ *   1. listed in `externalModules` so esbuild does not inline it; and
+ *   2. an explicit dependency of the Lambda dependencies layer (see
+ *      `source/layers/dependencies/package.json`) so its original directory
+ *      structure and `.wasm` file stay intact and resolvable via `NODE_PATH` at
+ *      runtime.
+ *
+ * `@aws-sdk/*` is restated because setting `externalModules` replaces CDK's default
+ * (`["@aws-sdk/*"]`) rather than extending it — otherwise esbuild would bundle the AWS
+ * SDK v3 the Lambda runtime already provides, bloating the artifact and shadowing it.
+ */
+const smithyServerExternalModules = ["@aws-sdk/*", "re2-wasm"];
+
+export interface IsbLambdaFunctionProps<
+  T extends z.ZodSchema<any>,
+> extends Omit<NodejsFunctionProps, "role" | "runtime"> {
   kmsKey?: Key;
   layers?: ILayerVersion[];
   logGroup?: LogGroup;
@@ -117,5 +139,37 @@ export class IsbLambdaFunction<T extends z.ZodSchema<any>> extends Construct {
 
     addCfnGuardSuppression(this.lambdaFunction, ["LAMBDA_INSIDE_VPC"]);
     addCfnGuardSuppression(this.lambdaFunction, ["LAMBDA_CONCURRENCY_CHECK"]);
+  }
+}
+
+/**
+ * An {@link IsbLambdaFunction} for an API-Gateway-integrated Lambda served by the
+ * generated Smithy server SDK. It externalizes `smithyServerExternalModules`
+ * (`@aws-sdk/*` + `re2-wasm` — see that const's doc) so each `components/api/*-api.ts`
+ * need not repeat it; the shared list lives here, in one place. Non-API lambdas use
+ * `IsbLambdaFunction` directly. A caller-supplied `bundling` still merges on top — its
+ * own keys win, but `externalModules` is unioned so a caller override can never drop
+ * the required externalization.
+ *
+ * API lambdas also share the global log group by default, so each `*-api.ts` need not
+ * pass `logGroup`; a caller-supplied `logGroup` still wins.
+ */
+export class IsbApiLambdaFunction<
+  T extends z.ZodSchema<any>,
+> extends IsbLambdaFunction<T> {
+  constructor(scope: Construct, id: string, props: IsbLambdaFunctionProps<T>) {
+    super(scope, id, {
+      ...props,
+      logGroup: props.logGroup ?? IsbComputeResources.globalLogGroup,
+      bundling: {
+        ...props.bundling,
+        externalModules: [
+          ...new Set([
+            ...smithyServerExternalModules,
+            ...(props.bundling?.externalModules ?? []),
+          ]),
+        ],
+      },
+    });
   }
 }

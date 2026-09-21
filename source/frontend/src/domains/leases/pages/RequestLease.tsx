@@ -1,12 +1,6 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { zodResolver } from "@hookform/resolvers/zod";
-import { DateTime } from "luxon";
-import { useEffect, useState } from "react";
-import { FormProvider, useForm } from "react-hook-form";
-import { useNavigate } from "react-router-dom";
-
 import {
   Container,
   Header,
@@ -14,8 +8,12 @@ import {
   Wizard,
   WizardProps,
 } from "@cloudscape-design/components";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { DateTime } from "luxon";
+import { useEffect, useState } from "react";
+import { FormProvider, useForm } from "react-hook-form";
+import { useNavigate } from "react-router-dom";
 
-import { getUserEmail } from "@amzn/innovation-sandbox-commons/utils/auth-utils";
 import { useAppLayoutContext } from "@amzn/innovation-sandbox-frontend/components/AppLayout/AppLayoutContext";
 import { ContentLayout } from "@amzn/innovation-sandbox-frontend/components/ContentLayout";
 import TextareaField from "@amzn/innovation-sandbox-frontend/components/FormFields/TextareaField";
@@ -39,9 +37,11 @@ import {
 } from "@amzn/innovation-sandbox-frontend/domains/leases/validation";
 import { useGetLeaseTemplateById } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/hooks";
 import { useGetConfigurations } from "@amzn/innovation-sandbox-frontend/domains/settings/hooks";
-import { ApiError } from "@amzn/innovation-sandbox-frontend/helpers/ApiProxy";
+import { ApiError } from "@amzn/innovation-sandbox-frontend/helpers/apiError";
 import { useBreadcrumb } from "@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb";
 import { useUser } from "@amzn/innovation-sandbox-frontend/hooks/useUser";
+import { DEFAULT_GROUP_ASSIGNMENT_MODE } from "@amzn/innovation-sandbox-shared/types/configuration.js";
+import { getUserEmail } from "@amzn/innovation-sandbox-shared/utils/auth-utils";
 
 export const RequestLease = () => {
   const navigate = useNavigate();
@@ -232,6 +232,10 @@ export const RequestLease = () => {
                       <AssignmentsForm
                         enablePrincipalSearch={
                           globalConfig?.leases?.enablePrincipalSearch ?? false
+                        }
+                        groupAssignmentMode={
+                          globalConfig?.leases?.groupAssignmentMode ??
+                          DEFAULT_GROUP_ASSIGNMENT_MODE
                         }
                         ownerEmail={user ? getUserEmail(user) : undefined}
                       />

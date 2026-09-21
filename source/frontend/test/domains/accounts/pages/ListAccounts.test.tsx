@@ -7,7 +7,7 @@ import { http, HttpResponse } from "msw";
 import { BrowserRouter as Router } from "react-router-dom";
 import { describe, expect, test, vi } from "vitest";
 
-import { SandboxAccount } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
+import { SandboxAccountView } from "@amzn/innovation-sandbox-frontend/domains/accounts/model";
 import { ListAccounts } from "@amzn/innovation-sandbox-frontend/domains/accounts/pages/ListAccounts";
 import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import { ModalProvider } from "@amzn/innovation-sandbox-frontend/hooks/useModal";
@@ -107,7 +107,7 @@ describe("ListAccounts", () => {
             result: mockAccounts,
             nextPageIdentifier: null,
           },
-        } as ApiResponse<ApiPaginatedResult<SandboxAccount>>);
+        } as ApiResponse<ApiPaginatedResult<SandboxAccountView>>);
       }),
     );
 
@@ -148,7 +148,7 @@ describe("ListAccounts", () => {
             result: requestCount === 1 ? mockAccounts : [mockAccounts[0]],
             nextPageIdentifier: null,
           },
-        } as ApiResponse<ApiPaginatedResult<SandboxAccount>>);
+        } as ApiResponse<ApiPaginatedResult<SandboxAccountView>>);
       }),
     );
 
@@ -430,7 +430,7 @@ describe("ListAccounts", () => {
         return HttpResponse.json({
           status: "success",
           data: { result, nextPageIdentifier: null },
-        } as ApiResponse<ApiPaginatedResult<SandboxAccount>>);
+        } as ApiResponse<ApiPaginatedResult<SandboxAccountView>>);
       }),
     );
 
@@ -440,9 +440,9 @@ describe("ListAccounts", () => {
     // Select the account while it is Available (Quarantine action is valid).
     await screen.findByText(target.awsAccountId);
     await user.click(
-      within(
-        screen.getByText(target.awsAccountId).closest("tr")!,
-      ).getByRole("checkbox"),
+      within(screen.getByText(target.awsAccountId).closest("tr")!).getByRole(
+        "checkbox",
+      ),
     );
 
     // Refresh; the account comes back Quarantine. Gate on the reconciled row
@@ -509,7 +509,7 @@ describe("ListAccounts", () => {
         return HttpResponse.json({
           status: "success",
           data: { result, nextPageIdentifier: null },
-        } as ApiResponse<ApiPaginatedResult<SandboxAccount>>);
+        } as ApiResponse<ApiPaginatedResult<SandboxAccountView>>);
       }),
     );
 
@@ -562,7 +562,7 @@ describe("ListAccounts", () => {
         return HttpResponse.json({
           status: "success",
           data: { result, nextPageIdentifier: null },
-        } as ApiResponse<ApiPaginatedResult<SandboxAccount>>);
+        } as ApiResponse<ApiPaginatedResult<SandboxAccountView>>);
       }),
     );
 
@@ -571,18 +571,16 @@ describe("ListAccounts", () => {
 
     await screen.findByText(target.awsAccountId);
     await user.click(
-      within(
-        screen.getByText(target.awsAccountId).closest("tr")!,
-      ).getByRole("checkbox"),
+      within(screen.getByText(target.awsAccountId).closest("tr")!).getByRole(
+        "checkbox",
+      ),
     );
     expect(screen.getByText("Actions").closest("button")).not.toBeDisabled();
 
     // Refresh; the selected account is no longer part of the pool.
     await user.click(screen.getByTestId("refresh-button"));
     await waitFor(() =>
-      expect(
-        screen.queryByText(target.awsAccountId),
-      ).not.toBeInTheDocument(),
+      expect(screen.queryByText(target.awsAccountId)).not.toBeInTheDocument(),
     );
 
     // The stale selection must be pruned, disabling the actions dropdown again.
@@ -631,7 +629,7 @@ describe("ListAccounts", () => {
             result: accountsWithMissingName,
             nextPageIdentifier: null,
           },
-        } as ApiResponse<ApiPaginatedResult<SandboxAccount>>);
+        } as ApiResponse<ApiPaginatedResult<SandboxAccountView>>);
       }),
     );
 
@@ -658,7 +656,7 @@ describe("ListAccounts", () => {
             result: accountsWithMissingEmail,
             nextPageIdentifier: null,
           },
-        } as ApiResponse<ApiPaginatedResult<SandboxAccount>>);
+        } as ApiResponse<ApiPaginatedResult<SandboxAccountView>>);
       }),
     );
 

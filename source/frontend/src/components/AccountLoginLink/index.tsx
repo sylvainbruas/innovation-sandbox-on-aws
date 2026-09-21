@@ -9,11 +9,13 @@ import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
 interface AccountLoginLinkProps {
   variant?: ButtonProps.Variant;
   accountId: string;
+  wrapText?: boolean;
 }
 
 export const AccountLoginLink = ({
   variant = "inline-link",
   accountId,
+  wrapText = true,
 }: AccountLoginLinkProps) => {
   const onClick = () => {
     const baseUrl = getConfig().AwsAccessPortalUrl;
@@ -35,7 +37,12 @@ export const AccountLoginLink = ({
   };
 
   return (
-    <Button onClick={onClick} iconName="external" variant={variant}>
+    <Button
+      onClick={onClick}
+      iconName="external"
+      variant={variant}
+      wrapText={wrapText}
+    >
       Login
     </Button>
   );

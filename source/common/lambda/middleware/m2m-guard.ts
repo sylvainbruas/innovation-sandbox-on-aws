@@ -1,7 +1,7 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 import { createHttpJSendError } from "@amzn/innovation-sandbox-commons/lambda/middleware/http-error-handler.js";
-import { isSyntheticM2mEmail } from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
+import { isSyntheticM2mEmail } from "@amzn/innovation-sandbox-shared/utils/auth-utils.js";
 
 /**
  * Refuses lease creation when the resolved assignee is an M2M identity. A lease

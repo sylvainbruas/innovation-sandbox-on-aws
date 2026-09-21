@@ -13,7 +13,7 @@ import {
 
 import { AccountPoolConfig } from "@amzn/innovation-sandbox-commons/data/account-pool-stack-config/account-pool-stack-config.js";
 import { BlueprintStore } from "@amzn/innovation-sandbox-commons/data/blueprint/blueprint-store.js";
-import { LeaseTemplate } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
+import { PersistedLeaseTemplate } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
 import { PrincipalStore } from "@amzn/innovation-sandbox-commons/data/principal/principal-store.js";
 import {
   collect,
@@ -190,7 +190,7 @@ export async function summarizeBlueprints(
 }
 
 export async function summarizeMultiUserLeases(
-  leaseTemplates: LeaseTemplate[],
+  leaseTemplates: PersistedLeaseTemplate[],
   principalStore: PrincipalStore,
 ): Promise<{
   numTemplatesWithSharing: number;

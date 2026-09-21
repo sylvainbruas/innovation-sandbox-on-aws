@@ -6,18 +6,16 @@ import classNames from "classnames";
 import { ReactNode, useMemo } from "react";
 
 import {
-  SandboxAccount,
-  SandboxAccountStatus,
-} from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account";
-import {
   AccountStatusDatum,
   convertAccountsToSummary,
   getColor,
 } from "@amzn/innovation-sandbox-frontend/components/AccountsSummary/helpers";
 import styles from "@amzn/innovation-sandbox-frontend/components/AccountsSummary/styles.module.scss";
+import { SandboxAccountView } from "@amzn/innovation-sandbox-frontend/domains/accounts/model";
+import { SandboxAccountStatus } from "@amzn/innovation-sandbox-shared/types/sandbox-account";
 
 interface AccountsSummaryTableProps {
-  accounts: SandboxAccount[];
+  accounts: SandboxAccountView[];
   filter?: SandboxAccountStatus;
   onClick?: (item?: AccountStatusDatum) => void;
 }
@@ -62,7 +60,11 @@ const StatusCell = ({
   );
 
   return onClick ? (
-    <button type="button" onClick={() => onClick(item)} className={containerClass}>
+    <button
+      type="button"
+      onClick={() => onClick(item)}
+      className={containerClass}
+    >
       {content}
     </button>
   ) : (
@@ -89,7 +91,11 @@ const CountCell = ({
   );
 
   return onClick ? (
-    <button type="button" onClick={() => onClick(item)} className={containerClass}>
+    <button
+      type="button"
+      onClick={() => onClick(item)}
+      className={containerClass}
+    >
       {item.value}
     </button>
   ) : (

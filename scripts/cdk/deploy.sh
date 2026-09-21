@@ -21,6 +21,7 @@ Usage:
 
 Options:
   --skip-confirmation    Skip the interactive confirmation prompt
+  --skip-build           Skip the TypeScript build before synthesis
   --help, -h             Show this help message
 EOF
   exit 0
@@ -120,6 +121,8 @@ deploy_stack() {
       args+=(--parameters "HubAccountId=$HUB_ACCOUNT_ID")
       args+=(--parameters "IsbManagedRegions=$AWS_REGIONS")
       [ -n "$ADDITIONAL_ALLOWED_SERVICES" ] && args+=(--parameters "AdditionalAllowedServices=$ADDITIONAL_ALLOWED_SERVICES")
+      [ -n "$ADDITIONAL_PRINCIPAL_EXCEPTIONS" ] && args+=(--parameters "AdditionalPrincipalExceptions=$ADDITIONAL_PRINCIPAL_EXCEPTIONS")
+      [ -n "$BEDROCK_INFERENCE_PROFILE_PATTERNS" ] && args+=(--parameters "BedrockInferenceProfilePatterns=$BEDROCK_INFERENCE_PROFILE_PATTERNS")
       ;;
     idc)
       args+=(--parameters "IdentityStoreId=$IDENTITY_STORE_ID")
@@ -219,16 +222,18 @@ show_confirmation() {
 # Parse arguments
 STACKS_TO_DEPLOY=()
 SKIP_CONFIRMATION=false
+SKIP_BUILD=false
 
 for arg in "$@"; do
   case "$arg" in
     --help|-h) show_help ;;
     --skip-confirmation) SKIP_CONFIRMATION=true ;;
+    --skip-build) SKIP_BUILD=true ;;
     account-pool|idc|data|compute) STACKS_TO_DEPLOY+=("$arg") ;;
     all) STACKS_TO_DEPLOY=(account-pool idc data compute) ;;
     *)
       log_err "Unknown argument: $arg"
-      printf "Usage: %s [account-pool|idc|data|compute|all] [--skip-confirmation] [--help]\n" "$0"
+      printf "Usage: %s [account-pool|idc|data|compute|all] [--skip-confirmation] [--skip-build] [--help]\n" "$0"
       exit 1
       ;;
   esac
@@ -253,6 +258,31 @@ done
 # Confirmation
 if [ "$SKIP_CONFIRMATION" = false ]; then
   show_confirmation
+fi
+
+# Build
+# The generated packages under source/api-client and source/api-server are
+# gitignored, so on a fresh checkout synth cannot resolve them at all — and on a
+# warm tree it silently resolves a stale copy after the model changes. Matches
+# what deployment/build-s3-dist.sh does before its own synth.
+if [ "$SKIP_BUILD" = false ]; then
+  printf "\n"
+  log_info "Building TypeScript packages..."
+
+  set +e
+  npm run build
+  BUILD_EXIT=$?
+  set -e
+
+  if [ $BUILD_EXIT -ne 0 ]; then
+    log_err "Build failed"
+    exit 1
+  fi
+
+  log_ok "Build complete"
+else
+  printf "\n"
+  log_warn "Skipping build (--skip-build); generated code may be stale"
 fi
 
 # Synth

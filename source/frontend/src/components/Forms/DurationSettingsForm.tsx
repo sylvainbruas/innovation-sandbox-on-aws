@@ -14,10 +14,10 @@ import {
 } from "@cloudscape-design/components";
 import { useFieldArray, useFormContext, useWatch } from "react-hook-form";
 
-import { DurationThreshold } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template";
 import InputField from "@amzn/innovation-sandbox-frontend/components/FormFields/InputField";
 import SelectField from "@amzn/innovation-sandbox-frontend/components/FormFields/SelectField";
 import ToggleField from "@amzn/innovation-sandbox-frontend/components/FormFields/ToggleField";
+import { DurationThreshold } from "@amzn/innovation-sandbox-shared/types/lease-template";
 
 export const DURATION_ACTION_OPTIONS: readonly SelectProps.Option[] = [
   { label: "Send Alert", value: "ALERT" },

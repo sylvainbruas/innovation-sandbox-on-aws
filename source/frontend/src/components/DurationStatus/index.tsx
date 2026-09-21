@@ -7,12 +7,14 @@ import { DateTime, Duration } from "luxon";
 interface DurationStatusProps {
   date?: Date | string;
   durationInHours?: number;
+  durationReference?: string;
   expired?: boolean;
 }
 
 export const DurationStatus = ({
   date,
   durationInHours,
+  durationReference = "after approval",
   expired,
 }: DurationStatusProps) => {
   if (date) {
@@ -40,7 +42,7 @@ export const DurationStatus = ({
       <Box>
         <Box>{Duration.fromObject({ hours: durationInHours }).toHuman()}</Box>
         <Box>
-          <small data-muted>after approval</small>
+          <small data-muted>{durationReference}</small>
         </Box>
       </Box>
     );

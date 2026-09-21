@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 import { z } from "zod";
 
-import { PrincipalTypeSchema } from "@amzn/innovation-sandbox-commons/data/principal/principal.js";
 import { EventDetailTypes } from "@amzn/innovation-sandbox-commons/events/index.js";
 import { IsbEvent } from "@amzn/innovation-sandbox-commons/sdk-clients/event-bridge-client.js";
+import { PrincipalTypeSchema } from "@amzn/innovation-sandbox-shared/types/principal.js";
 
 export const AssignmentCreatedEventSchema = z.object({
   leaseId: z.string(),

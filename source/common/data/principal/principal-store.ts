@@ -6,51 +6,53 @@ import {
   PaginatedQueryResult,
   SingleItemResult,
 } from "@amzn/innovation-sandbox-commons/data/common-types.js";
-import type { PrincipalType } from "@amzn/innovation-sandbox-commons/data/principal/principal.js";
-import {
-  Assignment,
-  GroupAssignment,
-  GroupMembershipCache,
-  PrincipalCacheItem,
-  UserAssignment,
+import type {
+  PersistedAssignment,
+  PersistedGroupAssignment,
+  PersistedGroupMembershipCache,
+  PersistedPrincipalCacheItem,
+  PersistedUserAssignment,
 } from "@amzn/innovation-sandbox-commons/data/principal/principal.js";
+import type { PrincipalType } from "@amzn/innovation-sandbox-shared/types/principal.js";
 
 export abstract class PrincipalStore {
   abstract createUserAssignment(
-    assignment: UserAssignment,
-  ): Promise<UserAssignment>;
+    assignment: PersistedUserAssignment,
+  ): Promise<PersistedUserAssignment>;
 
   abstract createGroupAssignment(
-    assignment: GroupAssignment,
-  ): Promise<GroupAssignment>;
+    assignment: PersistedGroupAssignment,
+  ): Promise<PersistedGroupAssignment>;
 
   abstract getUserAssignment(
     userId: string,
     leaseId: string,
-  ): Promise<SingleItemResult<UserAssignment>>;
+  ): Promise<SingleItemResult<PersistedUserAssignment>>;
 
   abstract getGroupAssignment(
     groupId: string,
     leaseId: string,
-  ): Promise<SingleItemResult<GroupAssignment>>;
+  ): Promise<SingleItemResult<PersistedGroupAssignment>>;
 
   abstract getAssignmentsForLease(props: {
     leaseId: string;
     pageIdentifier?: string;
     pageSize?: number;
-  }): Promise<PaginatedQueryResult<Assignment>>;
+  }): Promise<PaginatedQueryResult<PersistedAssignment>>;
 
   abstract getDirectAssignmentsForUser(props: {
     userId: string;
     pageIdentifier?: string;
     pageSize?: number;
-  }): Promise<PaginatedQueryResult<UserAssignment>>;
+  }): Promise<PaginatedQueryResult<PersistedUserAssignment>>;
 
   abstract getGroupMembershipCache(
     userId: string,
-  ): Promise<SingleItemResult<GroupMembershipCache>>;
+  ): Promise<SingleItemResult<PersistedGroupMembershipCache>>;
 
-  abstract putGroupMembershipCache(cache: GroupMembershipCache): Promise<void>;
+  abstract putGroupMembershipCache(
+    cache: PersistedGroupMembershipCache,
+  ): Promise<void>;
 
   abstract deleteUserAssignment(
     userId: string,
@@ -62,7 +64,9 @@ export abstract class PrincipalStore {
     leaseId: string,
   ): Promise<OptionalItem>;
 
-  abstract batchPutAssignments(assignments: Assignment[]): Promise<void>;
+  abstract batchPutAssignments(
+    assignments: PersistedAssignment[],
+  ): Promise<void>;
 
   abstract getAllGroupAssignmentKeys(): Promise<
     { groupId: string; leaseId: string }[]
@@ -70,22 +74,24 @@ export abstract class PrincipalStore {
 
   abstract batchGetGroupAssignments(
     keys: { groupId: string; leaseId: string }[],
-  ): Promise<GroupAssignment[]>;
+  ): Promise<PersistedGroupAssignment[]>;
 
-  abstract batchPutCacheItems(items: PrincipalCacheItem[]): Promise<void>;
+  abstract batchPutCacheItems(
+    items: PersistedPrincipalCacheItem[],
+  ): Promise<void>;
 
   abstract getCacheItems(props: {
     type?: PrincipalType;
-  }): Promise<PrincipalCacheItem[]>;
+  }): Promise<PersistedPrincipalCacheItem[]>;
 
   abstract batchGetCacheItems(
     keys: { principalId: string; principalType: PrincipalType }[],
-  ): Promise<PrincipalCacheItem[]>;
+  ): Promise<PersistedPrincipalCacheItem[]>;
 
   abstract batchDeleteCacheItemsBySk(sks: string[]): Promise<void>;
 
   abstract listAllAssignments(props: {
     pageIdentifier?: string;
     pageSize?: number;
-  }): Promise<PaginatedQueryResult<Assignment>>;
+  }): Promise<PaginatedQueryResult<PersistedAssignment>>;
 }

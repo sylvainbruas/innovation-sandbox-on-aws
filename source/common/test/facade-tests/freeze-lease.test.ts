@@ -3,11 +3,11 @@
 
 import { ResourceLockConflictError } from "@amzn/innovation-sandbox-commons/data/errors.js";
 import {
-  ExpiredLeaseSchema,
-  MonitoredLease,
-  MonitoredLeaseSchema,
+  PersistedExpiredLeaseSchema,
+  PersistedMonitoredLease,
+  PersistedMonitoredLeaseSchema,
 } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
-import { SandboxAccountSchema } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
+import { PersistedSandboxAccountSchema } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
 import { LeaseFrozenEvent } from "@amzn/innovation-sandbox-commons/events/lease-frozen-event.js";
 import {
   AccountNotInActiveError,
@@ -27,7 +27,7 @@ import { createMockOf } from "@amzn/innovation-sandbox-commons/test/mocking/mock
 import {
   type IdcIdentity,
   IdcIdentitySchema,
-} from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
+} from "@amzn/innovation-sandbox-shared/utils/auth-utils.js";
 import { Logger } from "@aws-lambda-powertools/logger";
 import { Tracer } from "@aws-lambda-powertools/tracer";
 import { DateTime } from "luxon";
@@ -52,17 +52,17 @@ const currentDateTime = DateTime.fromISO("2024-12-20T08:45:00.000Z", {
 
 describe("InnovationSandbox.freezeLease()", async () => {
   let mockContext: ReturnType<typeof createMockContext>;
-  let mockLease: MonitoredLease;
+  let mockLease: PersistedMonitoredLease;
   let mockUser: IdcIdentity;
 
-  const mockLeaseAccount = generateSchemaData(SandboxAccountSchema, {
+  const mockLeaseAccount = generateSchemaData(PersistedSandboxAccountSchema, {
     status: "Active",
   });
 
   beforeEach(() => {
     mockContext = createMockContext();
     mockUser = generateSchemaData(IdcIdentitySchema);
-    mockLease = generateSchemaData(MonitoredLeaseSchema, {
+    mockLease = generateSchemaData(PersistedMonitoredLeaseSchema, {
       status: "Active",
       awsAccountId: mockLeaseAccount.awsAccountId,
       userEmail: mockUser.email,
@@ -283,7 +283,7 @@ describe("InnovationSandbox.freezeLease()", async () => {
   });
 
   test("Fails when attempting to freeze a lease that is not active", async () => {
-    const alreadyExpiredLease = generateSchemaData(ExpiredLeaseSchema);
+    const alreadyExpiredLease = generateSchemaData(PersistedExpiredLeaseSchema);
 
     await expect(
       InnovationSandbox.freezeLease(

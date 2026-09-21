@@ -2,16 +2,16 @@
 # SPDX-License-Identifier: Apache-2.0
 
 # To update: docker manifest inspect public.ecr.aws/amazonlinux/amazonlinux:2023-minimal | jq -r '.manifests[] | select(.platform.architecture=="amd64") | .digest'
-ARG BASE_IMAGE_DIGEST=sha256:fe6e27af3a64faf96684b0ea8c30006ec73a2e4a6d36d1408b91fbf10b795888
+ARG BASE_IMAGE_DIGEST=sha256:d3bfd777397ab1ab4c739f1b48655fc98578c2f9a895deba3e86f98258ccc113
 
 # Build aws-nuke from source
 FROM public.ecr.aws/amazonlinux/amazonlinux:2023-minimal@${BASE_IMAGE_DIGEST} AS builder
 
-ARG AWS_NUKE_VERSION=v3.66.0
+ARG AWS_NUKE_VERSION=v3.67.0
 # To update: curl -sL https://github.com/ekristen/aws-nuke/archive/refs/tags/vX.Y.Z.tar.gz | shasum -a 256 | awk '{print $1}'
-ARG AWS_NUKE_SOURCE_SHA256=3071dd7f1d61f42ca065af87aa675ada8ec11abfac08d135058845635561b676
+ARG AWS_NUKE_SOURCE_SHA256=69ef6d51aba9d1b875c2adae35e321e4030bf098c4bedc8c10822a99af8fc95b
 
-# Go 1.26.6 required by aws-nuke v3.66.0 (AL2023 only ships Go 1.25.x via dnf)
+# Go 1.26.6 required by aws-nuke v3.67.0 (AL2023 only ships Go 1.25.x via dnf)
 # Patched to 1.26.6 to pick up Go stdlib security fixes (see CHANGELOG v1.2.17)
 ARG GO_VERSION=1.26.6
 ARG GO_SHA256=708effb774be8237570d0add163225abbdfaf4fca28b2611df167beba4feef89

@@ -42,7 +42,7 @@ import {
 } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/components/BasicDetailsForm";
 import { LeaseTemplateSummary } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/components/LeaseTemplateSummary";
 import { useAddLeaseTemplate } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/hooks";
-import { NewLeaseTemplate } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/types";
+import { CreateLeaseTemplateRequest } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/types";
 import { createLeaseTemplateWizardValidationSchema } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/validation";
 import { useGetConfigurations } from "@amzn/innovation-sandbox-frontend/domains/settings/hooks";
 import { useBreadcrumb } from "@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb";
@@ -187,7 +187,7 @@ export const AddLeaseTemplate = () => {
       // Get form values
       const values = methods.getValues();
 
-      const leaseTemplate: NewLeaseTemplate = {
+      const leaseTemplate: CreateLeaseTemplateRequest = {
         name: values.name,
         description: values.description,
         requiresApproval: values.requiresApproval,
@@ -197,7 +197,7 @@ export const AddLeaseTemplate = () => {
         leaseDurationInHours: values.leaseDurationInHours,
         durationThresholds: values.durationThresholds,
         costReportGroup: values.selectedCostReportGroup,
-        blueprintId: values.blueprintId,
+        blueprintId: values.blueprintId ?? undefined,
         allowOwnerToShareLease: values.allowOwnerToShareLease,
       };
 

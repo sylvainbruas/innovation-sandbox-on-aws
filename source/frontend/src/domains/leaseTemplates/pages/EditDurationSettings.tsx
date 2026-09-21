@@ -13,7 +13,6 @@ import { useEffect, useMemo } from "react";
 import { FormProvider, useForm } from "react-hook-form";
 import { useNavigate, useParams } from "react-router-dom";
 
-import { LeaseTemplate } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template";
 import { useAppLayoutContext } from "@amzn/innovation-sandbox-frontend/components/AppLayout/AppLayoutContext";
 import { ContentLayout } from "@amzn/innovation-sandbox-frontend/components/ContentLayout";
 import { ErrorPanel } from "@amzn/innovation-sandbox-frontend/components/ErrorPanel";
@@ -32,6 +31,7 @@ import {
   useGetLeaseTemplateById,
   useUpdateLeaseTemplate,
 } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/hooks";
+import { LeaseTemplateView } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/model";
 import { useGetConfigurations } from "@amzn/innovation-sandbox-frontend/domains/settings/hooks";
 import { useBreadcrumb } from "@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb";
 
@@ -115,7 +115,7 @@ export const EditDurationSettings = () => {
       // in the form, so `maxDurationEnabled` stays false even though the user
       // entered a value. Treat "required" as enabled so it is sent, not dropped.
       const durationEnabled = data.maxDurationEnabled || requireMaxDuration;
-      const updatedLeaseTemplate: LeaseTemplate = {
+      const updatedLeaseTemplate: LeaseTemplateView = {
         ...leaseTemplate,
         leaseDurationInHours: durationEnabled
           ? data.leaseDurationInHours

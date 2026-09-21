@@ -157,7 +157,12 @@ describe("Settings hooks", () => {
         { wrapper: createQueryClientWrapper() },
       );
 
-      result.current.mutate({ maxBudget: 100 });
+      const {
+        lastSavedBy: _lastSavedBy,
+        meta: _meta,
+        ...leases
+      } = mockAdminConfig.leases;
+      result.current.mutate({ ...leases, maxBudget: 100 });
 
       await waitFor(() => expect(result.current.isError).toBe(true));
       expect(result.current.isSuccess).toBe(false);
@@ -170,7 +175,12 @@ describe("Settings hooks", () => {
       server.use(
         http.get(`${apiUrl()}/configurations`, () => {
           getCount += 1;
-          return HttpResponse.json({ status: "success", data: {} });
+          // A full aggregate view: the generated client deserializes and maps
+          // every section, so a degenerate `{}` body would fail the read.
+          return HttpResponse.json({
+            status: "success",
+            data: mockAdminConfig,
+          });
         }),
         configurationSectionPutHandler(),
       );

@@ -15,12 +15,15 @@ import {
 import { useCallback, useMemo } from "react";
 import { useFormContext } from "react-hook-form";
 
-import { MAX_ASSIGNMENTS } from "@amzn/innovation-sandbox-commons/data/lease/lease";
 import { PrincipalTypeahead } from "@amzn/innovation-sandbox-frontend/domains/leases/components/PrincipalTypeahead";
+import type { IdcPrincipalView } from "@amzn/innovation-sandbox-frontend/domains/principals/model";
 import {
-  IdcPrincipal,
-  PrincipalType,
-} from "@amzn/innovation-sandbox-frontend/domains/leases/types";
+  DEFAULT_GROUP_ASSIGNMENT_MODE,
+  type GroupAssignmentMode,
+} from "@amzn/innovation-sandbox-shared/types/configuration.js";
+import { MAX_ASSIGNMENTS } from "@amzn/innovation-sandbox-shared/types/lease.js";
+import type { PrincipalType } from "@amzn/innovation-sandbox-shared/types/principal.js";
+import { groupAssignmentsEnabled } from "@amzn/innovation-sandbox-shared/utils/group-assignment-policy.js";
 
 // The form-state shape this step reads from. Both RequestLeaseFormValues
 // and AssignLeaseFormValues happen to satisfy it (their `assignments`
@@ -39,12 +42,14 @@ type AssignmentsFormShape = {
 
 type AssignmentsFormProps = {
   enablePrincipalSearch?: boolean;
+  groupAssignmentMode?: GroupAssignmentMode;
   /** Email of the lease owner. Shown as a permanent row in the table. */
   ownerEmail?: string;
 };
 
 export const AssignmentsForm = ({
   enablePrincipalSearch = true,
+  groupAssignmentMode = DEFAULT_GROUP_ASSIGNMENT_MODE,
   ownerEmail,
 }: AssignmentsFormProps = {}) => {
   const { setValue, watch } = useFormContext<AssignmentsFormShape>();
@@ -62,7 +67,7 @@ export const AssignmentsForm = ({
   const displayItems = ownerRow ? [ownerRow, ...assignments] : assignments;
   const isAtCapacity = displayItems.length >= MAX_ASSIGNMENTS;
 
-  const handleAdd = (p: IdcPrincipal) => {
+  const handleAdd = (p: IdcPrincipalView) => {
     if (assignments.some((a) => a.principalId === p.principalId)) return;
     const next: StagedAssignment[] = [
       ...assignments,
@@ -87,7 +92,7 @@ export const AssignmentsForm = ({
   );
 
   const shouldExclude = useCallback(
-    (p: IdcPrincipal) =>
+    (p: IdcPrincipalView) =>
       excludeIds.has(p.principalId) ||
       (!!ownerEmail && p.principalType === "USER" && p.email === ownerEmail),
     [excludeIds, ownerEmail],
@@ -98,7 +103,11 @@ export const AssignmentsForm = ({
       header={
         <Header
           variant="h3"
-          description="Optional. Pick users and groups that should access this lease as soon as it is approved."
+          description={
+            groupAssignmentsEnabled(groupAssignmentMode)
+              ? "Optional. Pick users and groups that should access this lease as soon as it is approved."
+              : "Optional. Pick users that should access this lease as soon as it is approved."
+          }
           counter={`(${displayItems.length}/${MAX_ASSIGNMENTS})`}
         >
           Share access
@@ -118,6 +127,9 @@ export const AssignmentsForm = ({
             onSelect={handleAdd}
             shouldExclude={shouldExclude}
             enablePrincipalSearch={enablePrincipalSearch}
+            type={
+              groupAssignmentsEnabled(groupAssignmentMode) ? "all" : "users"
+            }
             disabled={isAtCapacity}
           />
         </ColumnLayout>
@@ -164,6 +176,7 @@ export const AssignmentsForm = ({
                 return (
                   <Button
                     variant="inline-link"
+                    wrapText={false}
                     onClick={() => handleRemove(row.principalId)}
                   >
                     Remove

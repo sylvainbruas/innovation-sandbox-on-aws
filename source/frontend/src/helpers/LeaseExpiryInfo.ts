@@ -2,16 +2,17 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
-  Lease,
   isApprovalDeniedLease,
   isExpiredLease,
   isMonitoredLease,
   isPendingLease,
-} from "@amzn/innovation-sandbox-commons/data/lease/lease";
+  Lease,
+} from "@amzn/innovation-sandbox-shared/types/lease.js";
 
 export interface LeaseExpiryInfo {
   date?: Date | string;
   durationInHours?: number;
+  durationReference?: string;
   expired?: boolean;
 }
 
@@ -19,6 +20,13 @@ export const getLeaseExpiryInfo = (lease: Lease): LeaseExpiryInfo | null => {
   if (isPendingLease(lease) || isApprovalDeniedLease(lease)) {
     return {
       durationInHours: lease.leaseDurationInHours,
+    };
+  }
+
+  if (lease.status === "Provisioning") {
+    return {
+      durationInHours: lease.leaseDurationInHours,
+      durationReference: "from lease publish",
     };
   }
 

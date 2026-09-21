@@ -5,13 +5,13 @@ import { Box, KeyValuePairs } from "@cloudscape-design/components";
 
 import TextareaField from "@amzn/innovation-sandbox-frontend/components/FormFields/TextareaField";
 import { SectionForm } from "@amzn/innovation-sandbox-frontend/domains/settings/components/forms/SectionForm";
-import { SectionData } from "@amzn/innovation-sandbox-frontend/domains/settings/service";
+import { ConfigurationSectionView } from "@amzn/innovation-sandbox-frontend/domains/settings/model";
 import { CONFIG_CONSTRAINTS } from "@amzn/innovation-sandbox-frontend/domains/settings/validation";
 
 export function TermsOfServiceForm({
   data,
 }: {
-  data: SectionData<"termsOfService">;
+  data: ConfigurationSectionView<"termsOfService">;
 }) {
   return (
     <SectionForm

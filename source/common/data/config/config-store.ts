@@ -3,12 +3,14 @@
 import { z } from "zod";
 
 import {
+  PersistedConfigSectionData,
+  PersistedLastSavedBy,
+} from "@amzn/innovation-sandbox-commons/data/config/config.js";
+import {
   ConfigSchemas,
   ConfigSection,
-  ConfigSectionData,
   ConfigWriteSchemas,
-  LastSavedBy,
-} from "@amzn/innovation-sandbox-commons/data/config/config.js";
+} from "@amzn/innovation-sandbox-shared/types/configuration.js";
 
 /**
  * Thrown by `putSection` on an optimistic-concurrency conflict
@@ -34,11 +36,11 @@ export interface ConfigStore {
   /** Returns the section, or `null` if it does not exist in DynamoDB. */
   getSection<T extends ConfigSection>(
     section: T,
-  ): Promise<ConfigSectionData<T> | null>;
+  ): Promise<PersistedConfigSectionData<T> | null>;
 
   /** Returns only the sections present in DynamoDB; callers default the rest. */
   getAllSections(): Promise<{
-    [K in ConfigSection]?: ConfigSectionData<K>;
+    [K in ConfigSection]?: PersistedConfigSectionData<K>;
   }>;
 
   /**
@@ -47,17 +49,17 @@ export interface ConfigStore {
    * `meta.lastEditTime = :expected` when `expectedLastEditTime` is given, or
    * `attribute_not_exists(section) AND attribute_not_exists(sk)` on first save.
    *
-   * `LastSavedBy` structurally widens to `string`, so implementations MUST
-   * `LastSavedBySchema.parse(editedBy)` before writing.
+   * `PersistedLastSavedBy` structurally widens to `string`, so implementations MUST
+   * `PersistedLastSavedBySchema.parse(editedBy)` before writing.
    *
    * @throws {ConflictError} when the condition expression fails.
    */
   putSection<T extends ConfigSection>(
     section: T,
     data: z.infer<(typeof ConfigWriteSchemas)[T]>,
-    editedBy: LastSavedBy,
+    editedBy: PersistedLastSavedBy,
     expectedLastEditTime?: string,
-  ): Promise<ConfigSectionData<T>>;
+  ): Promise<PersistedConfigSectionData<T>>;
 
   /**
    * Writes every supplied section atomically as a single DynamoDB transaction,
@@ -65,8 +67,8 @@ export interface ConfigStore {
    * `lastSavedBy`, and `meta` (createdTime/lastEditTime/schemaVersion)
    * server-side; callers pass only the already-validated section fields.
    *
-   * `LastSavedBy` structurally widens to `string`, so implementations MUST
-   * `LastSavedBySchema.parse(editedBy)` before writing.
+   * `PersistedLastSavedBy` structurally widens to `string`, so implementations MUST
+   * `PersistedLastSavedBySchema.parse(editedBy)` before writing.
    *
    * Idempotent by construction: each section is written under an
    * `attribute_not_exists` condition, so if the sections are already present
@@ -76,6 +78,6 @@ export interface ConfigStore {
    */
   migrateSections(
     sections: { [K in ConfigSection]?: z.infer<(typeof ConfigSchemas)[K]> },
-    editedBy: LastSavedBy,
+    editedBy: PersistedLastSavedBy,
   ): Promise<{ migrated: boolean }>;
 }

@@ -5,7 +5,7 @@ import {
   GROUP_MEMBERSHIP_SK,
   userPk,
 } from "@amzn/innovation-sandbox-commons/data/principal/principal-dynamodb-keys.js";
-import { GroupMembershipCache } from "@amzn/innovation-sandbox-commons/data/principal/principal.js";
+import { PersistedGroupMembershipCache } from "@amzn/innovation-sandbox-commons/data/principal/principal.js";
 import {
   calculateTtlInEpochSeconds,
   now,
@@ -55,7 +55,7 @@ export async function getGroupMemberships(
     .map((m) => m.GroupId)
     .filter((id): id is string => !!id);
 
-  const cacheRecord: GroupMembershipCache = {
+  const cacheRecord: PersistedGroupMembershipCache = {
     pk: userPk(userId),
     sk: GROUP_MEMBERSHIP_SK,
     groupIds,

@@ -4,7 +4,7 @@ import { Logger } from "@aws-lambda-powertools/logger";
 import { Tracer } from "@aws-lambda-powertools/tracer";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
-import { PendingLeaseSchema } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
+import { PersistedPendingLeaseSchema } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import { LeaseDeniedEvent } from "@amzn/innovation-sandbox-commons/events/lease-denied-event.js";
 import { InnovationSandbox } from "@amzn/innovation-sandbox-commons/innovation-sandbox.js";
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
@@ -14,7 +14,7 @@ import {
   mockedLeaseStore,
 } from "@amzn/innovation-sandbox-commons/test/mocking/common-mocks.js";
 import { createMockOf } from "@amzn/innovation-sandbox-commons/test/mocking/mock-utils.js";
-import { IdcIdentitySchema } from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
+import { IdcIdentitySchema } from "@amzn/innovation-sandbox-shared/utils/auth-utils.js";
 import { DateTime } from "luxon";
 
 function createMockContext() {
@@ -48,7 +48,7 @@ describe("InnovationSandbox.denyLease()", () => {
   });
 
   test("Writes denied lease to DB", async () => {
-    const leaseToDeny = generateSchemaData(PendingLeaseSchema, {
+    const leaseToDeny = generateSchemaData(PersistedPendingLeaseSchema, {
       status: "PendingApproval",
     });
     const denier = generateSchemaData(IdcIdentitySchema, {
@@ -72,7 +72,7 @@ describe("InnovationSandbox.denyLease()", () => {
   });
 
   test("Send LeaseDenied event to EventBus", async () => {
-    const leaseToDeny = generateSchemaData(PendingLeaseSchema, {
+    const leaseToDeny = generateSchemaData(PersistedPendingLeaseSchema, {
       status: "PendingApproval",
     });
     const denier = generateSchemaData(IdcIdentitySchema, {
@@ -106,7 +106,7 @@ describe("InnovationSandbox.denyLease()", () => {
       async () =>
         await InnovationSandbox.denyLease(
           {
-            lease: generateSchemaData(PendingLeaseSchema, {
+            lease: generateSchemaData(PersistedPendingLeaseSchema, {
               status: "PendingApproval",
             }),
             denier: generateSchemaData(IdcIdentitySchema, {
@@ -126,7 +126,7 @@ describe("InnovationSandbox.denyLease()", () => {
     try {
       await InnovationSandbox.denyLease(
         {
-          lease: generateSchemaData(PendingLeaseSchema, {
+          lease: generateSchemaData(PersistedPendingLeaseSchema, {
             status: "PendingApproval",
           }),
           denier: generateSchemaData(IdcIdentitySchema, {

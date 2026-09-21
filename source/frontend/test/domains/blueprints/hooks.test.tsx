@@ -32,12 +32,8 @@ vi.mock(
   async () => {
     const [{ authenticated }, { buildCognitoAuthServiceMock }] =
       await Promise.all([
-        import(
-          "@amzn/innovation-sandbox-frontend-test/utils/cognitoFixtures"
-        ),
-        import(
-          "@amzn/innovation-sandbox-frontend-test/utils/cognitoServiceMock"
-        ),
+        import("@amzn/innovation-sandbox-frontend-test/utils/cognitoFixtures"),
+        import("@amzn/innovation-sandbox-frontend-test/utils/cognitoServiceMock"),
       ]);
     return {
       CognitoAuthService: buildCognitoAuthServiceMock({
@@ -160,7 +156,7 @@ describe("Blueprint hooks", () => {
       });
 
       const newBlueprintRequest: RegisterBlueprintRequest = {
-        name: "New Blueprint",
+        name: "New-Blueprint",
         stackSetId: "ss-12345678-1234-1234-1234-123456789012",
         regions: ["us-east-1"],
         tags: { environment: "test" },
@@ -226,10 +222,9 @@ describe("Blueprint hooks", () => {
 
   describe("useUpdateBlueprint", () => {
     it("should update blueprint successfully", async () => {
-      const blueprintId =
-        "650e8400-e29b-41d4-a716-44665544000145678-1234-1234-1234-123456789012";
+      const blueprintId = "650e8400-e29b-41d4-a716-446655440001";
       const updates: UpdateBlueprintRequest = {
-        name: "Updated Blueprint Name",
+        name: "Updated-Blueprint-Name",
         tags: { environment: "production" },
         deploymentTimeoutMinutes: 45,
       };
@@ -249,7 +244,9 @@ describe("Blueprint hooks", () => {
             return HttpResponse.json(
               {
                 status: "success",
-                data: createBlueprint({ ...updates, blueprintId }),
+                data: createBlueprintWithStackSets({
+                  blueprint: createBlueprint({ ...updates, blueprintId }),
+                }),
               },
               { status: 200 },
             );

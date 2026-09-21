@@ -16,11 +16,9 @@ import {
   ResourceLockConflictError,
 } from "@amzn/innovation-sandbox-commons/data/errors.js";
 import { DynamoLeaseStore } from "@amzn/innovation-sandbox-commons/data/lease/dynamo-lease-store.js";
-import {
-  LeaseKey,
-  PendingLeaseSchema,
-} from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
+import { PersistedPendingLeaseSchema } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
+import { LeaseKey } from "@amzn/innovation-sandbox-shared/types/lease.js";
 
 import { randomUUID } from "node:crypto";
 
@@ -404,7 +402,7 @@ describe("DynamoLeaseStore", () => {
 
   describe("batchGet()", () => {
     function makeLease(overrides: Partial<LeaseKey> = {}) {
-      return generateSchemaData(PendingLeaseSchema, {
+      return generateSchemaData(PersistedPendingLeaseSchema, {
         status: "PendingApproval",
         userEmail: overrides.userEmail ?? USER_EMAIL,
         uuid: overrides.uuid ?? LEASE_ID,

@@ -2,14 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { DateTime } from "luxon";
 import { BrowserRouter } from "react-router-dom";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-import {
-  Lease,
-  LeaseWithLeaseId,
-} from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import { LeasePanel } from "@amzn/innovation-sandbox-frontend/domains/home/components/LeasePanel";
+import { LeaseView } from "@amzn/innovation-sandbox-frontend/domains/leases/model";
 import { ModalProvider } from "@amzn/innovation-sandbox-frontend/hooks/useModal";
 import { createConfiguration } from "@amzn/innovation-sandbox-frontend/mocks/factories/configurationFactory";
 import {
@@ -18,7 +16,6 @@ import {
   createPendingLease,
 } from "@amzn/innovation-sandbox-frontend/mocks/factories/leaseFactory";
 import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
-import { DateTime } from "luxon";
 
 // Mock the AccountLoginLink component
 vi.mock(
@@ -91,11 +88,11 @@ const defaultLeasesConfig = {
 };
 
 describe("LeasePanel", () => {
-  const renderComponent = (lease: Lease) => {
+  const renderComponent = (lease: LeaseView) => {
     return renderWithQueryClient(
       <ModalProvider>
         <BrowserRouter>
-          <LeasePanel lease={lease as LeaseWithLeaseId} />
+          <LeasePanel lease={lease as LeaseView} />
         </BrowserRouter>
       </ModalProvider>,
     );
@@ -136,7 +133,7 @@ describe("LeasePanel", () => {
   });
 
   test("links the lease title to its details page", () => {
-    const activeLease: LeaseWithLeaseId = {
+    const activeLease: LeaseView = {
       ...createActiveLease(),
       leaseId: "encoded-lease-id",
     };
@@ -228,6 +225,19 @@ describe("LeasePanel", () => {
     expect(screen.getByText("after approval")).toBeInTheDocument();
   });
 
+  test("describes provisioning duration relative to lease publish", () => {
+    const provisioningLease = createActiveLease({
+      status: "Provisioning",
+      expirationDate: undefined,
+      leaseDurationInHours: 24,
+    });
+    renderComponent(provisioningLease);
+
+    expect(screen.getByText("24 hours")).toBeInTheDocument();
+    expect(screen.getByText("from lease publish")).toBeInTheDocument();
+    expect(screen.queryByText("No expiry")).not.toBeInTheDocument();
+  });
+
   test("handles lease without expirationDate and duration", () => {
     const leaseWithoutExpiryAndDuration = createActiveLease({
       expirationDate: undefined,
@@ -237,6 +247,34 @@ describe("LeasePanel", () => {
 
     expect(screen.getByText("No expiry")).toBeInTheDocument();
   });
+
+  test.each([
+    ["Admin", "Provisioning", true],
+    ["Manager", "Provisioning", false],
+    ["Admin", "Frozen", true],
+    ["Manager", "Frozen", true],
+    ["User", "Frozen", false],
+    ["User", "Active", true],
+  ] as const)(
+    "renders Login for %s on %s leases: %s",
+    (role, status, expected) => {
+      mockUseUser.mockReturnValue({
+        user: { ...ownerUser, roles: [role] },
+        isAdmin: role === "Admin",
+        isManager: role === "Manager",
+      });
+      const lease = createActiveLease({ status });
+
+      renderComponent(lease);
+
+      const login = screen.queryByText(/Login to account/i);
+      if (expected) {
+        expect(login).toBeInTheDocument();
+      } else {
+        expect(login).not.toBeInTheDocument();
+      }
+    },
+  );
 
   test.each([
     { amount: 1, unit: "hours", expected: "1 hour ago" },
@@ -327,7 +365,7 @@ describe("LeasePanel", () => {
     });
 
     test("shows the account ID and human-readable lease ID being terminated", async () => {
-      const leaseWithId: LeaseWithLeaseId = {
+      const leaseWithId: LeaseView = {
         ...createActiveLease({ userEmail: ownerEmail, uuid: "lease-uuid-123" }),
         leaseId: "base64-composite-key",
       };
@@ -372,7 +410,7 @@ describe("LeasePanel", () => {
 
     test("calls terminateLease mutation on confirm and fires success toast", async () => {
       mockTerminateLease.mockResolvedValueOnce(undefined);
-      const leaseWithId: LeaseWithLeaseId = {
+      const leaseWithId: LeaseView = {
         ...createActiveLease({ userEmail: ownerEmail }),
         leaseId: "test-lease-id",
       };
@@ -415,7 +453,7 @@ describe("LeasePanel", () => {
       const consoleErrorSpy = vi
         .spyOn(console, "error")
         .mockImplementation(() => {});
-      const leaseWithId: LeaseWithLeaseId = {
+      const leaseWithId: LeaseView = {
         ...createActiveLease({ userEmail: ownerEmail }),
         leaseId: "test-lease-id",
       };

@@ -8,8 +8,10 @@
  */
 
 import {
+  createHttpJSendError,
   createHttpJSendValidationError,
   httpErrorHandler,
+  modeledErrorTypeHeader,
 } from "@amzn/innovation-sandbox-commons/lambda/middleware/http-error-handler.js";
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
@@ -323,6 +325,113 @@ describe("httpErrorHandler - Error Mappings", () => {
       expect(request.error).toMatchObject({
         statusCode: 409,
       });
+    });
+  });
+});
+
+describe("httpErrorHandler - modeled error discriminator", () => {
+  const middleware = httpErrorHandler({
+    logger: false,
+    fallbackMessage: JSON.stringify({
+      status: "error",
+      message: "An unexpected error occurred.",
+    }),
+  });
+
+  it.each([
+    [400, "ValidationError"],
+    [401, "UnauthenticatedError"],
+    [403, "AccessDeniedError"],
+    [409, "ConflictError"],
+    [415, "UnsupportedMediaTypeError"],
+  ] as const)(
+    "emits %s responses as %s without changing the JSend body",
+    async (statusCode, errorType) => {
+      const error = createHttpJSendError({
+        statusCode,
+        data: { errors: [{ message: "original message" }] },
+      });
+      const request = { error } as any;
+
+      await middleware.onError!(request);
+
+      expect(request.response).toMatchObject({
+        statusCode,
+        headers: {
+          "Content-Type": "application/json",
+          [modeledErrorTypeHeader]: errorType,
+        },
+      });
+      expect(request.response.body).toBe(error.message);
+    },
+  );
+
+  it("propagates an explicit modeled type from the error", async () => {
+    const request = {
+      error: createHttpJSendError({
+        statusCode: 409,
+        errorType: "ConflictError",
+        data: { errors: [{ message: "conflict" }] },
+      }),
+    } as any;
+
+    await middleware.onError!(request);
+
+    expect(request.response.headers[modeledErrorTypeHeader]).toBe(
+      "ConflictError",
+    );
+  });
+
+  it("rejects an explicit modeled type that contradicts its status", () => {
+    expect(() =>
+      createHttpJSendError({
+        statusCode: 404,
+        errorType: "ConflictError",
+        data: { errors: [{ message: "not a conflict" }] },
+      }),
+    ).toThrow("ConflictError requires HTTP 409, received 404");
+  });
+
+  it("does not claim a Smithy shape for an unmodeled status", async () => {
+    const request = {
+      error: createHttpJSendError({
+        statusCode: 404,
+        data: { errors: [{ message: "not found" }] },
+      }),
+    } as any;
+
+    await middleware.onError!(request);
+
+    expect(request.response.headers).not.toHaveProperty(modeledErrorTypeHeader);
+  });
+
+  it("leaves unmodeled throttling responses undiscriminated", async () => {
+    const error = new Error("Rate exceeded");
+    error.name = "ThrottlingException";
+    const request = { error } as any;
+
+    await middleware.onError!(request);
+
+    expect(request.response).toMatchObject({
+      statusCode: 429,
+    });
+    expect(request.response.headers).not.toHaveProperty(modeledErrorTypeHeader);
+  });
+
+  it("marks unexpected failures as InternalServerError", async () => {
+    const request = { error: new Error("do not expose") } as any;
+
+    await middleware.onError!(request);
+
+    expect(request.response).toMatchObject({
+      statusCode: 500,
+      headers: {
+        [modeledErrorTypeHeader]: "InternalServerError",
+      },
+    });
+    expect(JSON.parse(request.response.body)).toEqual({
+      status: "error",
+      message: "An unexpected error occurred.",
     });
   });
 });

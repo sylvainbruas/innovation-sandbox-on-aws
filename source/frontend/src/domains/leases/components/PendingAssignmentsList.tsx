@@ -3,7 +3,7 @@
 
 import { Box, Container, Header, Table } from "@cloudscape-design/components";
 
-import { DesiredAssignmentWithDisplay } from "@amzn/innovation-sandbox-commons/data/lease/lease";
+import { DesiredAssignmentWithDisplay } from "@amzn/innovation-sandbox-shared/types/lease.js";
 
 type PendingAssignmentsListProps = {
   desiredAssignments?: DesiredAssignmentWithDisplay[];

@@ -1,7 +1,7 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { SandboxAccountSchema } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
+import { PersistedSandboxAccountSchema } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
 import { CleanAccountRequest } from "@amzn/innovation-sandbox-commons/events/clean-account-request.js";
 import {
   AccountInCleanUpError,
@@ -51,7 +51,7 @@ describe("InnovationSandbox.retryCleanup()", () => {
   });
 
   test("HappyPath - RetryCleanup on account in Quarantine", async () => {
-    const account = generateSchemaData(SandboxAccountSchema, {
+    const account = generateSchemaData(PersistedSandboxAccountSchema, {
       status: "Quarantine",
     });
 
@@ -78,7 +78,7 @@ describe("InnovationSandbox.retryCleanup()", () => {
   });
 
   test("includes initiatedBy in the emitted event when provided", async () => {
-    const account = generateSchemaData(SandboxAccountSchema, {
+    const account = generateSchemaData(PersistedSandboxAccountSchema, {
       status: "Quarantine",
     });
 
@@ -101,7 +101,7 @@ describe("InnovationSandbox.retryCleanup()", () => {
   });
 
   test("HappyPath - RetryCleanup on account already in CleanUp OU", async () => {
-    const account = generateSchemaData(SandboxAccountSchema, {
+    const account = generateSchemaData(PersistedSandboxAccountSchema, {
       status: "CleanUp",
     });
 
@@ -124,7 +124,7 @@ describe("InnovationSandbox.retryCleanup()", () => {
   });
 
   test("writes the Status tag as CleanUp after the OU move from Quarantine", async () => {
-    const account = generateSchemaData(SandboxAccountSchema, {
+    const account = generateSchemaData(PersistedSandboxAccountSchema, {
       status: "Quarantine",
     });
 
@@ -139,7 +139,7 @@ describe("InnovationSandbox.retryCleanup()", () => {
   });
 
   test("does NOT write the Status tag when account was already in CleanUp", async () => {
-    const account = generateSchemaData(SandboxAccountSchema, {
+    const account = generateSchemaData(PersistedSandboxAccountSchema, {
       status: "CleanUp",
     });
 
@@ -154,7 +154,7 @@ describe("InnovationSandbox.retryCleanup()", () => {
   });
 
   test("status-tag failure does not block the lifecycle", async () => {
-    const account = generateSchemaData(SandboxAccountSchema, {
+    const account = generateSchemaData(PersistedSandboxAccountSchema, {
       status: "Quarantine",
     });
     mockContext.organizationsTaggingService.updateStatusTag.mockRejectedValue(
@@ -173,7 +173,7 @@ describe("InnovationSandbox.retryCleanup()", () => {
   test("rejects when an active (non-expired) resourceLock is held by another execution", async () => {
     // A live lock means a cleanup execution is already running; dispatching a
     // second CleanAccountRequest would let two executions race on the account.
-    const account = generateSchemaData(SandboxAccountSchema, {
+    const account = generateSchemaData(PersistedSandboxAccountSchema, {
       status: "CleanUp",
       resourceLock: {
         ownerId: "arn:aws:states:us-east-1:111122223333:execution:running",
@@ -192,7 +192,7 @@ describe("InnovationSandbox.retryCleanup()", () => {
   test("allows retry when the resourceLock has expired (stuck execution recovery)", async () => {
     // An expired lock is exactly the stuck-cleanup case retryCleanup exists to
     // recover, so it must NOT be blocked.
-    const account = generateSchemaData(SandboxAccountSchema, {
+    const account = generateSchemaData(PersistedSandboxAccountSchema, {
       status: "CleanUp",
       resourceLock: {
         ownerId: "arn:aws:states:us-east-1:111122223333:execution:dead",

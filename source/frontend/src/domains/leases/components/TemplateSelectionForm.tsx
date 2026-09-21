@@ -1,16 +1,6 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { LeaseTemplate } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template";
-import { BlueprintName } from "@amzn/innovation-sandbox-frontend/components/BlueprintName";
-import { Divider } from "@amzn/innovation-sandbox-frontend/components/Divider";
-import { ErrorPanel } from "@amzn/innovation-sandbox-frontend/components/ErrorPanel";
-import CardsField from "@amzn/innovation-sandbox-frontend/components/FormFields/CardsField";
-import { Loader } from "@amzn/innovation-sandbox-frontend/components/Loader";
-import { SharingStatusIndicator } from "@amzn/innovation-sandbox-frontend/components/SharingStatusIndicator";
-import { VisibilityIndicator } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/components/VisibilityIndicator";
-import { useGetLeaseTemplates } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/hooks";
-import { formatCurrency } from "@amzn/innovation-sandbox-frontend/helpers/util";
 import {
   Alert,
   Box,
@@ -26,13 +16,28 @@ import { Duration } from "luxon";
 import { useEffect, useMemo, useState } from "react";
 import { useFormContext } from "react-hook-form";
 
+import { BlueprintName } from "@amzn/innovation-sandbox-frontend/components/BlueprintName";
+import { Divider } from "@amzn/innovation-sandbox-frontend/components/Divider";
+import { ErrorPanel } from "@amzn/innovation-sandbox-frontend/components/ErrorPanel";
+import CardsField from "@amzn/innovation-sandbox-frontend/components/FormFields/CardsField";
+import { Loader } from "@amzn/innovation-sandbox-frontend/components/Loader";
+import { SharingStatusIndicator } from "@amzn/innovation-sandbox-frontend/components/SharingStatusIndicator";
+import { VisibilityIndicator } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/components/VisibilityIndicator";
+import { useGetLeaseTemplates } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/hooks";
+import { LeaseTemplateView } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/model";
+import { formatCurrency } from "@amzn/innovation-sandbox-frontend/helpers/util";
+
 interface TemplateSelectionFormProps {
   label?: string;
 }
 
 const LEASE_TEMPLATES_PER_PAGE = 12;
 
-const LeaseTemplateCardContent = ({ option }: { option: LeaseTemplate }) => (
+const LeaseTemplateCardContent = ({
+  option,
+}: {
+  option: LeaseTemplateView;
+}) => (
   <Box>
     <Divider />
     <KeyValuePairs
@@ -211,7 +216,7 @@ export const TemplateSelectionForm = ({
             No lease templates match your search term. Try a different search.
           </Alert>
         ) : (
-          <CardsField<LeaseTemplate, any, "leaseTemplateUuid">
+          <CardsField<LeaseTemplateView, any, "leaseTemplateUuid">
             controllerProps={{
               control,
               name: "leaseTemplateUuid",

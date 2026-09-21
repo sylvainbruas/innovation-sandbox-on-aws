@@ -4,8 +4,8 @@
 import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { DesiredAssignmentWithDisplay } from "@amzn/innovation-sandbox-commons/data/lease/lease";
 import { PendingAssignmentsList } from "@amzn/innovation-sandbox-frontend/domains/leases/components/PendingAssignmentsList";
+import { DesiredAssignmentWithDisplay } from "@amzn/innovation-sandbox-shared/types/lease.js";
 
 describe("PendingAssignmentsList", () => {
   it("renders nothing when there are no desiredAssignments", () => {

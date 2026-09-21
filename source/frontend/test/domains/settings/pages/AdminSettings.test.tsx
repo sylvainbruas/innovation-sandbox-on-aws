@@ -45,6 +45,11 @@ const findSaveButtonForSection = (headingText: string) =>
   findSectionContainer(headingText)?.findFooter()?.findButton()?.getElement() ??
   null;
 
+const findAllSaveButtons = () =>
+  // Six SectionForms resolve authorization independently; under full-suite CI
+  // load that can exceed Testing Library's one-second default async timeout.
+  screen.findAllByRole("button", { name: /save/i }, { timeout: 5_000 });
+
 const clickSaveForSection = async (headingText: string) => {
   // The Save button only renders once SectionForm resolves the user role to
   // Admin (it shows a loader first), so wait for it before clicking.
@@ -136,7 +141,7 @@ describe("AdminSettings", () => {
     // SectionForm shows a loader until the user role resolves, and the finish
     // -setup/header content settles with it. Admin gets one Save button per
     // section (6).
-    const saveButtons = await screen.findAllByRole("button", { name: /save/i });
+    const saveButtons = await findAllSaveButtons();
     expect(saveButtons).toHaveLength(SECTION_HEADINGS.length);
 
     // The six editable sections live on eager-rendered tabs, so all of their
@@ -664,8 +669,7 @@ describe("AdminSettings", () => {
     const lastHelpFile = (setTools: ReturnType<typeof vi.fn>) =>
       (
         setTools.mock.calls[setTools.mock.calls.length - 1]?.[0] as
-          | { props: { file: string } }
-          | undefined
+          { props: { file: string } } | undefined
       )?.props.file;
 
     const mockSetTools = () => {
@@ -819,7 +823,7 @@ describe("AdminSettings", () => {
       renderPage();
 
       // Wait for the admin form to resolve.
-      await screen.findAllByRole("button", { name: /save/i });
+      await findAllSaveButtons();
 
       const footer = findSectionContainer("Lease Policies")?.findFooter();
       expect(footer).not.toBeNull();

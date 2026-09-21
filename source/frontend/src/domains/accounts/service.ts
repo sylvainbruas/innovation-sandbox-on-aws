@@ -1,37 +1,32 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { SandboxAccount } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
 import {
-  CleanupReport,
-  UnregisteredAccount,
-} from "@amzn/innovation-sandbox-frontend/domains/accounts/types";
-import {
-  ApiProxy,
-  IApiProxy,
-} from "@amzn/innovation-sandbox-frontend/helpers/ApiProxy";
+  SandboxAccountView,
+  UnregisteredAccountView,
+} from "@amzn/innovation-sandbox-frontend/domains/accounts/model";
+import { CleanupReportView } from "@amzn/innovation-sandbox-frontend/domains/accounts/types";
+import { registerApiSingletonReset } from "@amzn/innovation-sandbox-frontend/helpers/apiSingletons";
 import { ApiPaginatedResult } from "@amzn/innovation-sandbox-frontend/types";
 
+import {
+  createAccountClient,
+  SmithyAccountApi,
+  SmithyAccountClient,
+} from "./smithy-client";
+
 export class AccountService {
-  private api: IApiProxy;
+  constructor(private readonly api: SmithyAccountApi) {}
 
-  constructor(apiProxy?: IApiProxy) {
-    this.api = apiProxy ?? new ApiProxy();
-  }
-
-  async getAccounts(): Promise<SandboxAccount[]> {
-    let allAccounts: SandboxAccount[] = [];
+  async getAccounts(): Promise<SandboxAccountView[]> {
+    let allAccounts: SandboxAccountView[] = [];
     let nextPageIdentifier: string | null = null;
 
     // keep calling the API until all accounts are collected
     do {
-      const url: string = nextPageIdentifier
-        ? `/accounts?pageIdentifier=${nextPageIdentifier}`
-        : "/accounts";
-
-      const response =
-        await this.api.get<ApiPaginatedResult<SandboxAccount>>(url);
-
+      const response = await this.api.listAccounts(
+        nextPageIdentifier ?? undefined,
+      );
       allAccounts = [...allAccounts, ...response.result];
       nextPageIdentifier = response.nextPageIdentifier;
     } while (nextPageIdentifier !== null);
@@ -39,55 +34,53 @@ export class AccountService {
     return allAccounts;
   }
 
-  async getUnregisteredAccounts(): Promise<UnregisteredAccount[]> {
-    let allAccounts: UnregisteredAccount[] = [];
+  async getUnregisteredAccounts(): Promise<UnregisteredAccountView[]> {
+    let allAccounts: UnregisteredAccountView[] = [];
     let nextPageIdentifier: string | null = null;
 
     // keep calling the API until all accounts are collected
     do {
-      const url: string = nextPageIdentifier
-        ? `/accounts/unregistered?pageIdentifier=${encodeURIComponent(nextPageIdentifier)}`
-        : "/accounts/unregistered";
-
-      const response =
-        await this.api.get<ApiPaginatedResult<UnregisteredAccount>>(url);
-
+      const response = await this.api.listUnregisteredAccounts(
+        nextPageIdentifier ?? undefined,
+      );
       allAccounts = [...allAccounts, ...response.result];
       nextPageIdentifier = response.nextPageIdentifier;
-    } while (nextPageIdentifier !== null && nextPageIdentifier !== undefined);
+    } while (nextPageIdentifier !== null);
 
     return allAccounts;
   }
 
-  async getAccountById(id: string): Promise<SandboxAccount> {
-    const accounts = await this.api.get<SandboxAccount>(`/accounts/${id}`);
-    return accounts;
+  async getAccountById(id: string): Promise<SandboxAccountView> {
+    return this.api.getAccount(id);
   }
 
   async addAccount(awsAccountId: string): Promise<void> {
-    await this.api.post(`/accounts`, { awsAccountId });
+    await this.api.registerAccount(awsAccountId);
   }
 
   async ejectAccount(awsAccountId: string): Promise<void> {
-    await this.api.post(`/accounts/${awsAccountId}/eject`);
+    await this.api.ejectAccount(awsAccountId);
   }
 
   async cleanupAccount(awsAccountId: string): Promise<void> {
-    await this.api.post(`/accounts/${awsAccountId}/retryCleanup`);
+    await this.api.retryCleanup(awsAccountId);
   }
 
   async quarantineAccount(awsAccountId: string): Promise<void> {
-    await this.api.post(`/accounts/${awsAccountId}/quarantine`);
+    await this.api.quarantineAccount(awsAccountId);
   }
 
   async getLatestCleanupReport(
     accountId: string,
-  ): Promise<CleanupReport | null> {
+  ): Promise<CleanupReportView | null> {
     try {
-      const response = await this.api.get<{
-        result: CleanupReport[];
-        nextPageIdentifier: string | null;
-      }>(`/accounts/${accountId}/cleanup-reports?maxResults=1`);
+      // Matches the pre-Smithy `?maxResults=1` single-report fetch; any failure
+      // (including a missing envelope) collapses to null as it did before.
+      const response = await this.api.listCleanupReports(
+        accountId,
+        undefined,
+        1,
+      );
       return response.result[0] ?? null;
     } catch {
       return null;
@@ -97,20 +90,25 @@ export class AccountService {
   async getCleanupReports(
     accountId: string,
     pageIdentifier?: string,
-  ): Promise<{ result: CleanupReport[]; nextPageIdentifier: string | null }> {
-    const params = new URLSearchParams();
-    if (pageIdentifier) {
-      params.set("pageIdentifier", pageIdentifier);
-    }
-    const query = params.toString();
-    const url = `/accounts/${accountId}/cleanup-reports${query ? `?${query}` : ""}`;
-    return await this.api.get<{
-      result: CleanupReport[];
-      nextPageIdentifier: string | null;
-    }>(url);
+  ): Promise<ApiPaginatedResult<CleanupReportView>> {
+    return this.api.listCleanupReports(accountId, pageIdentifier);
   }
 
   async skipCooldown(awsAccountId: string): Promise<void> {
-    await this.api.post(`/accounts/${awsAccountId}/skipCooldown`);
+    await this.api.skipCooldown(awsAccountId);
   }
 }
+
+let accountService: AccountService | undefined;
+
+// Lazily-initialized singleton.
+export function getAccountService(): AccountService {
+  accountService ??= new AccountService(
+    new SmithyAccountClient(createAccountClient()),
+  );
+  return accountService;
+}
+
+registerApiSingletonReset(() => {
+  accountService = undefined;
+});

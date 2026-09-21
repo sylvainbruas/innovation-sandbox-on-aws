@@ -2,8 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 /**
- * Browser-safe equivalent of `base64EncodeCompositeKey` from
- * `@amzn/innovation-sandbox-commons/data/encoding.js`.
+ * Browser-safe composite-key encoder for API URLs.
  *
  * Encodes a composite key object as a base64url string for use in API URLs.
  * Uses TextEncoder to handle UTF-8 correctly (unlike raw btoa which only

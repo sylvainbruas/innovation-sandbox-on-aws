@@ -2,14 +2,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
-  Blueprint,
-  BlueprintWithStackSets,
-  DeploymentHistory,
-  StackSet,
-  StackSetConfig,
-} from "@amzn/innovation-sandbox-frontend/domains/blueprints/types";
+  BlueprintView,
+  BlueprintWithStackSetsView,
+  DeploymentHistoryView,
+  StackSetConfigView,
+  StackSetView,
+} from "@amzn/innovation-sandbox-frontend/domains/blueprints/model";
 
-export function createBlueprint(overrides?: Partial<Blueprint>): Blueprint {
+export function createBlueprint(
+  overrides?: Partial<BlueprintView>,
+): BlueprintView {
   const now = new Date().toISOString();
   return {
     blueprintId: "12345678-1234-4234-8234-123456789012",
@@ -33,8 +35,8 @@ export function createBlueprint(overrides?: Partial<Blueprint>): Blueprint {
 }
 
 export function createStackSetConfig(
-  overrides?: Partial<StackSetConfig>,
-): StackSetConfig {
+  overrides?: Partial<StackSetConfigView>,
+): StackSetConfigView {
   const now = new Date().toISOString();
   return {
     blueprintId: "12345678-1234-4234-8234-123456789012",
@@ -63,8 +65,8 @@ export function createStackSetConfig(
 }
 
 export function createDeploymentHistory(
-  overrides?: Partial<DeploymentHistory>,
-): DeploymentHistory {
+  overrides?: Partial<DeploymentHistoryView>,
+): DeploymentHistoryView {
   const now = new Date().toISOString();
   return {
     stackSetId: "12345678-1234-4234-8234-123456789013",
@@ -80,8 +82,8 @@ export function createDeploymentHistory(
 }
 
 export function createBlueprintWithStackSets(
-  overrides?: Partial<BlueprintWithStackSets>,
-): BlueprintWithStackSets {
+  overrides?: Partial<BlueprintWithStackSetsView>,
+): BlueprintWithStackSetsView {
   const blueprint = createBlueprint();
   const stackSets = [createStackSetConfig()];
   const recentDeployments = [
@@ -101,7 +103,9 @@ export function createBlueprintWithStackSets(
   };
 }
 
-export function createStackSet(overrides?: Partial<StackSet>): StackSet {
+export function createStackSet(
+  overrides?: Partial<StackSetView>,
+): StackSetView {
   return {
     stackSetName: "TestStackSet",
     stackSetId: "12345678-1234-4234-8234-123456789013",

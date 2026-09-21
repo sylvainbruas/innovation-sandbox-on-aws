@@ -1,20 +1,20 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { UseQueryResult } from "@tanstack/react-query";
-import { Duration } from "luxon";
-
 import { MultiselectProps } from "@cloudscape-design/components";
 import { BoxProps } from "@cloudscape-design/components/box";
 import { IconProps } from "@cloudscape-design/components/icon";
+import { UseQueryResult } from "@tanstack/react-query";
+import { Duration } from "luxon";
+
+import { BlueprintView } from "@amzn/innovation-sandbox-frontend/domains/blueprints/model";
+import { RegionConcurrencyType } from "@amzn/innovation-sandbox-shared/types/blueprint";
 
 import {
-  Blueprint,
   BlueprintDetailResponse,
   DEPLOYMENT_STRATEGY_CONFIGS,
   DeploymentConfig,
   DeploymentStrategy,
-  RegionConcurrencyType,
 } from "./types";
 
 export interface DeploymentStatusConfig {
@@ -95,10 +95,10 @@ export const generateBreadcrumb = (
  * Success rate = totalSuccessfulCount / totalDeploymentCount
  */
 export const deploymentSuccessRateSortingComparator = (
-  a: Blueprint,
-  b: Blueprint,
+  a: BlueprintView,
+  b: BlueprintView,
 ): number => {
-  const getSuccessRate = (blueprint: Blueprint): number => {
+  const getSuccessRate = (blueprint: BlueprintView): number => {
     const { totalDeploymentCount, totalSuccessfulCount } =
       blueprint.totalHealthMetrics;
     return totalDeploymentCount > 0

@@ -22,9 +22,9 @@ import {
 } from "@amzn/innovation-sandbox-commons/data/blueprint/blueprint-dynamodb-keys.js";
 import { type BlueprintStore } from "@amzn/innovation-sandbox-commons/data/blueprint/blueprint-store.js";
 import {
-  type BlueprintItem,
-  type BlueprintWithStackSets,
-  type StackSetItem,
+  type PersistedBlueprintItem,
+  type PersistedBlueprintWithStackSets,
+  type PersistedStackSetItem,
 } from "@amzn/innovation-sandbox-commons/data/blueprint/blueprint.js";
 import { type LeaseTemplateStore } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template-store.js";
 import { searchableBlueprintProperties } from "@amzn/innovation-sandbox-commons/observability/logging.js";
@@ -92,7 +92,7 @@ export class BlueprintDeploymentService {
       createdBy: string;
     },
     blueprintStore: BlueprintStore,
-  ): Promise<BlueprintItem> {
+  ): Promise<PersistedBlueprintItem> {
     const {
       name,
       stackSetId,
@@ -124,7 +124,7 @@ export class BlueprintDeploymentService {
 
     const blueprintId = randomUUID();
 
-    const blueprint: BlueprintItem = {
+    const blueprint: PersistedBlueprintItem = {
       PK: generateBlueprintPK(blueprintId),
       SK: BLUEPRINT_SK,
       itemType: "BLUEPRINT",
@@ -146,7 +146,7 @@ export class BlueprintDeploymentService {
       );
     }
 
-    const stackSetItem: StackSetItem = {
+    const stackSetItem: PersistedStackSetItem = {
       PK: generateBlueprintPK(blueprintId),
       SK: generateStackSetSK(stackSetId),
       itemType: "STACKSET",
@@ -181,7 +181,7 @@ export class BlueprintDeploymentService {
 
   async unregisterBlueprint(
     props: {
-      blueprint: BlueprintItem;
+      blueprint: PersistedBlueprintItem;
     },
     blueprintStore: BlueprintStore,
     leaseTemplateStore: LeaseTemplateStore,
@@ -377,7 +377,7 @@ export class BlueprintDeploymentService {
   async validateBlueprintForDeployment(
     blueprintId: string,
     blueprintStore: BlueprintStore,
-  ): Promise<BlueprintWithStackSets> {
+  ): Promise<PersistedBlueprintWithStackSets> {
     const blueprintResult = await blueprintStore.get(blueprintId);
 
     if (!blueprintResult.result) {

@@ -1,6 +1,16 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+import { Table } from "@aws-northstar/ui";
+import {
+  Alert,
+  Button,
+  Header,
+  SpaceBetween,
+} from "@cloudscape-design/components";
+import { useQueryClient } from "@tanstack/react-query";
+import { useEffect, useState } from "react";
+
 import { useAppLayoutContext } from "@amzn/innovation-sandbox-frontend/components/AppLayout/AppLayoutContext";
 import { ContentLayout } from "@amzn/innovation-sandbox-frontend/components/ContentLayout";
 import { InfoLink } from "@amzn/innovation-sandbox-frontend/components/InfoLink";
@@ -14,18 +24,9 @@ import {
   useAddAccount,
   useGetUnregisteredAccounts,
 } from "@amzn/innovation-sandbox-frontend/domains/accounts/hooks";
-import { UnregisteredAccount } from "@amzn/innovation-sandbox-frontend/domains/accounts/types";
+import { UnregisteredAccountView } from "@amzn/innovation-sandbox-frontend/domains/accounts/model";
 import { useBreadcrumb } from "@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb";
 import { useModal } from "@amzn/innovation-sandbox-frontend/hooks/useModal";
-import { Table } from "@aws-northstar/ui";
-import {
-  Alert,
-  Button,
-  Header,
-  SpaceBetween,
-} from "@cloudscape-design/components";
-import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
 
 export const AddAccounts = () => {
   const { setTools } = useAppLayoutContext();
@@ -41,7 +42,7 @@ export const AddAccounts = () => {
   const { mutateAsync: addAccount } = useAddAccount({ skipInvalidation: true });
 
   const [selectedAccounts, setSelectedAccounts] = useState<
-    UnregisteredAccount[]
+    UnregisteredAccountView[]
   >([]);
 
   const { showModal } = useModal();
@@ -76,7 +77,7 @@ export const AddAccounts = () => {
               This action cannot be undone!
             </Alert>
           }
-          onSubmit={async (account: UnregisteredAccount) => {
+          onSubmit={async (account: UnregisteredAccountView) => {
             await addAccount(account.Id);
             deselectAccount(account.Id);
           }}
@@ -107,17 +108,17 @@ export const AddAccounts = () => {
 
   const columnDefinitions = [
     {
-      cell: (account: UnregisteredAccount) => account.Id,
+      cell: (account: UnregisteredAccountView) => account.Id,
       header: "AWS Account ID",
       id: "Id",
     },
     {
-      cell: (account: UnregisteredAccount) => account.Email,
+      cell: (account: UnregisteredAccountView) => account.Email,
       header: "Email",
       id: "Email",
     },
     {
-      cell: (account: UnregisteredAccount) => account.Name,
+      cell: (account: UnregisteredAccountView) => account.Name,
       header: "Name",
       id: "Name",
     },

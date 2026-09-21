@@ -35,20 +35,17 @@ export class IsbSandboxAccountResources {
       // Confused deputy is mitigated by the ProtectIsbControlPlaneResources SCP on
       // sandboxOu, which denies all actions on ISB role resources from non-ISB principals.
       assumedBy: new CompositePrincipal(
-        new PrincipalWithConditions(
-          new AccountPrincipal(props.hubAccountId),
-          {
-            ArnEquals: {
-              "aws:PrincipalArn": Stack.of(scope).formatArn({
-                service: "iam",
-                resource: "role",
-                region: "",
-                account: props.hubAccountId,
-                resourceName: getIntermediateRoleName(props.namespace),
-              }),
-            },
+        new PrincipalWithConditions(new AccountPrincipal(props.hubAccountId), {
+          ArnEquals: {
+            "aws:PrincipalArn": Stack.of(scope).formatArn({
+              service: "iam",
+              resource: "role",
+              region: "",
+              account: props.hubAccountId,
+              resourceName: getIntermediateRoleName(props.namespace),
+            }),
           },
-        ),
+        }),
         new ServicePrincipal("cloudformation.amazonaws.com"),
       ),
       inlinePolicies: {

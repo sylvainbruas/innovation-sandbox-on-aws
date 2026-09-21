@@ -11,6 +11,40 @@ import { execSync } from "child_process";
 import fs from "fs";
 import path from "path";
 
+const CLOUDFORMATION_TEMPLATE_LIMIT_BYTES = 1_000_000;
+const CLOUDFORMATION_TEMPLATE_WARNING_BYTES = 900_000;
+
+// CloudFormation rejects templates larger than 1,000,000 bytes. CDK emits
+// pretty-printed JSON, so reserializing without indentation removes only
+// insignificant whitespace; it does not remove or restructure resources. The
+// reported local file size is advisory because packaging is the final authority.
+export function compactCloudFormationTemplates(outDir: string): void {
+  const templateFiles = fs
+    .readdirSync(outDir)
+    .filter((file) => file.endsWith(".template.json"));
+  templateFiles.forEach((file) => {
+    const templatePath = path.join(outDir, file);
+    const template = JSON.parse(fs.readFileSync(templatePath, "utf8"));
+    const compacted = JSON.stringify(template, null, 0);
+    fs.writeFileSync(templatePath, compacted);
+
+    const sizeBytes = fs.statSync(templatePath).size;
+    const lineCount = compacted.split("\n").length;
+    console.log(
+      `${file} compacted size: ${sizeBytes} bytes (${lineCount} line${lineCount === 1 ? "" : "s"})`,
+    );
+    if (sizeBytes > CLOUDFORMATION_TEMPLATE_LIMIT_BYTES) {
+      console.error(
+        `CRITICAL WARNING: ${file} exceeds CloudFormation's ${CLOUDFORMATION_TEMPLATE_LIMIT_BYTES}-byte template limit after compaction. CloudFormation may reject the packaged template.`,
+      );
+    } else if (sizeBytes >= CLOUDFORMATION_TEMPLATE_WARNING_BYTES) {
+      console.warn(
+        `WARNING: ${file} is approaching CloudFormation's ${CLOUDFORMATION_TEMPLATE_LIMIT_BYTES}-byte template limit.`,
+      );
+    }
+  });
+}
+
 interface SolutionsEngineeringSynthesizerProps extends DefaultStackSynthesizerProps {
   outdir: string;
 }
@@ -99,10 +133,10 @@ export class SolutionsEngineeringSynthesizer extends DefaultStackSynthesizer {
   }
 
   override synthesize(session: ISynthesisSession): void {
+    // super.synthesize writes this stack's template synchronously; post-process
+    // it here (idempotent, re-sweeps the whole outdir) rather than on a timer.
     super.synthesize(session);
-    // Wait (arbitrary 1 sec) for  the assembly to be written to disk
-    setTimeout(() => {
-      this.removeAwsLanguageExtensions(session);
-    }, 1000);
+    this.removeAwsLanguageExtensions(session);
+    compactCloudFormationTemplates(session.assembly.outdir);
   }
 }

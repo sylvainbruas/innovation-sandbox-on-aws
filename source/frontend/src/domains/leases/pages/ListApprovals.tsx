@@ -12,17 +12,12 @@ import { useQueryClient } from "@tanstack/react-query";
 import { DateTime } from "luxon";
 import { useEffect, useState } from "react";
 
-import { TextLink } from "@amzn/innovation-sandbox-frontend/components/TextLink";
-
-import {
-  LEASE_NOT_PENDING_REVIEW_ERROR,
-  LeaseWithLeaseId as Lease,
-} from "@amzn/innovation-sandbox-commons/data/lease/lease";
 import { useAppLayoutContext } from "@amzn/innovation-sandbox-frontend/components/AppLayout/AppLayoutContext";
 import { ContentLayout } from "@amzn/innovation-sandbox-frontend/components/ContentLayout";
 import { InfoLink } from "@amzn/innovation-sandbox-frontend/components/InfoLink";
 import { Markdown } from "@amzn/innovation-sandbox-frontend/components/Markdown";
 import { BatchActionReview } from "@amzn/innovation-sandbox-frontend/components/MultiSelectTableActionReview";
+import { TextLink } from "@amzn/innovation-sandbox-frontend/components/TextLink";
 import {
   showErrorToast,
   showSuccessToast,
@@ -31,10 +26,12 @@ import {
   useGetPendingApprovals,
   useReviewLease,
 } from "@amzn/innovation-sandbox-frontend/domains/leases/hooks";
-import { ApiError } from "@amzn/innovation-sandbox-frontend/helpers/ApiProxy";
+import { LeaseView } from "@amzn/innovation-sandbox-frontend/domains/leases/model";
+import { ApiError } from "@amzn/innovation-sandbox-frontend/helpers/apiError";
 import { createDateSortingComparator } from "@amzn/innovation-sandbox-frontend/helpers/date-sorting-comparator";
 import { useBreadcrumb } from "@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb";
 import { useModal } from "@amzn/innovation-sandbox-frontend/hooks/useModal";
+import { LEASE_NOT_PENDING_REVIEW_ERROR } from "@amzn/innovation-sandbox-shared/types/lease.js";
 
 /**
  * Drops selected rows no longer pending in the latest fetch so a batch review
@@ -42,26 +39,26 @@ import { useModal } from "@amzn/innovation-sandbox-frontend/hooks/useModal";
  * unchanged so the effect driving it doesn't loop.
  */
 export const reconcileSelectedRequests = (
-  selected: Lease[],
-  requests: Lease[],
-): Lease[] => {
+  selected: LeaseView[],
+  requests: LeaseView[],
+): LeaseView[] => {
   const pendingIds = new Set(requests.map((r) => r.leaseId));
   const reconciled = selected.filter((r) => pendingIds.has(r.leaseId));
   return reconciled.length === selected.length ? selected : reconciled;
 };
 
-const DateRequestedCell = ({ lease }: { lease: Lease }) =>
+const DateRequestedCell = ({ lease }: { lease: LeaseView }) =>
   lease.meta?.createdTime
     ? DateTime.fromISO(lease.meta.createdTime).toRelative()
     : undefined;
 
-const CommentsCell = ({ lease }: { lease: Lease }) => <>{lease.comments}</>;
+const CommentsCell = ({ lease }: { lease: LeaseView }) => <>{lease.comments}</>;
 
 const SharedPrincipalsCell = ({
   lease,
   includeLinks,
 }: {
-  lease: Lease;
+  lease: LeaseView;
   includeLinks: boolean;
 }) => {
   // desiredAssignments always includes the owner as the first entry,
@@ -83,7 +80,7 @@ const RequestorCell = ({
   lease,
   includeLinks,
 }: {
-  lease: Lease;
+  lease: LeaseView;
   includeLinks: boolean;
 }) =>
   includeLinks ? (
@@ -94,11 +91,11 @@ const RequestorCell = ({
 
 // Review modal content component
 type ReviewModalContentProps = {
-  selectedRequests: Lease[];
+  selectedRequests: LeaseView[];
   mode: "approve" | "deny";
   reviewLease: (params: { leaseId: string; approve: boolean }) => Promise<any>;
   queryClient: any;
-  setSelectedRequests: React.Dispatch<React.SetStateAction<Lease[]>>;
+  setSelectedRequests: React.Dispatch<React.SetStateAction<LeaseView[]>>;
 };
 
 const createColumnDefinitions = (includeLinks: boolean) => [
@@ -107,36 +104,36 @@ const createColumnDefinitions = (includeLinks: boolean) => [
     header: "Requested by",
     sortingField: "userEmail",
     cell: (
-      lease: Lease, // NOSONAR typescript:S6478 - the way the table component works requires defining component during render
+      lease: LeaseView, // NOSONAR typescript:S6478 - the way the table component works requires defining component during render
     ) => <RequestorCell lease={lease} includeLinks={includeLinks} />,
   },
   {
     id: "originalLeaseTemplateName",
     header: "Lease Template",
     sortingField: "originalLeaseTemplateName",
-    cell: (lease: Lease) => lease.originalLeaseTemplateName,
+    cell: (lease: LeaseView) => lease.originalLeaseTemplateName,
   },
   {
     id: "dateRequested",
     header: "Requested",
-    sortingComparator: createDateSortingComparator<Lease>(
+    sortingComparator: createDateSortingComparator<LeaseView>(
       (a) => a.meta?.createdTime,
     ),
-    cell: (lease: Lease) => <DateRequestedCell lease={lease} />, // NOSONAR typescript:S6478 - the way the table component works requires defining component during render
+    cell: (lease: LeaseView) => <DateRequestedCell lease={lease} />, // NOSONAR typescript:S6478 - the way the table component works requires defining component during render
   },
   {
     id: "comments",
     header: "Comments",
     sortingField: "comments",
-    cell: (lease: Lease) => <CommentsCell lease={lease} />, // NOSONAR typescript:S6478 - the way the table component works requires defining component during render
+    cell: (lease: LeaseView) => <CommentsCell lease={lease} />, // NOSONAR typescript:S6478 - the way the table component works requires defining component during render
   },
   {
     id: "sharedPrincipals",
     header: "Shared with",
-    sortingComparator: (a: Lease, b: Lease) =>
+    sortingComparator: (a: LeaseView, b: LeaseView) =>
       Math.max(0, (a.desiredAssignments?.length ?? 0) - 1) -
       Math.max(0, (b.desiredAssignments?.length ?? 0) - 1),
-    cell: (lease: Lease) => (
+    cell: (lease: LeaseView) => (
       <SharedPrincipalsCell lease={lease} includeLinks={includeLinks} />
     ), // NOSONAR typescript:S6478 - the way the table component works requires defining component during render
   },
@@ -156,7 +153,7 @@ const ReviewModalContent = ({
       columnDefinitions={createColumnDefinitions(false)}
       identifierKey="leaseId"
       sequential
-      onSubmit={async (lease: Lease) => {
+      onSubmit={async (lease: LeaseView) => {
         try {
           await reviewLease({
             leaseId: lease.leaseId,
@@ -165,13 +162,11 @@ const ReviewModalContent = ({
         } catch (error) {
           // Already reviewed elsewhere: treat this benign 409 as done so the
           // batch doesn't error and prompt a redundant re-review.
-          if (
-            !(
-              error instanceof ApiError &&
-              error.statusCode === 409 &&
-              error.message === LEASE_NOT_PENDING_REVIEW_ERROR
-            )
-          ) {
+          if (!(
+            error instanceof ApiError &&
+            error.statusCode === 409 &&
+            error.message === LEASE_NOT_PENDING_REVIEW_ERROR
+          )) {
             throw error;
           }
         }
@@ -212,7 +207,7 @@ export const ListApprovals = () => {
   const queryClient = useQueryClient();
 
   // state
-  const [selectedRequests, setSelectedRequests] = useState<Lease[]>([]);
+  const [selectedRequests, setSelectedRequests] = useState<LeaseView[]>([]);
 
   // api hooks
   const { data: requests, isFetching, refetch } = useGetPendingApprovals();
@@ -250,7 +245,7 @@ export const ListApprovals = () => {
   };
 
   const handleSelectionChange = ({ detail }: { detail: any }) => {
-    const approvals = detail.selectedItems as Lease[];
+    const approvals = detail.selectedItems as LeaseView[];
     setSelectedRequests(approvals);
   };
 

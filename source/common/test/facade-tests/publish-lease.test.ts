@@ -4,9 +4,9 @@
 import { ConstraintViolationException } from "@aws-sdk/client-organizations";
 
 import { ResourceLockConflictError } from "@amzn/innovation-sandbox-commons/data/errors.js";
-import { MonitoredLeaseSchema } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
+import { PersistedMonitoredLeaseSchema } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import { PrincipalStore } from "@amzn/innovation-sandbox-commons/data/principal/principal-store.js";
-import { PrincipalCacheItemSchema } from "@amzn/innovation-sandbox-commons/data/principal/principal.js";
+import { PersistedPrincipalCacheItemSchema } from "@amzn/innovation-sandbox-commons/data/principal/principal.js";
 import {
   InnovationSandbox,
   M2mAssigneeNotAllowedError,
@@ -24,7 +24,7 @@ import {
   type IdcIdentity,
   IdcIdentitySchema,
   buildM2mSyntheticEmail,
-} from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
+} from "@amzn/innovation-sandbox-shared/utils/auth-utils.js";
 import { Logger } from "@aws-lambda-powertools/logger";
 import { Tracer } from "@aws-lambda-powertools/tracer";
 import { randomUUID } from "crypto";
@@ -83,7 +83,7 @@ describe("InnovationSandbox.publishLease()", () => {
     mockContext.principalStore.batchGetCacheItems.mockImplementation(
       async (keys) =>
         keys.map((k) =>
-          generateSchemaData(PrincipalCacheItemSchema, {
+          generateSchemaData(PersistedPrincipalCacheItemSchema, {
             sk: `${k.principalType.toLowerCase()}#${k.principalId}`,
             principalId: k.principalId,
             principalType: k.principalType,
@@ -109,7 +109,7 @@ describe("InnovationSandbox.publishLease()", () => {
   });
 
   test("Rejects an M2M-assignee lease with a logged error (defense-in-depth)", async () => {
-    const lease = generateSchemaData(MonitoredLeaseSchema, {
+    const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
       status: "Active",
       userEmail: buildM2mSyntheticEmail("some-client", "Admin"),
       desiredAssignments: undefined,
@@ -131,7 +131,7 @@ describe("InnovationSandbox.publishLease()", () => {
   });
 
   test("should request async assignment processing and send LeaseApprovedEvent for Active lease", async () => {
-    const lease = generateSchemaData(MonitoredLeaseSchema, {
+    const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
       status: "Active",
       userEmail: mockUser.email,
       approvedBy: "manager@example.com",
@@ -220,28 +220,28 @@ describe("InnovationSandbox.publishLease()", () => {
       { principalId: groupPrincipalId, principalType: "GROUP" as const },
       { principalId: userPrincipalId, principalType: "USER" as const },
     ];
-    const lease = generateSchemaData(MonitoredLeaseSchema, {
+    const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
       status: "Active",
       userEmail: mockUser.email,
       desiredAssignments: preApproval,
     });
 
     mockContext.principalStore.batchGetCacheItems.mockResolvedValue([
-      generateSchemaData(PrincipalCacheItemSchema, {
+      generateSchemaData(PersistedPrincipalCacheItemSchema, {
         sk: `group#${groupPrincipalId}`,
         principalId: groupPrincipalId,
         principalType: "GROUP",
         displayName: "Engineering Group",
         email: undefined,
       }),
-      generateSchemaData(PrincipalCacheItemSchema, {
+      generateSchemaData(PersistedPrincipalCacheItemSchema, {
         sk: `user#${userPrincipalId}`,
         principalId: userPrincipalId,
         principalType: "USER",
         displayName: "Pre-Approved User",
         email: "preapproved@example.com",
       }),
-      generateSchemaData(PrincipalCacheItemSchema, {
+      generateSchemaData(PersistedPrincipalCacheItemSchema, {
         sk: `user#${mockUser.userId}`,
         principalId: mockUser.userId,
         principalType: "USER",
@@ -295,21 +295,21 @@ describe("InnovationSandbox.publishLease()", () => {
       },
       { principalId: otherUserId, principalType: "USER" as const },
     ];
-    const lease = generateSchemaData(MonitoredLeaseSchema, {
+    const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
       status: "Active",
       userEmail: mockUser.email,
       desiredAssignments: preApproval,
     });
 
     mockContext.principalStore.batchGetCacheItems.mockResolvedValue([
-      generateSchemaData(PrincipalCacheItemSchema, {
+      generateSchemaData(PersistedPrincipalCacheItemSchema, {
         sk: `user#${mockUser.userId}`,
         principalId: mockUser.userId,
         principalType: "USER",
         email: mockUser.email,
         displayName: mockUser.displayName,
       }),
-      generateSchemaData(PrincipalCacheItemSchema, {
+      generateSchemaData(PersistedPrincipalCacheItemSchema, {
         sk: `user#${otherUserId}`,
         principalId: otherUserId,
         principalType: "USER",
@@ -331,7 +331,7 @@ describe("InnovationSandbox.publishLease()", () => {
   });
 
   test("treats an empty desiredAssignments array the same as undefined (owner-only)", async () => {
-    const lease = generateSchemaData(MonitoredLeaseSchema, {
+    const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
       status: "Active",
       userEmail: mockUser.email,
       desiredAssignments: [],
@@ -362,7 +362,7 @@ describe("InnovationSandbox.publishLease()", () => {
   test("propagates an undefined IDC displayName onto the owner assignment", async () => {
     mockUser = { ...mockUser, displayName: undefined };
     mockContext.idcService.getUserFromEmail.mockResolvedValue(mockUser);
-    const lease = generateSchemaData(MonitoredLeaseSchema, {
+    const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
       status: "Active",
       userEmail: mockUser.email,
       desiredAssignments: undefined,
@@ -384,7 +384,7 @@ describe("InnovationSandbox.publishLease()", () => {
   });
 
   test("propagates ResourceLockConflictError without releasing the lock or emitting events", async () => {
-    const lease = generateSchemaData(MonitoredLeaseSchema, {
+    const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
       status: "Active",
       userEmail: mockUser.email,
       desiredAssignments: undefined,
@@ -408,7 +408,7 @@ describe("InnovationSandbox.publishLease()", () => {
   });
 
   test("releases the lock with the same ownerId if publishing the AssignmentRequested event fails", async () => {
-    const lease = generateSchemaData(MonitoredLeaseSchema, {
+    const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
       status: "Active",
       userEmail: mockUser.email,
       desiredAssignments: undefined,
@@ -449,7 +449,7 @@ describe("InnovationSandbox.publishLease()", () => {
   });
 
   test("still propagates the original publish error when releaseLock cleanup also fails", async () => {
-    const lease = generateSchemaData(MonitoredLeaseSchema, {
+    const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
       status: "Active",
       userEmail: mockUser.email,
       desiredAssignments: undefined,
@@ -473,7 +473,7 @@ describe("InnovationSandbox.publishLease()", () => {
   });
 
   test("should update lease status from Provisioning to Active and set startDate/expirationDate", async () => {
-    const lease = generateSchemaData(MonitoredLeaseSchema, {
+    const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
       status: "Provisioning",
       userEmail: mockUser.email,
       leaseDurationInHours: 24,
@@ -494,7 +494,7 @@ describe("InnovationSandbox.publishLease()", () => {
   });
 
   test("should update lease to set startDate and expirationDate even if already Active", async () => {
-    const lease = generateSchemaData(MonitoredLeaseSchema, {
+    const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
       status: "Active",
       userEmail: mockUser.email,
       leaseDurationInHours: 24,
@@ -520,7 +520,7 @@ describe("InnovationSandbox.publishLease()", () => {
   });
 
   test("should log lease publication with searchable properties", async () => {
-    const lease = generateSchemaData(MonitoredLeaseSchema, {
+    const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
       status: "Active",
       userEmail: mockUser.email,
       approvedBy: "AUTO_APPROVED",
@@ -539,7 +539,7 @@ describe("InnovationSandbox.publishLease()", () => {
   });
 
   test("should throw error if user not found", async () => {
-    const lease = generateSchemaData(MonitoredLeaseSchema, {
+    const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
       userEmail: "nonexistent@example.com",
     });
 
@@ -551,7 +551,7 @@ describe("InnovationSandbox.publishLease()", () => {
   });
 
   test("calls applyLeaseTags with the published lease and the IDC userId", async () => {
-    const lease = generateSchemaData(MonitoredLeaseSchema, {
+    const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
       status: "Active",
       userEmail: mockUser.email,
       costReportGroup: "team-alpha",
@@ -575,7 +575,7 @@ describe("InnovationSandbox.publishLease()", () => {
   });
 
   test("classifies MAX_TAG_LIMIT_EXCEEDED as TagSpaceExhausted and still emits LeaseApprovedEvent", async () => {
-    const lease = generateSchemaData(MonitoredLeaseSchema, {
+    const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
       status: "Active",
       userEmail: mockUser.email,
     });
@@ -605,7 +605,7 @@ describe("InnovationSandbox.publishLease()", () => {
   });
 
   test("classifies a generic SDK error as ApiError and still emits LeaseApprovedEvent", async () => {
-    const lease = generateSchemaData(MonitoredLeaseSchema, {
+    const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
       status: "Active",
       userEmail: mockUser.email,
     });

@@ -10,12 +10,12 @@ import {
 import ToggleField from "@amzn/innovation-sandbox-frontend/components/FormFields/ToggleField";
 import { BooleanStatus } from "@amzn/innovation-sandbox-frontend/domains/settings/components/forms/BooleanStatus";
 import { SectionForm } from "@amzn/innovation-sandbox-frontend/domains/settings/components/forms/SectionForm";
-import { SectionData } from "@amzn/innovation-sandbox-frontend/domains/settings/service";
+import { ConfigurationSectionView } from "@amzn/innovation-sandbox-frontend/domains/settings/model";
 
 export function MaintenanceForm({
   data,
 }: {
-  data: SectionData<"maintenance">;
+  data: ConfigurationSectionView<"maintenance">;
 }) {
   // A never-saved section (lastSavedBy === null) is a fresh install. The schema
   // default is enabled: true (fail-closed), so the app starts in maintenance —

@@ -6,7 +6,10 @@ import {
   createItemWithMetadataSchema,
   createVersionRangeSchema,
 } from "@amzn/innovation-sandbox-commons/data/metadata.js";
-import { enumErrorMap } from "@amzn/innovation-sandbox-commons/utils/zod.js";
+import {
+  IdcPrincipalIdSchema,
+  IdcPrincipalSchema,
+} from "@amzn/innovation-sandbox-shared/types/principal.js";
 
 export const PrincipalSchemaVersion = 1;
 
@@ -19,13 +22,6 @@ const PrincipalItemWithMetadataSchema = createItemWithMetadataSchema(
   PrincipalSupportedVersionsSchema,
 );
 
-// Shared enums
-
-/** Distinguishes between user and group principals. */
-export const PrincipalTypeSchema = z.enum(["USER", "GROUP"], {
-  error: enumErrorMap,
-});
-
 const UUID_PATTERN =
   "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
 
@@ -33,16 +29,8 @@ const UUID_PATTERN =
 const IDC_PRINCIPAL_ID_PATTERN =
   "([0-9a-f]{10}-)?[A-Fa-f0-9]{8}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{4}-[A-Fa-f0-9]{12}";
 
-/** Validates an IDC principal ID (plain UUID or 10-char hex prefix + UUID). */
-export const IdcPrincipalIdSchema = z
-  .string()
-  .regex(
-    new RegExp(`^${IDC_PRINCIPAL_ID_PATTERN}$`),
-    "Must be a valid IDC principal ID",
-  );
-
 /** Direct user-to-lease assignment record. PK: `user#<userId>`, SK: `lease#<leaseId>`. */
-export const UserAssignmentSchema = z
+export const PersistedUserAssignmentSchema = z
   .object({
     pk: z
       .string()
@@ -71,7 +59,7 @@ export const UserAssignmentSchema = z
   .strict();
 
 /** Group-to-lease assignment record. PK: `group#<groupId>`, SK: `lease#<leaseId>`. */
-export const GroupAssignmentSchema = z
+export const PersistedGroupAssignmentSchema = z
   .object({
     pk: z
       .string()
@@ -106,14 +94,15 @@ export const GroupAssignmentSchema = z
   .strict();
 
 /** Validates the KEYS_ONLY projection of group-assignment records on the `GroupIndex` GSI. */
-export const GroupIndexProjectionSchema = GroupAssignmentSchema.pick({
-  pk: true,
-  sk: true,
-  groupId: true,
-});
+export const PersistedGroupIndexProjectionSchema =
+  PersistedGroupAssignmentSchema.pick({
+    pk: true,
+    sk: true,
+    groupId: true,
+  });
 
 /** Cached IDC group IDs for a user, refreshed lazily with 24h TTL. PK: `user#<userId>`, SK: `groupMembership`. */
-export const GroupMembershipCacheSchema = z
+export const PersistedGroupMembershipCacheSchema = z
   .object({
     pk: z
       .string()
@@ -128,24 +117,29 @@ export const GroupMembershipCacheSchema = z
   .merge(PrincipalItemWithMetadataSchema)
   .strict();
 
-export type PrincipalType = z.infer<typeof PrincipalTypeSchema>;
-export type UserAssignment = z.infer<typeof UserAssignmentSchema>;
-export type GroupAssignment = z.infer<typeof GroupAssignmentSchema>;
-export type GroupMembershipCache = z.infer<typeof GroupMembershipCacheSchema>;
+export type PersistedUserAssignment = z.infer<
+  typeof PersistedUserAssignmentSchema
+>;
+export type PersistedGroupAssignment = z.infer<
+  typeof PersistedGroupAssignmentSchema
+>;
+export type PersistedGroupMembershipCache = z.infer<
+  typeof PersistedGroupMembershipCacheSchema
+>;
 
 /** Union of user and group assignment records, discriminated on principalType. */
-export const AssignmentSchema = z.discriminatedUnion("principalType", [
-  UserAssignmentSchema,
-  GroupAssignmentSchema,
+export const PersistedAssignmentSchema = z.discriminatedUnion("principalType", [
+  PersistedUserAssignmentSchema,
+  PersistedGroupAssignmentSchema,
 ]);
-export type Assignment = z.infer<typeof AssignmentSchema>;
+export type PersistedAssignment = z.infer<typeof PersistedAssignmentSchema>;
 
 /** Union of all principal table item types. */
-export type PrincipalTableItem =
-  | UserAssignment
-  | GroupAssignment
-  | GroupMembershipCache
-  | PrincipalCacheItem;
+export type PersistedPrincipalTableItem =
+  | PersistedUserAssignment
+  | PersistedGroupAssignment
+  | PersistedGroupMembershipCache
+  | PersistedPrincipalCacheItem;
 
 /** Cached IDC principal for typeahead search. PK: `principalCache`, SK: `user#<userId>` or `group#<groupId>`. */
 export const PRINCIPAL_CACHE_PK = "principalCache" as const;
@@ -153,7 +147,7 @@ export const PRINCIPAL_CACHE_USER_SK_PREFIX = "user#" as const;
 export const PRINCIPAL_CACHE_GROUP_SK_PREFIX = "group#" as const;
 
 /** Schema for cached principal records synced hourly from Identity Store. */
-export const PrincipalCacheItemSchema = z
+export const PersistedPrincipalCacheItemSchema = z
   .object({
     pk: z.literal(PRINCIPAL_CACHE_PK),
     sk: z
@@ -164,14 +158,13 @@ export const PrincipalCacheItemSchema = z
         ),
         "sk must be 'user#' or 'group#' followed by a valid IDC principal ID",
       ),
-    principalId: IdcPrincipalIdSchema,
-    principalType: PrincipalTypeSchema,
-    displayName: z.string().min(1).optional(),
-    email: z.email().optional(),
+    ...IdcPrincipalSchema.shape,
     syncedAt: z.iso.datetime(),
     ttl: z.number().int().nonnegative(),
   })
   .merge(PrincipalItemWithMetadataSchema)
   .strict();
 
-export type PrincipalCacheItem = z.infer<typeof PrincipalCacheItemSchema>;
+export type PersistedPrincipalCacheItem = z.infer<
+  typeof PersistedPrincipalCacheItemSchema
+>;

@@ -15,20 +15,17 @@ import {
 } from "@amzn/innovation-sandbox-commons/data/errors.js";
 import { LeaseStore } from "@amzn/innovation-sandbox-commons/data/lease/lease-store.js";
 import {
-  type Lease,
-  LeaseKey,
-  type LeaseLockIntent,
-  type LeaseStatus,
-  MonitoredLease,
-  MonitoredLeaseSchema,
-  PendingLeaseSchema,
+  type PersistedLease,
+  PersistedMonitoredLease,
+  PersistedMonitoredLeaseSchema,
+  PersistedPendingLeaseSchema,
 } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import { PrincipalStore } from "@amzn/innovation-sandbox-commons/data/principal/principal-store.js";
 import {
-  Assignment,
-  GroupAssignmentSchema,
-  PrincipalCacheItemSchema,
-  UserAssignmentSchema,
+  PersistedAssignment,
+  PersistedGroupAssignmentSchema,
+  PersistedPrincipalCacheItemSchema,
+  PersistedUserAssignmentSchema,
 } from "@amzn/innovation-sandbox-commons/data/principal/principal.js";
 import { IdcService } from "@amzn/innovation-sandbox-commons/isb-services/idc-service.js";
 import {
@@ -45,6 +42,11 @@ import {
 import { IsbEventBridgeClient } from "@amzn/innovation-sandbox-commons/sdk-clients/event-bridge-client.js";
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
 import { now } from "@amzn/innovation-sandbox-commons/utils/time-utils.js";
+import {
+  LeaseKey,
+  type LeaseLockIntent,
+  type LeaseStatus,
+} from "@amzn/innovation-sandbox-shared/types/lease.js";
 
 import { randomUUID } from "node:crypto";
 
@@ -80,32 +82,41 @@ describe("triggerAssignmentProcessing", () => {
   const testCallerEmail = "admin@example.com";
   const testOwnerIdcId = "a1b2c3d4e5-550e8400-e29b-41d4-a716-446655440000";
 
-  const activeLease: MonitoredLease = generateSchemaData(MonitoredLeaseSchema, {
-    uuid: testLeaseId,
-    userEmail: testOwnerEmail,
-    status: "Active",
-    allowOwnerToShareLease: true,
-  });
+  const activeLease: PersistedMonitoredLease = generateSchemaData(
+    PersistedMonitoredLeaseSchema,
+    {
+      uuid: testLeaseId,
+      userEmail: testOwnerEmail,
+      status: "Active",
+      allowOwnerToShareLease: true,
+    },
+  );
 
-  const ownerAssignment: Assignment = generateSchemaData(UserAssignmentSchema, {
-    pk: `user#${testOwnerIdcId}`,
-    sk: `lease#${testLeaseId}`,
-    userId: testOwnerIdcId,
-    leaseId: testLeaseId,
-    assigneeEmail: testOwnerEmail,
-  });
+  const ownerAssignment: PersistedAssignment = generateSchemaData(
+    PersistedUserAssignmentSchema,
+    {
+      pk: `user#${testOwnerIdcId}`,
+      sk: `lease#${testLeaseId}`,
+      userId: testOwnerIdcId,
+      leaseId: testLeaseId,
+      assigneeEmail: testOwnerEmail,
+    },
+  );
 
-  const ownerCacheItem = generateSchemaData(PrincipalCacheItemSchema, {
+  const ownerCacheItem = generateSchemaData(PersistedPrincipalCacheItemSchema, {
     principalId: testOwnerIdcId,
     principalType: "USER",
     email: testOwnerEmail,
   });
 
-  const newUserCacheItem = generateSchemaData(PrincipalCacheItemSchema, {
-    principalId: "new-user-id",
-    principalType: "USER",
-    email: "newuser@example.com",
-  });
+  const newUserCacheItem = generateSchemaData(
+    PersistedPrincipalCacheItemSchema,
+    {
+      principalId: "new-user-id",
+      principalType: "USER",
+      email: "newuser@example.com",
+    },
+  );
 
   const services = {
     leaseStore: mockLeaseStore as any,
@@ -143,7 +154,7 @@ describe("triggerAssignmentProcessing", () => {
     it("should auto-inject owner when not included in desired assignments", async () => {
       const otherUserId = "b2c3d4e5f6-660e8400-e29b-41d4-a716-446655440099";
       mockPrincipalStore.batchGetCacheItems.mockResolvedValue([
-        generateSchemaData(PrincipalCacheItemSchema, {
+        generateSchemaData(PersistedPrincipalCacheItemSchema, {
           principalId: otherUserId,
           principalType: "USER",
           email: "other@example.com",
@@ -251,7 +262,7 @@ describe("triggerAssignmentProcessing", () => {
       // Mock enrichment to return matching items (+ the auto-injected owner)
       mockPrincipalStore.batchGetCacheItems.mockResolvedValue([
         ...assignments.map((a) =>
-          generateSchemaData(PrincipalCacheItemSchema, {
+          generateSchemaData(PersistedPrincipalCacheItemSchema, {
             principalId: a.principalId,
             principalType: a.principalType,
             email:
@@ -290,7 +301,7 @@ describe("triggerAssignmentProcessing", () => {
 
       mockPrincipalStore.batchGetCacheItems.mockResolvedValue([
         ...assignments.map((a) =>
-          generateSchemaData(PrincipalCacheItemSchema, {
+          generateSchemaData(PersistedPrincipalCacheItemSchema, {
             principalId: a.principalId,
             principalType: a.principalType,
             email:
@@ -406,7 +417,7 @@ describe("triggerAssignmentProcessing", () => {
     it("should throw when cache is missing email for USER principal", async () => {
       mockPrincipalStore.batchGetCacheItems.mockResolvedValue([
         ownerCacheItem,
-        generateSchemaData(PrincipalCacheItemSchema, {
+        generateSchemaData(PersistedPrincipalCacheItemSchema, {
           principalId: "no-email-user",
           principalType: "USER",
           email: undefined,
@@ -457,11 +468,14 @@ describe("triggerAssignmentProcessing", () => {
 
     it("should succeed when GROUP cache entry exists but has no displayName", async () => {
       // Group entry exists in cache but displayName is undefined (IDC didn't return one)
-      const groupWithoutName = generateSchemaData(PrincipalCacheItemSchema, {
-        principalId: "group-no-name",
-        principalType: "GROUP",
-        displayName: undefined,
-      });
+      const groupWithoutName = generateSchemaData(
+        PersistedPrincipalCacheItemSchema,
+        {
+          principalId: "group-no-name",
+          principalType: "GROUP",
+          displayName: undefined,
+        },
+      );
       mockPrincipalStore.batchGetCacheItems.mockResolvedValue([
         ownerCacheItem,
         groupWithoutName,
@@ -771,7 +785,7 @@ describe("getLeasesForUserDirect", () => {
   it("returns DIRECT-tagged leases with no sourceGroupName", async () => {
     mockPrincipalStore.getDirectAssignmentsForUser.mockResolvedValue({
       result: [
-        generateSchemaData(UserAssignmentSchema, {
+        generateSchemaData(PersistedUserAssignmentSchema, {
           userId,
           leaseId: directLeaseId,
           leaseOwnerEmail: directOwner,
@@ -780,7 +794,7 @@ describe("getLeasesForUserDirect", () => {
       nextPageIdentifier: null,
     });
     mockLeaseStore.batchGet.mockResolvedValue([
-      generateSchemaData(PendingLeaseSchema, {
+      generateSchemaData(PersistedPendingLeaseSchema, {
         userEmail: directOwner,
         uuid: directLeaseId,
       }),
@@ -819,7 +833,7 @@ describe("getLeasesForUserDirect", () => {
   it("passes pageIdentifier through to the principal store and returns its nextPageIdentifier as-is", async () => {
     mockPrincipalStore.getDirectAssignmentsForUser.mockResolvedValue({
       result: [
-        generateSchemaData(UserAssignmentSchema, {
+        generateSchemaData(PersistedUserAssignmentSchema, {
           userId,
           leaseId: directLeaseId,
           leaseOwnerEmail: directOwner,
@@ -828,7 +842,7 @@ describe("getLeasesForUserDirect", () => {
       nextPageIdentifier: "ddb-cursor-page-2",
     });
     mockLeaseStore.batchGet.mockResolvedValue([
-      generateSchemaData(PendingLeaseSchema, {
+      generateSchemaData(PersistedPendingLeaseSchema, {
         userEmail: directOwner,
         uuid: directLeaseId,
       }),
@@ -861,7 +875,7 @@ describe("getLeasesForUserDirect", () => {
   it("logs and skips entries when batchGet does not return a matching lease record", async () => {
     mockPrincipalStore.getDirectAssignmentsForUser.mockResolvedValue({
       result: [
-        generateSchemaData(UserAssignmentSchema, {
+        generateSchemaData(PersistedUserAssignmentSchema, {
           userId,
           leaseId: directLeaseId,
           leaseOwnerEmail: directOwner,
@@ -974,7 +988,7 @@ describe("getLeasesForUserViaGroups", () => {
       { groupId: groupA, leaseId },
     ]);
     mockPrincipalStore.batchGetGroupAssignments.mockResolvedValue([
-      generateSchemaData(GroupAssignmentSchema, {
+      generateSchemaData(PersistedGroupAssignmentSchema, {
         groupId: groupA,
         leaseId,
         leaseOwnerEmail,
@@ -982,7 +996,7 @@ describe("getLeasesForUserViaGroups", () => {
       }),
     ]);
     mockLeaseStore.batchGet.mockResolvedValue([
-      generateSchemaData(PendingLeaseSchema, {
+      generateSchemaData(PersistedPendingLeaseSchema, {
         userEmail: leaseOwnerEmail,
         uuid: leaseId,
       }),
@@ -1047,13 +1061,13 @@ describe("getLeasesForUserViaGroups", () => {
       { groupId: later, leaseId },
     ]);
     mockPrincipalStore.batchGetGroupAssignments.mockResolvedValue([
-      generateSchemaData(GroupAssignmentSchema, {
+      generateSchemaData(PersistedGroupAssignmentSchema, {
         groupId: earlier,
         leaseId,
         leaseOwnerEmail,
         displayName: "EarlyGroup",
       }),
-      generateSchemaData(GroupAssignmentSchema, {
+      generateSchemaData(PersistedGroupAssignmentSchema, {
         groupId: later,
         leaseId,
         leaseOwnerEmail,
@@ -1061,7 +1075,7 @@ describe("getLeasesForUserViaGroups", () => {
       }),
     ]);
     mockLeaseStore.batchGet.mockResolvedValue([
-      generateSchemaData(PendingLeaseSchema, {
+      generateSchemaData(PersistedPendingLeaseSchema, {
         userEmail: leaseOwnerEmail,
         uuid: leaseId,
       }),
@@ -1087,17 +1101,17 @@ describe("getLeasesForUserViaGroups", () => {
       { groupId: groupA, leaseId: lease3Id },
     ]);
     mockPrincipalStore.batchGetGroupAssignments.mockResolvedValue([
-      generateSchemaData(GroupAssignmentSchema, {
+      generateSchemaData(PersistedGroupAssignmentSchema, {
         groupId: groupA,
         leaseId: lease1Id,
         leaseOwnerEmail: lease1Owner,
       }),
-      generateSchemaData(GroupAssignmentSchema, {
+      generateSchemaData(PersistedGroupAssignmentSchema, {
         groupId: groupA,
         leaseId: lease2Id,
         leaseOwnerEmail: lease2Owner,
       }),
-      generateSchemaData(GroupAssignmentSchema, {
+      generateSchemaData(PersistedGroupAssignmentSchema, {
         groupId: groupA,
         leaseId: lease3Id,
         leaseOwnerEmail: lease3Owner,
@@ -1106,7 +1120,7 @@ describe("getLeasesForUserViaGroups", () => {
     mockLeaseStore.batchGet.mockImplementation((keys: LeaseKey[]) =>
       Promise.resolve(
         keys.map((k) =>
-          generateSchemaData(PendingLeaseSchema, {
+          generateSchemaData(PersistedPendingLeaseSchema, {
             userEmail: k.userEmail,
             uuid: k.uuid,
           }),
@@ -1139,7 +1153,7 @@ describe("getLeasesForUserViaGroups", () => {
       { groupId: groupA, leaseId },
     ]);
     mockPrincipalStore.batchGetGroupAssignments.mockResolvedValue([
-      generateSchemaData(GroupAssignmentSchema, {
+      generateSchemaData(PersistedGroupAssignmentSchema, {
         groupId: groupA,
         leaseId,
         leaseOwnerEmail,
@@ -1173,12 +1187,12 @@ describe("getLeasesForUserViaGroups", () => {
       { groupId: groupA, leaseId: lease2Id },
     ]);
     mockPrincipalStore.batchGetGroupAssignments.mockResolvedValue([
-      generateSchemaData(GroupAssignmentSchema, {
+      generateSchemaData(PersistedGroupAssignmentSchema, {
         groupId: groupA,
         leaseId: lease1Id,
         leaseOwnerEmail: "a@example.com",
       }),
-      generateSchemaData(GroupAssignmentSchema, {
+      generateSchemaData(PersistedGroupAssignmentSchema, {
         groupId: groupA,
         leaseId: lease2Id,
         leaseOwnerEmail: "b@example.com",
@@ -1187,7 +1201,7 @@ describe("getLeasesForUserViaGroups", () => {
     mockLeaseStore.batchGet.mockImplementation((keys: LeaseKey[]) =>
       Promise.resolve(
         keys.map((k) =>
-          generateSchemaData(PendingLeaseSchema, {
+          generateSchemaData(PersistedPendingLeaseSchema, {
             userEmail: k.userEmail,
             uuid: k.uuid,
           }),
@@ -1219,7 +1233,7 @@ describe("getLeasesForUserViaGroups", () => {
       { groupId: groupA, leaseId: remainingLeaseId },
     ]);
     mockPrincipalStore.batchGetGroupAssignments.mockResolvedValue([
-      generateSchemaData(GroupAssignmentSchema, {
+      generateSchemaData(PersistedGroupAssignmentSchema, {
         groupId: groupA,
         leaseId: remainingLeaseId,
         leaseOwnerEmail: owner,
@@ -1228,7 +1242,7 @@ describe("getLeasesForUserViaGroups", () => {
     mockLeaseStore.batchGet.mockImplementation((keys: LeaseKey[]) =>
       Promise.resolve(
         keys.map((k) =>
-          generateSchemaData(PendingLeaseSchema, {
+          generateSchemaData(PersistedPendingLeaseSchema, {
             userEmail: k.userEmail,
             uuid: k.uuid,
           }),
@@ -1662,18 +1676,18 @@ describe("deriveAssignmentView", () => {
   // status is widened past MonitoredLease so terminal statuses can be exercised;
   // generateSchemaData only spreads overrides, it does not re-parse them.
   function makeLease(
-    overrides: Partial<Omit<MonitoredLease, "status">> & {
+    overrides: Partial<Omit<PersistedMonitoredLease, "status">> & {
       status?: LeaseStatus;
     } = {},
-  ): Lease {
-    return generateSchemaData(MonitoredLeaseSchema, {
+  ): PersistedLease {
+    return generateSchemaData(PersistedMonitoredLeaseSchema, {
       userEmail: OWNER_EMAIL,
       uuid: LEASE_UUID,
       status: "Active",
       desiredAssignments: [],
       resourceLock: undefined,
       ...overrides,
-    } as Partial<MonitoredLease>);
+    } as Partial<PersistedMonitoredLease>);
   }
 
   const desired = (principalId: string, email?: string) => ({
@@ -1684,7 +1698,7 @@ describe("deriveAssignmentView", () => {
   });
 
   function userAssignment(principalId: string, email?: string) {
-    return generateSchemaData(UserAssignmentSchema, {
+    return generateSchemaData(PersistedUserAssignmentSchema, {
       pk: `user#${principalId}`,
       sk: `lease#${LEASE_UUID}`,
       userId: principalId,
@@ -1979,7 +1993,7 @@ describe("deriveAssignmentView", () => {
   });
 
   it("includes group assignments", () => {
-    const groupAssignment = generateSchemaData(GroupAssignmentSchema, {
+    const groupAssignment = generateSchemaData(PersistedGroupAssignmentSchema, {
       pk: "group#eng",
       sk: `lease#${LEASE_UUID}`,
       groupId: "eng",

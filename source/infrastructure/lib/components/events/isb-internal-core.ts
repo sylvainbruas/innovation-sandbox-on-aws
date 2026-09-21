@@ -63,9 +63,9 @@ export class IsbInternalCore {
 
     // Namespace the log group's auto-named (construct-id-derived) resource policy so
     // multiple ISB instances in one account/region don't collide on the policy name.
-    const globalLogGroupPolicy = IsbComputeResources.globalLogGroup.node.findChild(
-      "Policy",
-    ).node.defaultChild as CfnResourcePolicy;
+    const globalLogGroupPolicy =
+      IsbComputeResources.globalLogGroup.node.findChild("Policy").node
+        .defaultChild as CfnResourcePolicy;
     globalLogGroupPolicy.policyName = `${props.namespace}-ISBLogGroupPolicy`;
 
     const dlq = new Queue(scope, "DLQ", {

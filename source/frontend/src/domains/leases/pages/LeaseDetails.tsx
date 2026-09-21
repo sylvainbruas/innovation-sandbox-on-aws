@@ -5,13 +5,6 @@ import { Header, Tabs } from "@cloudscape-design/components";
 import { useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 
-import {
-  isActiveLease,
-  isExpiredLease,
-  isFrozenLease,
-  isMonitoredLease,
-} from "@amzn/innovation-sandbox-commons/data/lease/lease";
-import { getUserEmail } from "@amzn/innovation-sandbox-commons/utils/auth-utils";
 import { useAppLayoutContext } from "@amzn/innovation-sandbox-frontend/components/AppLayout/AppLayoutContext";
 import { ContentLayout } from "@amzn/innovation-sandbox-frontend/components/ContentLayout";
 import { ErrorPanel } from "@amzn/innovation-sandbox-frontend/components/ErrorPanel";
@@ -25,11 +18,22 @@ import {
   getLeaseDisplayName,
 } from "@amzn/innovation-sandbox-frontend/domains/leases/helpers";
 import { useGetLeaseById } from "@amzn/innovation-sandbox-frontend/domains/leases/hooks";
-import { MonitoredLeaseWithLeaseId } from "@amzn/innovation-sandbox-frontend/domains/leases/types";
+import { LeaseView } from "@amzn/innovation-sandbox-frontend/domains/leases/model";
 import { useLeaseActions } from "@amzn/innovation-sandbox-frontend/domains/leases/useLeaseActions";
 import { useGetConfigurations } from "@amzn/innovation-sandbox-frontend/domains/settings/hooks";
 import { useBreadcrumb } from "@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb";
 import { useUser } from "@amzn/innovation-sandbox-frontend/hooks/useUser";
+import {
+  DEFAULT_GROUP_ASSIGNMENT_MODE,
+  type GroupAssignmentMode,
+} from "@amzn/innovation-sandbox-shared/types/configuration.js";
+import {
+  isActiveLease,
+  isExpiredLease,
+  isFrozenLease,
+  isMonitoredLease,
+} from "@amzn/innovation-sandbox-shared/types/lease.js";
+import { getUserEmail } from "@amzn/innovation-sandbox-shared/utils/auth-utils";
 
 export const LeaseDetails = () => {
   const { leaseId } = useParams();
@@ -101,6 +105,8 @@ export const LeaseDetails = () => {
 
   const leaseSharingEnabled = config?.leases.leaseSharingEnabled || false;
   const enablePrincipalSearch = config?.leases.enablePrincipalSearch ?? false;
+  const groupAssignmentMode =
+    config?.leases.groupAssignmentMode ?? DEFAULT_GROUP_ASSIGNMENT_MODE;
   const viewerEmail = user ? getUserEmail(user) : undefined;
 
   return (
@@ -112,6 +118,7 @@ export const LeaseDetails = () => {
       viewerEmail={viewerEmail}
       leaseSharingEnabled={leaseSharingEnabled}
       enablePrincipalSearch={enablePrincipalSearch}
+      groupAssignmentMode={groupAssignmentMode}
     />
   );
 };
@@ -126,14 +133,16 @@ const LeaseDetailsView = ({
   viewerEmail,
   leaseSharingEnabled,
   enablePrincipalSearch,
+  groupAssignmentMode,
 }: {
-  lease: MonitoredLeaseWithLeaseId;
+  lease: LeaseView;
   leaseId: string | undefined;
   isAdminOrManager: boolean;
   hasAnyAction: boolean;
   viewerEmail: string | undefined;
   leaseSharingEnabled: boolean;
   enablePrincipalSearch: boolean;
+  groupAssignmentMode: GroupAssignmentMode;
 }) => {
   const navigate = useNavigate();
 
@@ -197,6 +206,7 @@ const LeaseDetailsView = ({
                   leaseSharingEnabled={leaseSharingEnabled}
                   enablePrincipalSearch={enablePrincipalSearch}
                   isElevated={isAdminOrManager}
+                  groupAssignmentMode={groupAssignmentMode}
                   isOwner={isOwner}
                 />
               ),

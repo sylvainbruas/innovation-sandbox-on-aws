@@ -36,14 +36,14 @@ import {
   bulkStubEnv,
   mockAppConfigMiddleware,
 } from "@amzn/innovation-sandbox-commons/test/lambdas/utils.js";
+import { buildM2mAssumedRoleArn } from "@amzn/innovation-sandbox-commons/utils/m2m-role-arn.js";
 import {
   COGNITO_IDC_USER_ID_CLAIM,
   COGNITO_ISB_ROLES_CLAIM,
   COGNITO_USERNAME_CLAIM,
   IDENTITY_HEADER,
   isM2MUser,
-} from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
-import { buildM2mAssumedRoleArn } from "@amzn/innovation-sandbox-commons/utils/m2m-role-arn.js";
+} from "@amzn/innovation-sandbox-shared/utils/auth-utils.js";
 import { Logger } from "@aws-lambda-powertools/logger";
 import { Tracer } from "@aws-lambda-powertools/tracer";
 
@@ -366,9 +366,8 @@ describe("apiMiddlewareBundle", () => {
 
 describe("BaseApiLambdaEnvironmentSchema validation", () => {
   it("rejects ISB_NAMESPACE values containing regex-special characters", async () => {
-    const { BaseApiLambdaEnvironmentSchema } = await import(
-      "@amzn/innovation-sandbox-commons/lambda/environments/base-api-lambda-environment.js"
-    );
+    const { BaseApiLambdaEnvironmentSchema } =
+      await import("@amzn/innovation-sandbox-commons/lambda/environments/base-api-lambda-environment.js");
     const baseInput = generateSchemaData(BaseApiLambdaEnvironmentSchema);
     expect(
       BaseApiLambdaEnvironmentSchema.safeParse({

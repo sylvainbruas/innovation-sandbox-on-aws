@@ -1,13 +1,13 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { CleanupValidationModeSchema } from "@amzn/innovation-sandbox-commons/data/config/config.js";
 import { CleanupReasonSchema } from "@amzn/innovation-sandbox-commons/events/clean-account-request.js";
 import { LeaseTerminatedReasonTypeSchema } from "@amzn/innovation-sandbox-commons/events/lease-terminated-event.js";
 import {
   AwsAccountIdSchema,
   enumErrorMap,
 } from "@amzn/innovation-sandbox-commons/utils/zod.js";
+import { CleanupValidationModeSchema } from "@amzn/innovation-sandbox-shared/types/sandbox-account.js";
 import z from "zod";
 
 export const AccountDriftLogSchema = z.object({

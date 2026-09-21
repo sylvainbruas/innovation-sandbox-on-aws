@@ -36,18 +36,16 @@ vi.mock(
 
 import { SsmAccountPoolStackConfigStore } from "@amzn/innovation-sandbox-commons/data/account-pool-stack-config/ssm-account-pool-stack-config-store.js";
 import { DynamoCleanupReportStore } from "@amzn/innovation-sandbox-commons/data/cleanup-report/dynamo-cleanup-report-store.js";
-import {
-  ConfigSchemas,
-  ConfigSectionData,
-} from "@amzn/innovation-sandbox-commons/data/config/config.js";
+import { PersistedConfigSectionData } from "@amzn/innovation-sandbox-commons/data/config/config.js";
 import { DynamoConfigStore } from "@amzn/innovation-sandbox-commons/data/config/dynamo-config-store.js";
 import { DynamoLeaseStore } from "@amzn/innovation-sandbox-commons/data/lease/dynamo-lease-store.js";
 import { DynamoSandboxAccountStore } from "@amzn/innovation-sandbox-commons/data/sandbox-account/dynamo-sandbox-account-store.js";
-import { SandboxAccountSchema } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
+import { PersistedSandboxAccountSchema } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
 import { ResourceExplorerService } from "@amzn/innovation-sandbox-commons/isb-services/resource-explorer-service.js";
 import { DurableCleanupLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/durable-cleanup-lambda-environment.js";
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
 import { bulkStubEnv } from "@amzn/innovation-sandbox-commons/test/lambdas/utils.js";
+import { ConfigSchemas } from "@amzn/innovation-sandbox-shared/types/configuration.js";
 import {
   AppConfigDataClient,
   GetLatestConfigurationCommand,
@@ -76,7 +74,7 @@ import type { CleanupContext } from "@amzn/innovation-sandbox-durable-cleanup-or
 const testEnv = generateSchemaData(DurableCleanupLambdaEnvironmentSchema, {
   CODEBUILD_TIMEOUT_MINUTES: "60",
 });
-const mockedCleanupConfig: ConfigSectionData<"cleanup"> = {
+const mockedCleanupConfig: PersistedConfigSectionData<"cleanup"> = {
   ...ConfigSchemas.cleanup.parse({
     numberOfSuccessfulAttemptsToFinishCleanup: 2,
     numberOfFailedAttemptsToCancelCleanup: 3,
@@ -112,7 +110,7 @@ function mockConfigStore() {
 function mockAccountStoreDefaults(
   accountOverrides: Record<string, unknown> = {},
 ) {
-  const mockedAccount = generateSchemaData(SandboxAccountSchema, {
+  const mockedAccount = generateSchemaData(PersistedSandboxAccountSchema, {
     awsAccountId: "123456789012",
     status: "CleanUp",
     activeCleanup: undefined,
@@ -912,7 +910,7 @@ describe("Finalize-Cleanup Step", () => {
 
 describe("Account Cooldown Step", () => {
   function mockConfigStoreWithCooldown(cooldownPeriodHours: number) {
-    const configWithCooldown: ConfigSectionData<"cleanup"> = {
+    const configWithCooldown: PersistedConfigSectionData<"cleanup"> = {
       ...ConfigSchemas.cleanup.parse({
         numberOfSuccessfulAttemptsToFinishCleanup: 2,
         numberOfFailedAttemptsToCancelCleanup: 3,

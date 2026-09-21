@@ -5,8 +5,8 @@
 // across test files, plus typed constructors for the `AuthResult`
 // discriminated union returned by `CognitoAuthService.getCurrentUser()`.
 
-import { IdcIdentity } from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
 import { AuthResult } from "@amzn/innovation-sandbox-frontend/helpers/CognitoAuthService";
+import { IdcIdentity } from "@amzn/innovation-sandbox-shared/utils/auth-utils.js";
 
 export const MOCK_ID_TOKEN = "mock-id-token";
 
@@ -14,6 +14,7 @@ export const mockCognitoCredentials = {
   accessKeyId: "test-access-key",
   secretAccessKey: "test-secret-not-a-real-key",
   sessionToken: "test-session-token",
+  expiration: new Date("2099-01-01T00:00:00.000Z"),
 };
 
 export const mockAuthenticatedUser: IdcIdentity = {

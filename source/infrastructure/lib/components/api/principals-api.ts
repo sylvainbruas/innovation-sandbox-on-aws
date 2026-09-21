@@ -1,16 +1,13 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
-import { LambdaIntegration } from "aws-cdk-lib/aws-apigateway";
 import { Role } from "aws-cdk-lib/aws-iam";
+import { IFunction } from "aws-cdk-lib/aws-lambda";
 import { Construct } from "constructs";
 import path from "path";
 
 import { PrincipalsLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/principals-lambda-environment.js";
-import {
-  RestApi,
-  RestApiProps,
-} from "@amzn/innovation-sandbox-infrastructure/components/api/rest-api-all";
-import { IsbLambdaFunction } from "@amzn/innovation-sandbox-infrastructure/components/isb-lambda-function";
+import type { RestApiProps } from "@amzn/innovation-sandbox-infrastructure/components/api/rest-api-all";
+import { IsbApiLambdaFunction } from "@amzn/innovation-sandbox-infrastructure/components/isb-lambda-function";
 import {
   getIdcRoleArn,
   IntermediateRole,
@@ -23,7 +20,9 @@ import {
 import { IsbComputeStack } from "@amzn/innovation-sandbox-infrastructure/isb-compute-stack";
 
 export class PrincipalsApi {
-  constructor(restApi: RestApi, scope: Construct, props: RestApiProps) {
+  public readonly lambdaFunction: IFunction;
+
+  constructor(scope: Construct, props: RestApiProps) {
     const { namespace } = props;
     const {
       configTableName,
@@ -32,7 +31,7 @@ export class PrincipalsApi {
       cognitoAppClientId,
     } = IsbComputeStack.sharedSpokeConfig.data;
 
-    const principalsLambdaFunction = new IsbLambdaFunction(
+    const principalsLambdaFunction = new IsbApiLambdaFunction(
       scope,
       "PrincipalsLambdaFunction",
       {
@@ -63,10 +62,10 @@ export class PrincipalsApi {
           IDC_CONFIG_PARAM_ARN:
             IsbComputeStack.sharedSpokeConfig.parameterArns.idcConfigParamArn,
         },
-        logGroup: restApi.logGroup,
         envSchema: PrincipalsLambdaEnvironmentSchema,
       },
     );
+    this.lambdaFunction = principalsLambdaFunction.lambdaFunction;
 
     // Read-only on config table; read-write on principal table for cache write-through
     grantIsbDbReadOnly(scope, principalsLambdaFunction, configTableName);
@@ -80,17 +79,6 @@ export class PrincipalsApi {
     // Allow the Principals Lambda to assume the IntermediateRole for JIT IDC lookups.
     IntermediateRole.addTrustedRole(
       principalsLambdaFunction.lambdaFunction.role! as Role,
-    );
-
-    // API Gateway route: GET /principals/search
-    const principalsResource = restApi.root.addResource("principals");
-    const searchResource = principalsResource.addResource("search");
-    searchResource.addMethod(
-      "GET",
-      new LambdaIntegration(principalsLambdaFunction.lambdaFunction, {
-        allowTestInvoke: true,
-        proxy: true,
-      }),
     );
   }
 }

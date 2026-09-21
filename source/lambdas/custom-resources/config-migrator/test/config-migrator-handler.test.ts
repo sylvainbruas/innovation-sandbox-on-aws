@@ -21,17 +21,17 @@ import { mockClient } from "aws-sdk-client-mock";
 import yaml from "js-yaml";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import {
-  ConfigSchemas,
-  ConfigSchemaVersion,
-  ConfigSection,
-} from "@amzn/innovation-sandbox-commons/data/config/config.js";
+import { ConfigSchemaVersion } from "@amzn/innovation-sandbox-commons/data/config/config.js";
 import { ConfigMigratorLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/config-migrator-lambda-environment.js";
 import { EnvironmentValidatorError } from "@amzn/innovation-sandbox-commons/lambda/middleware/environment-validator.js";
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
 import { mockContext } from "@amzn/innovation-sandbox-commons/test/lambdas/fixtures.js";
 import { bulkStubEnv } from "@amzn/innovation-sandbox-commons/test/lambdas/utils.js";
 import { handler } from "@amzn/innovation-sandbox-config-migrator/config-migrator-handler.js";
+import {
+  ConfigSchemas,
+  ConfigSection,
+} from "@amzn/innovation-sandbox-shared/types/configuration.js";
 
 const testEnv = generateSchemaData(ConfigMigratorLambdaEnvironmentSchema, {
   APP_CONFIG_APPLICATION_ID: "test-application-id",

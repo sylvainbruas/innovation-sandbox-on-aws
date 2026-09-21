@@ -11,16 +11,13 @@
  * leaks the boundary key. These tests pin the leak-free contract.
  */
 
-import {
-  DynamoDBDocumentClient,
-  ScanCommand,
-} from "@aws-sdk/lib-dynamodb";
+import { DynamoDBDocumentClient, ScanCommand } from "@aws-sdk/lib-dynamodb";
 import { mockClient } from "aws-sdk-client-mock";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { base64DecodeCompositeKey } from "@amzn/innovation-sandbox-commons/data/encoding.js";
 import { DynamoLeaseTemplateStore } from "@amzn/innovation-sandbox-commons/data/lease-template/dynamo-lease-template-store.js";
-import { LeaseTemplateSchema } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
+import { PersistedLeaseTemplateSchema } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
 
 const mockDynamoClient = mockClient(DynamoDBDocumentClient);
@@ -42,11 +39,11 @@ describe("DynamoLeaseTemplateStore - visibility-aware pagination", () => {
   });
 
   test("does not leak a PRIVATE template UUID via nextPageIdentifier when the scan boundary is PRIVATE", async () => {
-    const publicTemplate = generateSchemaData(LeaseTemplateSchema, {
+    const publicTemplate = generateSchemaData(PersistedLeaseTemplateSchema, {
       uuid: "11111111-1111-4111-8111-111111111111",
       visibility: "PUBLIC",
     });
-    const privateTemplate = generateSchemaData(LeaseTemplateSchema, {
+    const privateTemplate = generateSchemaData(PersistedLeaseTemplateSchema, {
       uuid: "99999999-9999-4999-8999-999999999999",
       visibility: "PRIVATE",
     });
@@ -79,8 +76,8 @@ describe("DynamoLeaseTemplateStore - visibility-aware pagination", () => {
 
     // The query itself must exclude PRIVATE server-side (defense in depth: the
     // mock can't evaluate the filter, so pin the actual expression sent).
-    const scanInput = mockDynamoClient.commandCalls(ScanCommand)[0]!.args[0]
-      .input;
+    const scanInput =
+      mockDynamoClient.commandCalls(ScanCommand)[0]!.args[0].input;
     expect(scanInput.FilterExpression).toContain("<> :private");
     expect(scanInput.ExpressionAttributeValues).toMatchObject({
       ":private": "PRIVATE",
@@ -88,15 +85,15 @@ describe("DynamoLeaseTemplateStore - visibility-aware pagination", () => {
   });
 
   test("keeps scanning across pages until pageSize PUBLIC items are collected", async () => {
-    const pub1 = generateSchemaData(LeaseTemplateSchema, {
+    const pub1 = generateSchemaData(PersistedLeaseTemplateSchema, {
       uuid: "11111111-1111-4111-8111-111111111111",
       visibility: "PUBLIC",
     });
-    const priv = generateSchemaData(LeaseTemplateSchema, {
+    const priv = generateSchemaData(PersistedLeaseTemplateSchema, {
       uuid: "99999999-9999-4999-8999-999999999999",
       visibility: "PRIVATE",
     });
-    const pub2 = generateSchemaData(LeaseTemplateSchema, {
+    const pub2 = generateSchemaData(PersistedLeaseTemplateSchema, {
       uuid: "22222222-2222-4222-8222-222222222222",
       visibility: "PUBLIC",
     });
@@ -134,7 +131,7 @@ describe("DynamoLeaseTemplateStore - visibility-aware pagination", () => {
   });
 
   test("returns an empty page with no token when every template is PRIVATE", async () => {
-    const priv1 = generateSchemaData(LeaseTemplateSchema, {
+    const priv1 = generateSchemaData(PersistedLeaseTemplateSchema, {
       uuid: "99999999-9999-4999-8999-999999999999",
       visibility: "PRIVATE",
     });
@@ -156,19 +153,19 @@ describe("DynamoLeaseTemplateStore - visibility-aware pagination", () => {
   });
 
   test("does not drop PUBLIC items when the final scan overflows pageSize and exhausts the table", async () => {
-    const pubA = generateSchemaData(LeaseTemplateSchema, {
+    const pubA = generateSchemaData(PersistedLeaseTemplateSchema, {
       uuid: "11111111-1111-4111-8111-111111111111",
       visibility: "PUBLIC",
     });
-    const priv = generateSchemaData(LeaseTemplateSchema, {
+    const priv = generateSchemaData(PersistedLeaseTemplateSchema, {
       uuid: "99999999-9999-4999-8999-999999999999",
       visibility: "PRIVATE",
     });
-    const pubB = generateSchemaData(LeaseTemplateSchema, {
+    const pubB = generateSchemaData(PersistedLeaseTemplateSchema, {
       uuid: "22222222-2222-4222-8222-222222222222",
       visibility: "PUBLIC",
     });
-    const pubC = generateSchemaData(LeaseTemplateSchema, {
+    const pubC = generateSchemaData(PersistedLeaseTemplateSchema, {
       uuid: "33333333-3333-4333-8333-333333333333",
       visibility: "PUBLIC",
     });
@@ -207,11 +204,11 @@ describe("DynamoLeaseTemplateStore - visibility-aware pagination", () => {
   });
 
   test("emits a token anchored to a PUBLIC item when more pages remain", async () => {
-    const pub1 = generateSchemaData(LeaseTemplateSchema, {
+    const pub1 = generateSchemaData(PersistedLeaseTemplateSchema, {
       uuid: "11111111-1111-4111-8111-111111111111",
       visibility: "PUBLIC",
     });
-    const pub2 = generateSchemaData(LeaseTemplateSchema, {
+    const pub2 = generateSchemaData(PersistedLeaseTemplateSchema, {
       uuid: "22222222-2222-4222-8222-222222222222",
       visibility: "PUBLIC",
     });
@@ -239,7 +236,7 @@ describe("DynamoLeaseTemplateStore - visibility-aware pagination", () => {
     // Templates created before the visibility attribute existed have no
     // visibility field; the schema defaults them to PUBLIC on read, so they
     // must remain visible to non-elevated users.
-    const legacyTemplate = generateSchemaData(LeaseTemplateSchema, {
+    const legacyTemplate = generateSchemaData(PersistedLeaseTemplateSchema, {
       uuid: "33333333-3333-4333-8333-333333333333",
     });
     // Simulate a stored item with no visibility attribute at all.
@@ -260,17 +257,17 @@ describe("DynamoLeaseTemplateStore - visibility-aware pagination", () => {
     // The mock can't evaluate the FilterExpression, so pin that the query
     // actually uses attribute_not_exists to keep legacy (attribute-less) items.
     // A "#visibility = :public" filter would wrongly exclude them in real DynamoDB.
-    const scanInput = mockDynamoClient.commandCalls(ScanCommand)[0]!.args[0]
-      .input;
+    const scanInput =
+      mockDynamoClient.commandCalls(ScanCommand)[0]!.args[0].input;
     expect(scanInput.FilterExpression).toContain("attribute_not_exists");
   });
 
   test("elevated caller (includePrivate) still receives PRIVATE templates", async () => {
-    const publicTemplate = generateSchemaData(LeaseTemplateSchema, {
+    const publicTemplate = generateSchemaData(PersistedLeaseTemplateSchema, {
       uuid: "11111111-1111-4111-8111-111111111111",
       visibility: "PUBLIC",
     });
-    const privateTemplate = generateSchemaData(LeaseTemplateSchema, {
+    const privateTemplate = generateSchemaData(PersistedLeaseTemplateSchema, {
       uuid: "99999999-9999-4999-8999-999999999999",
       visibility: "PRIVATE",
     });

@@ -6,12 +6,14 @@
  * Validates tags validation for AWS compliance and DoS prevention
  */
 
-import { BlueprintItemSchema } from "@amzn/innovation-sandbox-commons/data/blueprint/blueprint.js";
+import { PersistedBlueprintItemSchema } from "@amzn/innovation-sandbox-commons/data/blueprint/blueprint.js";
 import { describe, expect, it } from "vitest";
 
 describe("Tags Validation", () => {
   const createBlueprintWithTags = (tags: Record<string, string>) => {
-    return BlueprintItemSchema.pick({ tags: true }).safeParse({ tags });
+    return PersistedBlueprintItemSchema.pick({ tags: true }).safeParse({
+      tags,
+    });
   };
 
   describe("Happy Path (Valid Input)", () => {
@@ -125,7 +127,7 @@ describe("Integration: Full Blueprint Validation", () => {
       },
     };
 
-    const result = BlueprintItemSchema.safeParse(blueprint);
+    const result = PersistedBlueprintItemSchema.safeParse(blueprint);
     if (!result.success) {
       console.error(
         "Validation errors:",
@@ -160,7 +162,7 @@ describe("Integration: Full Blueprint Validation", () => {
       },
     };
 
-    const result = BlueprintItemSchema.safeParse(blueprint);
+    const result = PersistedBlueprintItemSchema.safeParse(blueprint);
     expect(result.success).toBe(false);
   });
 });

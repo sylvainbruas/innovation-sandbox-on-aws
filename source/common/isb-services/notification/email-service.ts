@@ -34,8 +34,8 @@ import {
 import { LogPatterns } from "@amzn/innovation-sandbox-commons/observability/logging.js";
 import { IsbClients } from "@amzn/innovation-sandbox-commons/sdk-clients/index.js";
 import { assertNever } from "@amzn/innovation-sandbox-commons/types/type-guards.js";
-import { isSyntheticM2mEmail } from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
 import { fromTemporaryIsbIdcCredentials } from "@amzn/innovation-sandbox-commons/utils/cross-account-roles.js";
+import { isSyntheticM2mEmail } from "@amzn/innovation-sandbox-shared/utils/auth-utils.js";
 import { Logger } from "@aws-lambda-powertools/logger";
 import {
   SendEmailCommand,

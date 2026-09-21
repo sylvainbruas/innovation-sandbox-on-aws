@@ -6,10 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { handler } from "@amzn/innovation-sandbox-account-drift-monitoring/account-drift-monitoring-handler.js";
 import { DynamoSandboxAccountStore } from "@amzn/innovation-sandbox-commons/data/sandbox-account/dynamo-sandbox-account-store.js";
-import {
-  IsbOu,
-  SandboxAccount,
-} from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
+import { PersistedSandboxAccount } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
 import { AccountDriftDetectedAlert } from "@amzn/innovation-sandbox-commons/events/account-drift-detected-alert.js";
 import { SandboxOuService } from "@amzn/innovation-sandbox-commons/isb-services/sandbox-ou-service.js";
 import { AccountDriftMonitoringEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/account-drift-monitoring-environment.js";
@@ -17,6 +14,7 @@ import { IsbEventBridgeClient } from "@amzn/innovation-sandbox-commons/sdk-clien
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
 import { mockContext } from "@amzn/innovation-sandbox-commons/test/lambdas/fixtures.js";
 import { bulkStubEnv } from "@amzn/innovation-sandbox-commons/test/lambdas/utils.js";
+import { IsbOu } from "@amzn/innovation-sandbox-shared/types/sandbox-account.js";
 
 const mockSendIsbEvents = vi.fn();
 const mockUpdateSandboxAccountInDb = vi.fn();
@@ -40,7 +38,7 @@ afterEach(() => {
 
 describe("doAccountDriftMonitoring", () => {
   it("no drift", async () => {
-    const allAccounts: SandboxAccount[] = [
+    const allAccounts: PersistedSandboxAccount[] = [
       {
         awsAccountId: "111111111111",
         status: "Available",
@@ -73,7 +71,7 @@ describe("doAccountDriftMonitoring", () => {
     expect(mockSendIsbEvents).toHaveBeenCalledTimes(0);
   });
   describe("drift detection", async () => {
-    const trackedAccounts: SandboxAccount[] = [
+    const trackedAccounts: PersistedSandboxAccount[] = [
       {
         awsAccountId: "111111111111",
         status: "Available",

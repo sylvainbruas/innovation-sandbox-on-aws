@@ -151,15 +151,20 @@ export class IsbComputeResources {
       durableCleanupFunctionArn: accountCleaner.durableCleanupFunctionArn,
     });
 
-    // Per-client M2M stacks (IsbM2mClientStack) import this to construct the
-    // execute-api ARN they grant to their client role.
-    new aws_ssm.StringParameter(scope, "IsbRestApiIdParameter", {
-      parameterName: computeRestApiIdSsmParamName(props.namespace),
-      description:
-        "API Gateway REST API ID for the Innovation Sandbox API. Imported by per-client M2M client stacks to construct execute-api ARNs and invoke URLs.",
-      stringValue: restApi.restApiId,
-      simpleName: true,
-    });
+    // M2M client stacks read this (as an SSM parameter value) to scope their
+    // execute-api ARN, re-reading it on each deploy so they follow an API
+    // replacement. Its name is published as an output below.
+    const restApiIdParameter = new aws_ssm.StringParameter(
+      scope,
+      "IsbRestApiIdParameter",
+      {
+        parameterName: computeRestApiIdSsmParamName(props.namespace),
+        description:
+          "API Gateway REST API ID for the Innovation Sandbox API. Imported by per-client M2M client stacks to construct execute-api ARNs and invoke URLs.",
+        stringValue: restApi.restApiId,
+        simpleName: true,
+      },
+    );
 
     // Scope `execute-api:Invoke` to this deployment's specific REST API,
     // preventing Identity Pool credentials from reaching other IAM-authed
@@ -267,7 +272,14 @@ export class IsbComputeResources {
       value: restApi.restApiId,
       key: "RestApiId",
       description:
-        "The API Gateway REST API ID. M2M client stacks accept this as the RestApiId parameter; also published at SSM /InnovationSandbox_<namespace>_Compute_RestApiId.",
+        "The API Gateway REST API ID. Also published at SSM parameter RestApiIdSsmParamName; M2M client stacks re-read that parameter on each deploy, so redeploying a client stack re-scopes it to the current ID.",
+    });
+
+    new CfnOutput(scope, "RestApiIdSsmParamNameOutput", {
+      value: restApiIdParameter.parameterName,
+      key: "RestApiIdSsmParamName",
+      description:
+        "Name of the SSM parameter holding the API Gateway REST API ID. Pass this as the RestApiIdSsmParam parameter when deploying an M2M client stack.",
     });
 
     new CfnOutput(scope, "DeploymentUUIDOutput", {

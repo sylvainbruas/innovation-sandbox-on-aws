@@ -40,8 +40,7 @@ export type TagActivationCheckerCheckEvent = {
 };
 
 export type TagActivationCheckerEvent =
-  | TagActivationCheckerSeedEvent
-  | TagActivationCheckerCheckEvent;
+  TagActivationCheckerSeedEvent | TagActivationCheckerCheckEvent;
 
 export type TagActivationCheckerSeedResult = {
   seeded: true;
@@ -52,8 +51,7 @@ export type TagActivationCheckerCheckResult = {
 };
 
 export type TagActivationCheckerResult =
-  | TagActivationCheckerSeedResult
-  | TagActivationCheckerCheckResult;
+  TagActivationCheckerSeedResult | TagActivationCheckerCheckResult;
 
 type TagActivationCheckerContext = Context &
   ValidatedEnvironment<TagActivationCheckerEnvironment>;

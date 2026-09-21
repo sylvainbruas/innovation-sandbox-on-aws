@@ -4,8 +4,8 @@
 import { Badge } from "@cloudscape-design/components";
 
 import { useGetConfigurations } from "@amzn/innovation-sandbox-frontend/domains/settings/hooks";
-import { ConfigSection } from "@amzn/innovation-sandbox-frontend/domains/settings/service";
 import { ConfigSchemas } from "@amzn/innovation-sandbox-frontend/domains/settings/validation";
+import { ConfigSection } from "@amzn/innovation-sandbox-shared/types/configuration.js";
 
 /** The six real config section keys (excludes deploy-time fields). */
 const SECTION_KEYS = Object.keys(ConfigSchemas) as ConfigSection[];

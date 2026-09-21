@@ -14,8 +14,8 @@ import { DynamoBlueprintStore } from "@amzn/innovation-sandbox-commons/data/blue
 import { UnknownItem } from "@amzn/innovation-sandbox-commons/data/errors.js";
 import { DynamoLeaseTemplateStore } from "@amzn/innovation-sandbox-commons/data/lease-template/dynamo-lease-template-store.js";
 import {
-  LeaseTemplate,
-  LeaseTemplateSchema,
+  PersistedLeaseTemplate,
+  PersistedLeaseTemplateSchema,
 } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
 import { LeaseTemplateLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/lease-template-lambda-environment.js";
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
@@ -25,9 +25,12 @@ import {
   createFailureResponseBody,
   isbAuthorizedUser,
   isbAuthorizedUserUserRoleOnly,
+  jsendFailBodyLike,
   mockAuthorizedContext,
   mockGlobalConfig,
   responseHeaders,
+  responseHeadersWithErrorType,
+  serializedBodyLike,
 } from "@amzn/innovation-sandbox-commons/test/lambdas/fixtures.js";
 import {
   bulkStubEnv,
@@ -78,6 +81,23 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
+function createLeaseTemplateBody(overrides: Record<string, unknown> = {}) {
+  return {
+    name: "template",
+    description: "a template",
+    requiresApproval: false,
+    visibility: "PUBLIC" as const,
+    costReportGroup: undefined,
+    blueprintId: undefined,
+    allowOwnerToShareLease: false,
+    maxSpend: 50,
+    budgetThresholds: [{ dollarsSpent: 10, action: "ALERT" as const }],
+    leaseDurationInHours: 24,
+    durationThresholds: [{ hoursRemaining: 2, action: "ALERT" as const }],
+    ...overrides,
+  };
+}
+
 describe("handler", async () => {
   it("should return 500 response when environment variables are misconfigured", async () => {
     vi.unstubAllEnvs();
@@ -95,15 +115,17 @@ describe("handler", async () => {
     ).toEqual({
       statusCode: 500,
       body: createErrorResponseBody("An unexpected error occurred."),
-      headers: responseHeaders,
+      headers: expect.objectContaining(
+        responseHeadersWithErrorType("InternalServerError"),
+      ),
     });
   });
 
   describe("GET /leaseTemplates", () => {
     it("should return 200 response with all lease templates", async () => {
-      const leaseTemplates: LeaseTemplate[] = [
-        generateSchemaData(LeaseTemplateSchema),
-        generateSchemaData(LeaseTemplateSchema),
+      const leaseTemplates: PersistedLeaseTemplate[] = [
+        generateSchemaData(PersistedLeaseTemplateSchema),
+        generateSchemaData(PersistedLeaseTemplateSchema),
       ];
 
       vi.spyOn(
@@ -127,20 +149,20 @@ describe("handler", async () => {
         ),
       ).toEqual({
         statusCode: 200,
-        body: JSON.stringify({
+        body: serializedBodyLike({
           status: "success",
           data: {
             result: leaseTemplates,
             nextPageIdentifier: null,
           },
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
     });
     it("should return 200 without leaking the validation error to the caller", async () => {
-      const leaseTemplates: LeaseTemplate[] = [
-        generateSchemaData(LeaseTemplateSchema),
-        generateSchemaData(LeaseTemplateSchema),
+      const leaseTemplates: PersistedLeaseTemplate[] = [
+        generateSchemaData(PersistedLeaseTemplateSchema),
+        generateSchemaData(PersistedLeaseTemplateSchema),
       ];
 
       vi.spyOn(
@@ -165,21 +187,21 @@ describe("handler", async () => {
         ),
       ).toEqual({
         statusCode: 200,
-        body: JSON.stringify({
+        body: serializedBodyLike({
           status: "success",
           data: {
             result: leaseTemplates,
             nextPageIdentifier: null,
           },
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
     });
 
     it("should return 200 with first page of lease template when pagination query parameters are passed in", async () => {
-      const leaseTemplates: LeaseTemplate[] = [
-        generateSchemaData(LeaseTemplateSchema),
-        generateSchemaData(LeaseTemplateSchema),
+      const leaseTemplates: PersistedLeaseTemplate[] = [
+        generateSchemaData(PersistedLeaseTemplateSchema),
+        generateSchemaData(PersistedLeaseTemplateSchema),
       ];
 
       const findAllVisibleMethod = vi
@@ -211,14 +233,14 @@ describe("handler", async () => {
         ),
       ).toEqual({
         statusCode: 200,
-        body: JSON.stringify({
+        body: serializedBodyLike({
           status: "success",
           data: {
             result: leaseTemplates,
             nextPageIdentifier: null,
           },
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
       expect(findAllVisibleMethod.mock.calls).toHaveLength(1);
       expect(findAllVisibleMethod.mock.calls[0]).toEqual([
@@ -229,10 +251,33 @@ describe("handler", async () => {
         },
       ]);
     });
+    it("should use the schema default when maxResults is absent", async () => {
+      const findAllVisibleMethod = vi
+        .spyOn(DynamoLeaseTemplateStore.prototype, "findAllVisible")
+        .mockResolvedValue({
+          result: [],
+          nextPageIdentifier: null,
+        });
+
+      await handler(
+        createAPIGatewayProxyEvent({
+          httpMethod: "GET",
+          path: "/leaseTemplates",
+          isbUser: isbAuthorizedUser.user,
+        }),
+        mockAuthorizedContext(testEnv, mockedGlobalConfig),
+      );
+
+      expect(findAllVisibleMethod).toHaveBeenCalledWith({
+        pageIdentifier: undefined,
+        pageSize: 2000,
+        includePrivate: true,
+      });
+    });
     it("should return 400 when invalid pagination query parameters are passed in", async () => {
-      const leaseTemplates: LeaseTemplate[] = [
-        generateSchemaData(LeaseTemplateSchema),
-        generateSchemaData(LeaseTemplateSchema),
+      const leaseTemplates: PersistedLeaseTemplate[] = [
+        generateSchemaData(PersistedLeaseTemplateSchema),
+        generateSchemaData(PersistedLeaseTemplateSchema),
       ];
 
       const findAllVisibleMethod = vi
@@ -264,12 +309,43 @@ describe("handler", async () => {
         ),
       ).toEqual({
         statusCode: 400,
+        // `maxResults` is a model-validated Integer, so a non-numeric value is
+        // rejected by generated deserialization with the generic restJson1
+        // "invalid JSON body" message rather than the pre-Smithy per-field Zod
+        // error — an accepted deviation of the Smithy migration.
         body: createFailureResponseBody({
-          field: "maxResults",
-          message: "Invalid input: expected number, received NaN",
+          message:
+            "Invalid JSON in request body. Please check your JSON syntax.",
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(
+          responseHeadersWithErrorType("ValidationError"),
+        ),
       });
+      expect(findAllVisibleMethod.mock.calls).toHaveLength(0);
+    });
+    it("rejects a repeated query key rather than taking the last value", async () => {
+      // API Gateway's single-value map holds the last value, but `convertEvent`
+      // reads the multi-value map, and a single-valued model query member is
+      // rejected as a multi-element array by generated deserialization — a
+      // restJson1 400 rather than the pre-Smithy last-wins 200. Accepted deviation.
+      const findAllVisibleMethod = vi
+        .spyOn(DynamoLeaseTemplateStore.prototype, "findAllVisible")
+        .mockResolvedValue({ result: [], nextPageIdentifier: null });
+
+      const response = await handler(
+        createAPIGatewayProxyEvent({
+          httpMethod: "GET",
+          path: "/leaseTemplates",
+          // API Gateway: single-value map holds the last value; multi-value map
+          // holds every value for a repeated key.
+          queryStringParameters: { maxResults: "2" },
+          multiValueQueryStringParameters: { maxResults: ["1", "2"] },
+          isbUser: isbAuthorizedUser.user,
+        }),
+        mockAuthorizedContext(testEnv, mockedGlobalConfig),
+      );
+
+      expect(response.statusCode).toBe(400);
       expect(findAllVisibleMethod.mock.calls).toHaveLength(0);
     });
     it("should return 500 response when db call throws unexpected error", async () => {
@@ -294,15 +370,17 @@ describe("handler", async () => {
       ).toEqual({
         statusCode: 500,
         body: createErrorResponseBody("An unexpected error occurred."),
-        headers: responseHeaders,
+        headers: expect.objectContaining(
+          responseHeadersWithErrorType("InternalServerError"),
+        ),
       });
     });
 
     it("should return 200 with all templates (PUBLIC and PRIVATE) for Admin/Manager users", async () => {
-      const publicTemplate = generateSchemaData(LeaseTemplateSchema, {
+      const publicTemplate = generateSchemaData(PersistedLeaseTemplateSchema, {
         visibility: "PUBLIC",
       });
-      const privateTemplate = generateSchemaData(LeaseTemplateSchema, {
+      const privateTemplate = generateSchemaData(PersistedLeaseTemplateSchema, {
         visibility: "PRIVATE",
       });
       const leaseTemplates = [publicTemplate, privateTemplate];
@@ -328,14 +406,14 @@ describe("handler", async () => {
 
       expect(response).toEqual({
         statusCode: 200,
-        body: JSON.stringify({
+        body: serializedBodyLike({
           status: "success",
           data: {
             result: leaseTemplates,
             nextPageIdentifier: null,
           },
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
     });
 
@@ -343,7 +421,7 @@ describe("handler", async () => {
       // Visibility filtering now happens in the store (findAllVisible), so the
       // handler must ask for the non-privileged view. The store's own tests
       // verify PRIVATE templates never appear in the result or the token.
-      const publicTemplate = generateSchemaData(LeaseTemplateSchema, {
+      const publicTemplate = generateSchemaData(PersistedLeaseTemplateSchema, {
         visibility: "PUBLIC",
       });
 
@@ -370,14 +448,14 @@ describe("handler", async () => {
 
       expect(response).toEqual({
         statusCode: 200,
-        body: JSON.stringify({
+        body: serializedBodyLike({
           status: "success",
           data: {
             result: [publicTemplate],
             nextPageIdentifier: null,
           },
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
       expect(findAllVisibleMethod).toHaveBeenCalledWith(
         expect.objectContaining({ includePrivate: false }),
@@ -385,10 +463,10 @@ describe("handler", async () => {
     });
 
     it("should request all templates (includePrivate true) for Admin/Manager role", async () => {
-      const publicTemplate = generateSchemaData(LeaseTemplateSchema, {
+      const publicTemplate = generateSchemaData(PersistedLeaseTemplateSchema, {
         visibility: "PUBLIC",
       });
-      const privateTemplate = generateSchemaData(LeaseTemplateSchema, {
+      const privateTemplate = generateSchemaData(PersistedLeaseTemplateSchema, {
         visibility: "PRIVATE",
       });
 
@@ -412,25 +490,84 @@ describe("handler", async () => {
 
       expect(response).toEqual({
         statusCode: 200,
-        body: JSON.stringify({
+        body: serializedBodyLike({
           status: "success",
           data: {
             result: [publicTemplate, privateTemplate],
             nextPageIdentifier: null,
           },
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
       expect(findAllVisibleMethod).toHaveBeenCalledWith(
         expect.objectContaining({ includePrivate: true }),
       );
+    });
+
+    it("should return exactly the JSend success envelope keys", async () => {
+      vi.spyOn(
+        DynamoLeaseTemplateStore.prototype,
+        "findAllVisible",
+      ).mockResolvedValue({
+        result: [generateSchemaData(PersistedLeaseTemplateSchema)],
+        // Non-null so the member survives serialization; the null case is the
+        // next test.
+        nextPageIdentifier: "next-token",
+      });
+
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "GET",
+        path: "/leaseTemplates",
+        isbUser: isbAuthorizedUser.user,
+      });
+
+      const response = await handler(
+        event,
+        mockAuthorizedContext(testEnv, mockedGlobalConfig),
+      );
+
+      const parsed = JSON.parse(response.body);
+      expect(Object.keys(parsed).sort()).toEqual(["data", "status"]);
+      // data carries the page wrapper, unlike POST which returns the entity.
+      expect(Object.keys(parsed.data).sort()).toEqual([
+        "nextPageIdentifier",
+        "result",
+      ]);
+    });
+
+    it("omits nextPageIdentifier on the last page rather than returning null", async () => {
+      // The generated serializer drops null members. The pre-Smithy API returned
+      // `nextPageIdentifier: null`; the frontend adapter canonicalizes absent and
+      // null to the same value, so dropping it is an accepted deviation.
+      vi.spyOn(
+        DynamoLeaseTemplateStore.prototype,
+        "findAllVisible",
+      ).mockResolvedValue({
+        result: [],
+        nextPageIdentifier: null,
+      });
+
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "GET",
+        path: "/leaseTemplates",
+        isbUser: isbAuthorizedUser.user,
+      });
+
+      const response = await handler(
+        event,
+        mockAuthorizedContext(testEnv, mockedGlobalConfig),
+      );
+
+      const { data } = JSON.parse(response.body);
+      expect(data).not.toHaveProperty("nextPageIdentifier");
+      expect(data.result).toEqual([]);
     });
   });
 
   describe("POST /leaseTemplates", () => {
     it("should return 201 response when leaseTemplate is created successfully", async () => {
       const leaseTemplate = generateSchemaData(
-        LeaseTemplateSchema.omit({
+        PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           blueprintName: true,
@@ -468,7 +605,7 @@ describe("handler", async () => {
         ),
       ).toEqual({
         statusCode: 201,
-        body: JSON.stringify({
+        body: serializedBodyLike({
           status: "success",
           data: {
             ...leaseTemplate,
@@ -476,7 +613,7 @@ describe("handler", async () => {
             createdBy: isbAuthorizedUser.user.email,
           },
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
     });
     it("should reject a client-supplied meta field (server-owned)", async () => {
@@ -530,9 +667,26 @@ describe("handler", async () => {
           mockAuthorizedContext(testEnv, mockedGlobalConfig),
         ),
       ).toEqual({
-        statusCode: 415,
-        body: createFailureResponseBody({ message: "Body not provided." }),
-        headers: responseHeaders,
+        statusCode: 400,
+        // A missing body no longer produces the pre-Smithy "Body not provided."
+        // message: required-member-ness is expressible by the model, so Smithy
+        // renders the per-field 400 before the operation runs. (Modeled
+        // ValidationError → alphabetized envelope, so compare structurally.)
+        body: jsendFailBodyLike(
+          {
+            field: "name",
+            message:
+              "Value at '/name' failed to satisfy constraint: Member must not be null",
+          },
+          {
+            field: "requiresApproval",
+            message:
+              "Value at '/requiresApproval' failed to satisfy constraint: Member must not be null",
+          },
+        ),
+        headers: expect.objectContaining(
+          responseHeadersWithErrorType("ValidationError"),
+        ),
       });
     });
     it("should return 400 response when body fails to parse", async () => {
@@ -552,16 +706,18 @@ describe("handler", async () => {
           mockAuthorizedContext(testEnv, mockedGlobalConfig),
         ),
       ).toEqual({
-        statusCode: 415,
+        statusCode: 400,
         body: createFailureResponseBody({
           message:
             "Invalid JSON in request body. Please check your JSON syntax.",
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(
+          responseHeadersWithErrorType("ValidationError"),
+        ),
       });
     });
     it("should return 400 response when body is malformed", async () => {
-      const leaseTemplate = generateSchemaData(LeaseTemplateSchema, {
+      const leaseTemplate = generateSchemaData(PersistedLeaseTemplateSchema, {
         uuid: undefined,
         name: undefined,
         blueprintName: undefined,
@@ -592,18 +748,122 @@ describe("handler", async () => {
         ),
       ).toEqual({
         statusCode: 400,
-        body: createFailureResponseBody(
-          {
-            field: "name",
-            message: "Invalid input: expected string, received undefined",
-          },
-          {
-            field: "input",
-            message: 'Unrecognized key: "createdBy"',
-          },
+        // `name` is a required member the model expresses, so Smithy renders the
+        // 400 and short-circuits before the operation's Zod parse runs — so the
+        // unknown-key ("createdBy") report Zod would have added does not appear.
+        // The unknown-key path is still covered where the body is otherwise
+        // valid (see the strict-key PUT cases below). Modeled ValidationError →
+        // alphabetized envelope, so compare structurally.
+        body: jsendFailBodyLike({
+          field: "name",
+          message:
+            "Value at '/name' failed to satisfy constraint: Member must not be null",
+        }),
+        headers: expect.objectContaining(
+          responseHeadersWithErrorType("ValidationError"),
         ),
-        headers: responseHeaders,
       });
+    });
+
+    it("should reject an unknown member nested inside a threshold", async () => {
+      const response = await handler(
+        createAPIGatewayProxyEvent({
+          httpMethod: "POST",
+          path: "/leaseTemplates",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          isbUser: isbAuthorizedUser.user,
+          body: JSON.stringify(
+            createLeaseTemplateBody({
+              budgetThresholds: [
+                { dollarsSpent: 10, action: "ALERT", surprise: true },
+              ],
+            }),
+          ),
+        }),
+        mockAuthorizedContext(testEnv, mockedGlobalConfig),
+      );
+
+      expect(response.statusCode).toBe(400);
+      expect(JSON.parse(response.body).data.errors).toEqual([
+        {
+          field: "budgetThresholds.0",
+          message: 'Unrecognized key: "surprise"',
+        },
+      ]);
+    });
+
+    it("should reject a blueprintId that is not a UUID", async () => {
+      const response = await handler(
+        createAPIGatewayProxyEvent({
+          httpMethod: "POST",
+          path: "/leaseTemplates",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          isbUser: isbAuthorizedUser.user,
+          body: JSON.stringify(
+            createLeaseTemplateBody({ blueprintId: "not-a-uuid" }),
+          ),
+        }),
+        mockAuthorizedContext(testEnv, mockedGlobalConfig),
+      );
+
+      expect(response.statusCode).toBe(400);
+      expect(JSON.parse(response.body).data.errors).toEqual([
+        expect.objectContaining({ field: "blueprintId" }),
+      ]);
+    });
+
+    it("should reject a zero maxSpend", async () => {
+      const response = await handler(
+        createAPIGatewayProxyEvent({
+          httpMethod: "POST",
+          path: "/leaseTemplates",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          isbUser: isbAuthorizedUser.user,
+          body: JSON.stringify(createLeaseTemplateBody({ maxSpend: 0 })),
+        }),
+        mockAuthorizedContext(testEnv, mockedGlobalConfig),
+      );
+
+      expect(response.statusCode).toBe(400);
+      expect(JSON.parse(response.body).data.errors).toEqual([
+        expect.objectContaining({ field: "maxSpend" }),
+      ]);
+    });
+
+    it("should accept positive fractional amounts and durations", async () => {
+      const leaseTemplate = createLeaseTemplateBody({
+        maxSpend: 0.5,
+        leaseDurationInHours: 0.5,
+        budgetThresholds: [{ dollarsSpent: 0.25, action: "ALERT" }],
+        durationThresholds: [{ hoursRemaining: 0.25, action: "ALERT" }],
+      });
+      vi.spyOn(DynamoLeaseTemplateStore.prototype, "create").mockResolvedValue({
+        ...leaseTemplate,
+        uuid: mockUuid,
+        createdBy: isbAuthorizedUser.user.email,
+        blueprintName: null,
+      } as PersistedLeaseTemplate);
+
+      const response = await handler(
+        createAPIGatewayProxyEvent({
+          httpMethod: "POST",
+          path: "/leaseTemplates",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          isbUser: isbAuthorizedUser.user,
+          body: JSON.stringify(leaseTemplate),
+        }),
+        mockAuthorizedContext(testEnv, mockedGlobalConfig),
+      );
+
+      expect(response.statusCode).toBe(201);
     });
 
     it.each([
@@ -625,7 +885,7 @@ describe("handler", async () => {
       `should return 400 when lease template values exceed global configuration: $expectedErrorMessage`,
       async ({ maxSpend, leaseDurationInHours, expectedErrorMessage }) => {
         const leaseTemplate = generateSchemaData(
-          LeaseTemplateSchema.omit({
+          PersistedLeaseTemplateSchema.omit({
             uuid: true,
             createdBy: true,
             blueprintName: true,
@@ -655,7 +915,9 @@ describe("handler", async () => {
         ).toEqual({
           statusCode: 400,
           body: expectedErrorMessage,
-          headers: responseHeaders,
+          headers: expect.objectContaining(
+            responseHeadersWithErrorType("ValidationError"),
+          ),
         });
       },
     );
@@ -679,7 +941,7 @@ describe("handler", async () => {
         mockAppConfigMiddleware(mockedGlobalConfig, reportingConfig);
 
         const leaseTemplate = generateSchemaData(
-          LeaseTemplateSchema.omit({
+          PersistedLeaseTemplateSchema.omit({
             uuid: true,
             createdBy: true,
             blueprintName: true,
@@ -710,7 +972,9 @@ describe("handler", async () => {
         ).toEqual({
           statusCode: 400,
           body: createFailureResponseBody({ message: expectedError }),
-          headers: responseHeaders,
+          headers: expect.objectContaining(
+            responseHeadersWithErrorType("ValidationError"),
+          ),
         });
       },
     );
@@ -743,7 +1007,7 @@ describe("handler", async () => {
         mockAppConfigMiddleware(mockedGlobalConfig, mockedReportingConfig);
 
         const leaseTemplate = generateSchemaData(
-          LeaseTemplateSchema.omit({
+          PersistedLeaseTemplateSchema.omit({
             uuid: true,
             createdBy: true,
             blueprintName: true,
@@ -773,14 +1037,16 @@ describe("handler", async () => {
         ).toEqual({
           statusCode: 400,
           body: expectedErrorMessage,
-          headers: responseHeaders,
+          headers: expect.objectContaining(
+            responseHeadersWithErrorType("ValidationError"),
+          ),
         });
       },
     );
 
     it("should return 200 and create lease template with PUBLIC visibility", async () => {
       const leaseTemplate = generateSchemaData(
-        LeaseTemplateSchema.omit({
+        PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           blueprintName: true,
@@ -822,17 +1088,17 @@ describe("handler", async () => {
 
       expect(response).toEqual({
         statusCode: 201,
-        body: JSON.stringify({
+        body: serializedBodyLike({
           status: "success",
           data: createdTemplate,
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
     });
 
     it("should create lease template with PRIVATE visibility", async () => {
       const leaseTemplate = generateSchemaData(
-        LeaseTemplateSchema.omit({
+        PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           blueprintName: true,
@@ -874,17 +1140,17 @@ describe("handler", async () => {
 
       expect(response).toEqual({
         statusCode: 201,
-        body: JSON.stringify({
+        body: serializedBodyLike({
           status: "success",
           data: createdTemplate,
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
     });
 
     it("should default to PUBLIC visibility when not specified", async () => {
       const leaseTemplate = generateSchemaData(
-        LeaseTemplateSchema.omit({
+        PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           visibility: true,
@@ -927,17 +1193,17 @@ describe("handler", async () => {
 
       expect(response).toEqual({
         statusCode: 201,
-        body: JSON.stringify({
+        body: serializedBodyLike({
           status: "success",
           data: createdTemplate,
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
     });
 
     it("should return 500 response when db call throws unexpected error", async () => {
       const leaseTemplate = generateSchemaData(
-        LeaseTemplateSchema.omit({
+        PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           blueprintName: true,
@@ -975,14 +1241,16 @@ describe("handler", async () => {
       ).toEqual({
         statusCode: 500,
         body: createErrorResponseBody("An unexpected error occurred."),
-        headers: responseHeaders,
+        headers: expect.objectContaining(
+          responseHeadersWithErrorType("InternalServerError"),
+        ),
       });
     });
 
     it("should resolve blueprintName when blueprintId is provided", async () => {
       const blueprintId = "550e8400-e29b-41d4-a716-446655440000";
       const leaseTemplate = generateSchemaData(
-        LeaseTemplateSchema.omit({
+        PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           blueprintName: true,
@@ -1038,7 +1306,7 @@ describe("handler", async () => {
 
     it("should return 400 when blueprintId references non-existent blueprint", async () => {
       const leaseTemplate = generateSchemaData(
-        LeaseTemplateSchema.omit({
+        PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           blueprintName: true,
@@ -1076,13 +1344,15 @@ describe("handler", async () => {
         body: createFailureResponseBody({
           message: "Referenced blueprint not found.",
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(
+          responseHeadersWithErrorType("ValidationError"),
+        ),
       });
     });
 
     it("should set blueprintName to null when no blueprintId is provided", async () => {
       const leaseTemplate = generateSchemaData(
-        LeaseTemplateSchema.omit({
+        PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           blueprintName: true,
@@ -1140,7 +1410,7 @@ describe("handler", async () => {
       mockAppConfigMiddleware(disabledSharingConfig, mockedReportingConfig);
 
       const leaseTemplate = generateSchemaData(
-        LeaseTemplateSchema.omit({
+        PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           blueprintName: true,
@@ -1176,12 +1446,211 @@ describe("handler", async () => {
           message:
             "Cannot enable allowOwnerToShareLease because lease sharing is not available.",
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(
+          responseHeadersWithErrorType("ValidationError"),
+        ),
       });
+    });
+
+    // The body parser returns 415 for three conditions; only a non-JSON
+    // Content-Type is genuinely a media-type problem.
+    it("should return 415 when Content-Type is not JSON", async () => {
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "POST",
+        path: "/leaseTemplates",
+        headers: {
+          "Content-Type": "text/plain",
+        },
+        isbUser: isbAuthorizedUser.user,
+        body: "name=test",
+      });
+
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(testEnv, mockedGlobalConfig),
+        ),
+      ).toEqual({
+        statusCode: 415,
+        body: createFailureResponseBody({
+          message: "Unsupported Media Type.",
+        }),
+        headers: expect.objectContaining(
+          responseHeadersWithErrorType("UnsupportedMediaTypeError"),
+        ),
+      });
+    });
+
+    it("rejects a Content-Type carrying parameters (e.g. charset)", async () => {
+      const leaseTemplate = generateSchemaData(
+        PersistedLeaseTemplateSchema.omit({
+          uuid: true,
+          createdBy: true,
+          blueprintName: true,
+          meta: true,
+        }),
+        {
+          maxSpend: 50,
+          leaseDurationInHours: 24,
+          costReportGroup: undefined,
+          blueprintId: undefined,
+        },
+      );
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "POST",
+        path: "/leaseTemplates",
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+        },
+        isbUser: isbAuthorizedUser.user,
+        body: JSON.stringify(leaseTemplate),
+      });
+
+      const uuid = randomUUID();
+      vi.spyOn(DynamoLeaseTemplateStore.prototype, "create").mockResolvedValue({
+        ...leaseTemplate,
+        uuid,
+        createdBy: isbAuthorizedUser.user.email,
+      });
+
+      const response = await handler(
+        event,
+        mockAuthorizedContext(testEnv, mockedGlobalConfig),
+      );
+
+      // restJson1 requires an exact `application/json` Content-Type; a `charset`
+      // parameter is a 415. The pre-Smithy `httpJsonBodyParser` accepted it — an
+      // accepted deviation of the Smithy migration.
+      expect(response).toEqual({
+        statusCode: 415,
+        body: createFailureResponseBody({
+          message: "Unsupported Media Type.",
+        }),
+        headers: expect.objectContaining(
+          responseHeadersWithErrorType("UnsupportedMediaTypeError"),
+        ),
+      });
+    });
+
+    it("should return exactly the JSend success envelope keys", async () => {
+      const leaseTemplate = generateSchemaData(
+        PersistedLeaseTemplateSchema.omit({
+          uuid: true,
+          createdBy: true,
+          blueprintName: true,
+          meta: true,
+        }),
+        {
+          maxSpend: 50,
+          leaseDurationInHours: 24,
+          costReportGroup: undefined,
+          blueprintId: undefined,
+        },
+      );
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "POST",
+        path: "/leaseTemplates",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        isbUser: isbAuthorizedUser.user,
+        body: JSON.stringify(leaseTemplate),
+      });
+
+      vi.spyOn(DynamoLeaseTemplateStore.prototype, "create").mockResolvedValue({
+        ...leaseTemplate,
+        uuid: randomUUID(),
+        createdBy: isbAuthorizedUser.user.email,
+      });
+
+      const response = await handler(
+        event,
+        mockAuthorizedContext(testEnv, mockedGlobalConfig),
+      );
+
+      // The exact key set is part of the contract: no top-level "message".
+      expect(Object.keys(JSON.parse(response.body)).sort()).toEqual([
+        "data",
+        "status",
+      ]);
+    });
+
+    it("should return the bare entity in data, not a result wrapper", async () => {
+      const leaseTemplate = generateSchemaData(
+        PersistedLeaseTemplateSchema.omit({
+          uuid: true,
+          createdBy: true,
+          blueprintName: true,
+          meta: true,
+        }),
+        {
+          maxSpend: 50,
+          leaseDurationInHours: 24,
+          costReportGroup: undefined,
+          blueprintId: undefined,
+        },
+      );
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "POST",
+        path: "/leaseTemplates",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        isbUser: isbAuthorizedUser.user,
+        body: JSON.stringify(leaseTemplate),
+      });
+
+      vi.spyOn(DynamoLeaseTemplateStore.prototype, "create").mockResolvedValue({
+        ...leaseTemplate,
+        uuid: mockUuid,
+        createdBy: isbAuthorizedUser.user.email,
+      });
+
+      const response = await handler(
+        event,
+        mockAuthorizedContext(testEnv, mockedGlobalConfig),
+      );
+
+      // POST returns the entity directly; GET returns
+      // { result, nextPageIdentifier }. The shapes differ inside data.
+      const { data } = JSON.parse(response.body);
+      expect(data.uuid).toBe(mockUuid);
+      expect(data).not.toHaveProperty("result");
+      expect(data).not.toHaveProperty("nextPageIdentifier");
     });
   });
 
   describe("GET /leaseTemplates/{leaseTemplateId}", () => {
+    it("extracts the id from the request path, not from pathParameters", async () => {
+      // The generated mux binds the {leaseTemplateId} label from `event.path`.
+      // The pre-Smithy CDK resource is `{leaseTemplateName}`, and the removed Middy
+      // router used to repopulate `pathParameters.leaseTemplateId` from its route
+      // pattern — so this asserts the id now comes from the path segment and that
+      // an empty `pathParameters` does not break routing.
+      const pathId = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+      const getSpy = vi
+        .spyOn(DynamoLeaseTemplateStore.prototype, "get")
+        .mockResolvedValue({
+          result: generateSchemaData(PersistedLeaseTemplateSchema, {
+            uuid: pathId,
+            visibility: "PUBLIC",
+          }),
+        });
+
+      const response = await handler(
+        createAPIGatewayProxyEvent({
+          httpMethod: "GET",
+          path: `/leaseTemplates/${pathId}`,
+          pathParameters: {},
+          isbUser: isbAuthorizedUser.user,
+        }),
+        mockAuthorizedContext(testEnv, mockedGlobalConfig),
+      );
+
+      expect(response.statusCode).toBe(200);
+      expect(getSpy).toHaveBeenCalledWith(pathId);
+    });
+
     it("should return 200 response with a single lease template", async () => {
       const event = createAPIGatewayProxyEvent({
         httpMethod: "GET",
@@ -1192,7 +1661,7 @@ describe("handler", async () => {
         isbUser: isbAuthorizedUser.user,
       });
 
-      const leaseTemplate = generateSchemaData(LeaseTemplateSchema);
+      const leaseTemplate = generateSchemaData(PersistedLeaseTemplateSchema);
 
       vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockReturnValue(
         Promise.resolve({
@@ -1207,16 +1676,16 @@ describe("handler", async () => {
         ),
       ).toEqual({
         statusCode: 200,
-        body: JSON.stringify({
+        body: serializedBodyLike({
           status: "success",
           data: leaseTemplate,
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
     });
 
     it("should return 200 and allow Admin/Manager to access PRIVATE templates", async () => {
-      const privateTemplate = generateSchemaData(LeaseTemplateSchema, {
+      const privateTemplate = generateSchemaData(PersistedLeaseTemplateSchema, {
         visibility: "PRIVATE",
       });
 
@@ -1240,16 +1709,16 @@ describe("handler", async () => {
 
       expect(response).toEqual({
         statusCode: 200,
-        body: JSON.stringify({
+        body: serializedBodyLike({
           status: "success",
           data: privateTemplate,
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
     });
 
     it("should return 404 and deny User role access to PRIVATE templates", async () => {
-      const privateTemplate = generateSchemaData(LeaseTemplateSchema, {
+      const privateTemplate = generateSchemaData(PersistedLeaseTemplateSchema, {
         visibility: "PRIVATE",
       });
 
@@ -1278,12 +1747,12 @@ describe("handler", async () => {
         body: createFailureResponseBody({
           message: "Lease template not found.",
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
     });
 
     it("should return 200 allow User role to access PUBLIC templates", async () => {
-      const publicTemplate = generateSchemaData(LeaseTemplateSchema, {
+      const publicTemplate = generateSchemaData(PersistedLeaseTemplateSchema, {
         visibility: "PUBLIC",
       });
 
@@ -1309,11 +1778,11 @@ describe("handler", async () => {
 
       expect(response).toEqual({
         statusCode: 200,
-        body: JSON.stringify({
+        body: serializedBodyLike({
           status: "success",
           data: publicTemplate,
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
     });
 
@@ -1343,7 +1812,7 @@ describe("handler", async () => {
         body: createFailureResponseBody({
           message: `Lease template not found.`,
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
     });
     it("should return 500 response when db call throws unexpected error", async () => {
@@ -1367,7 +1836,9 @@ describe("handler", async () => {
       ).toEqual({
         statusCode: 500,
         body: createErrorResponseBody("An unexpected error occurred."),
-        headers: responseHeaders,
+        headers: expect.objectContaining(
+          responseHeadersWithErrorType("InternalServerError"),
+        ),
       });
     });
   });
@@ -1379,7 +1850,7 @@ describe("handler", async () => {
       // Default to an existing template with no cost report group; individual
       // tests override as needed.
       vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockResolvedValue({
-        result: generateSchemaData(LeaseTemplateSchema, {
+        result: generateSchemaData(PersistedLeaseTemplateSchema, {
           uuid: mockUuid,
           costReportGroup: undefined,
         }),
@@ -1387,11 +1858,14 @@ describe("handler", async () => {
     });
 
     it("should return 200 response with updated data", async () => {
-      const oldLeaseTemplate = generateSchemaData(LeaseTemplateSchema, {
-        uuid: mockUuid,
-      });
+      const oldLeaseTemplate = generateSchemaData(
+        PersistedLeaseTemplateSchema,
+        {
+          uuid: mockUuid,
+        },
+      );
       const newLeaseTemplateJsonBody = generateSchemaData(
-        LeaseTemplateSchema.omit({
+        PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           blueprintName: true,
@@ -1435,11 +1909,59 @@ describe("handler", async () => {
         ),
       ).toEqual({
         statusCode: 200,
-        body: JSON.stringify({
+        body: serializedBodyLike({
           status: "success",
           data: updatedItem,
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
+      });
+    });
+
+    it("rejects an invalid date-time in meta with the generic 400 (deviation)", async () => {
+      // `meta.createdTime` is modeled `@timestampFormat("date-time")`, so an
+      // invalid date-time fails generated deserialization before the operation's
+      // Zod parse — the generic restJson1 400, not the pre-Smithy field-specific
+      // message. Accepted deviation of the Smithy migration.
+      const validBody = generateSchemaData(
+        PersistedLeaseTemplateSchema.omit({
+          uuid: true,
+          createdBy: true,
+          blueprintName: true,
+        }),
+        {
+          maxSpend: 50,
+          leaseDurationInHours: 24,
+          costReportGroup: undefined,
+          blueprintId: undefined,
+          meta: undefined,
+        },
+      );
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "PUT",
+        path: "/leaseTemplates/{leaseTemplateId}",
+        pathParameters: { leaseTemplateId: mockUuid },
+        body: JSON.stringify({
+          ...validBody,
+          meta: { createdTime: "not-a-date", schemaVersion: 1 },
+        }),
+        headers: { "Content-Type": "application/json" },
+        isbUser: isbAuthorizedUser.user,
+      });
+
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(testEnv, mockedGlobalConfig),
+        ),
+      ).toEqual({
+        statusCode: 400,
+        body: createFailureResponseBody({
+          message:
+            "Invalid JSON in request body. Please check your JSON syntax.",
+        }),
+        headers: expect.objectContaining(
+          responseHeadersWithErrorType("ValidationError"),
+        ),
       });
     });
 
@@ -1448,14 +1970,14 @@ describe("handler", async () => {
       // Editing an unrelated field (maxSpend) must still succeed.
       mockAppConfigMiddleware(mockedGlobalConfig, testReportingConfigRequired);
       vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockResolvedValue({
-        result: generateSchemaData(LeaseTemplateSchema, {
+        result: generateSchemaData(PersistedLeaseTemplateSchema, {
           uuid: mockUuid,
           costReportGroup: undefined,
         }),
       });
 
       const newLeaseTemplateJsonBody = generateSchemaData(
-        LeaseTemplateSchema.omit({
+        PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           blueprintName: true,
@@ -1474,7 +1996,9 @@ describe("handler", async () => {
           uuid: mockUuid,
           createdBy: "original.author@example.com",
         },
-        oldItem: generateSchemaData(LeaseTemplateSchema, { uuid: mockUuid }),
+        oldItem: generateSchemaData(PersistedLeaseTemplateSchema, {
+          uuid: mockUuid,
+        }),
       });
 
       const event = createAPIGatewayProxyEvent({
@@ -1511,7 +2035,7 @@ describe("handler", async () => {
       mockAppConfigMiddleware(requiredConfig, testReportingConfig);
 
       vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockResolvedValue({
-        result: generateSchemaData(LeaseTemplateSchema, {
+        result: generateSchemaData(PersistedLeaseTemplateSchema, {
           uuid: mockUuid,
           maxSpend: undefined,
           leaseDurationInHours: undefined,
@@ -1520,7 +2044,7 @@ describe("handler", async () => {
       });
 
       const newLeaseTemplateJsonBody = generateSchemaData(
-        LeaseTemplateSchema.omit({
+        PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           blueprintName: true,
@@ -1540,7 +2064,9 @@ describe("handler", async () => {
           uuid: mockUuid,
           createdBy: "original.author@example.com",
         },
-        oldItem: generateSchemaData(LeaseTemplateSchema, { uuid: mockUuid }),
+        oldItem: generateSchemaData(PersistedLeaseTemplateSchema, {
+          uuid: mockUuid,
+        }),
       });
 
       const event = createAPIGatewayProxyEvent({
@@ -1579,8 +2105,8 @@ describe("handler", async () => {
 
       vi.spyOn(DynamoLeaseTemplateStore.prototype, "update").mockReturnValue(
         Promise.resolve({
-          newItem: generateSchemaData(LeaseTemplateSchema),
-          oldItem: generateSchemaData(LeaseTemplateSchema),
+          newItem: generateSchemaData(PersistedLeaseTemplateSchema),
+          oldItem: generateSchemaData(PersistedLeaseTemplateSchema),
         }),
       );
 
@@ -1590,12 +2116,29 @@ describe("handler", async () => {
           mockAuthorizedContext(testEnv, mockedGlobalConfig),
         ),
       ).toEqual({
-        statusCode: 415,
-        body: createFailureResponseBody({ message: "Body not provided." }),
-        headers: responseHeaders,
+        statusCode: 400,
+        // A missing body no longer produces the pre-Smithy "Body not provided."
+        // message: required-member-ness is expressible by the model, so Smithy
+        // renders the per-field 400 before the operation runs. (Modeled
+        // ValidationError → alphabetized envelope, so compare structurally.)
+        body: jsendFailBodyLike(
+          {
+            field: "name",
+            message:
+              "Value at '/name' failed to satisfy constraint: Member must not be null",
+          },
+          {
+            field: "requiresApproval",
+            message:
+              "Value at '/requiresApproval' failed to satisfy constraint: Member must not be null",
+          },
+        ),
+        headers: expect.objectContaining(
+          responseHeadersWithErrorType("ValidationError"),
+        ),
       });
     });
-    it("should return 415 response when body fails to parse", async () => {
+    it("should return 400 response when body fails to parse", async () => {
       const event = createAPIGatewayProxyEvent({
         httpMethod: "PUT",
         path: "/leaseTemplates/{leaseTemplateId}",
@@ -1611,8 +2154,8 @@ describe("handler", async () => {
 
       vi.spyOn(DynamoLeaseTemplateStore.prototype, "update").mockReturnValue(
         Promise.resolve({
-          newItem: generateSchemaData(LeaseTemplateSchema),
-          oldItem: generateSchemaData(LeaseTemplateSchema),
+          newItem: generateSchemaData(PersistedLeaseTemplateSchema),
+          oldItem: generateSchemaData(PersistedLeaseTemplateSchema),
         }),
       );
 
@@ -1622,16 +2165,18 @@ describe("handler", async () => {
           mockAuthorizedContext(testEnv, mockedGlobalConfig),
         ),
       ).toEqual({
-        statusCode: 415,
+        statusCode: 400,
         body: createFailureResponseBody({
           message:
             "Invalid JSON in request body. Please check your JSON syntax.",
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(
+          responseHeadersWithErrorType("ValidationError"),
+        ),
       });
     });
     it("should return 400 response when body is malformed", async () => {
-      const leaseTemplate = generateSchemaData(LeaseTemplateSchema, {
+      const leaseTemplate = generateSchemaData(PersistedLeaseTemplateSchema, {
         blueprintName: undefined,
         maxSpend: 50,
         leaseDurationInHours: 24,
@@ -1651,8 +2196,8 @@ describe("handler", async () => {
 
       vi.spyOn(DynamoLeaseTemplateStore.prototype, "update").mockReturnValue(
         Promise.resolve({
-          newItem: generateSchemaData(LeaseTemplateSchema),
-          oldItem: generateSchemaData(LeaseTemplateSchema),
+          newItem: generateSchemaData(PersistedLeaseTemplateSchema),
+          oldItem: generateSchemaData(PersistedLeaseTemplateSchema),
         }),
       );
 
@@ -1667,7 +2212,9 @@ describe("handler", async () => {
           field: "input",
           message: 'Unrecognized keys: "uuid", "createdBy"',
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(
+          responseHeadersWithErrorType("ValidationError"),
+        ),
       });
     });
     it.each([
@@ -1689,7 +2236,7 @@ describe("handler", async () => {
       `should return 400 when lease template values exceed global configuration: $expectedErrorMessage`,
       async ({ maxSpend, leaseDurationInHours, expectedErrorMessage }) => {
         const leaseTemplate = generateSchemaData(
-          LeaseTemplateSchema.omit({
+          PersistedLeaseTemplateSchema.omit({
             uuid: true,
             createdBy: true,
             blueprintName: true,
@@ -1721,7 +2268,9 @@ describe("handler", async () => {
         ).toEqual({
           statusCode: 400,
           body: expectedErrorMessage,
-          headers: responseHeaders,
+          headers: expect.objectContaining(
+            responseHeadersWithErrorType("ValidationError"),
+          ),
         });
       },
     );
@@ -1753,14 +2302,14 @@ describe("handler", async () => {
         mockAppConfigMiddleware(mockedGlobalConfig, reportingConfig);
 
         vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockResolvedValue({
-          result: generateSchemaData(LeaseTemplateSchema, {
+          result: generateSchemaData(PersistedLeaseTemplateSchema, {
             uuid: mockUuid,
             costReportGroup: previousCostReportGroup,
           }),
         });
 
         const leaseTemplate = generateSchemaData(
-          LeaseTemplateSchema.omit({
+          PersistedLeaseTemplateSchema.omit({
             uuid: true,
             createdBy: true,
             blueprintName: true,
@@ -1793,7 +2342,9 @@ describe("handler", async () => {
         ).toEqual({
           statusCode: 400,
           body: createFailureResponseBody({ message: expectedError }),
-          headers: responseHeaders,
+          headers: expect.objectContaining(
+            responseHeadersWithErrorType("ValidationError"),
+          ),
         });
       },
     );
@@ -1830,7 +2381,7 @@ describe("handler", async () => {
         // not treated as an unchanged pre-existing gap. (Pin both so the
         // change-aware validation is deterministic.)
         vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockResolvedValue({
-          result: generateSchemaData(LeaseTemplateSchema, {
+          result: generateSchemaData(PersistedLeaseTemplateSchema, {
             uuid: mockUuid,
             maxSpend: 100,
             leaseDurationInHours: 50,
@@ -1839,7 +2390,7 @@ describe("handler", async () => {
         });
 
         const leaseTemplate = generateSchemaData(
-          LeaseTemplateSchema.omit({
+          PersistedLeaseTemplateSchema.omit({
             uuid: true,
             createdBy: true,
             blueprintName: true,
@@ -1874,14 +2425,16 @@ describe("handler", async () => {
         ).toEqual({
           statusCode: 400,
           body: expectedErrorMessage,
-          headers: responseHeaders,
+          headers: expect.objectContaining(
+            responseHeadersWithErrorType("ValidationError"),
+          ),
         });
       },
     );
 
     it("should return 500 response when db call throws unexpected error", async () => {
       const leaseTemplate = generateSchemaData(
-        LeaseTemplateSchema.omit({
+        PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           blueprintName: true,
@@ -1920,17 +2473,19 @@ describe("handler", async () => {
       ).toEqual({
         statusCode: 500,
         body: createErrorResponseBody("An unexpected error occurred."),
-        headers: responseHeaders,
+        headers: expect.objectContaining(
+          responseHeadersWithErrorType("InternalServerError"),
+        ),
       });
     });
 
     it("should return 200 and update lease template visibility from PUBLIC to PRIVATE", async () => {
-      const oldTemplate = generateSchemaData(LeaseTemplateSchema, {
+      const oldTemplate = generateSchemaData(PersistedLeaseTemplateSchema, {
         visibility: "PUBLIC",
       });
 
       const updatedTemplate = generateSchemaData(
-        LeaseTemplateSchema.omit({
+        PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           blueprintName: true,
@@ -1975,11 +2530,11 @@ describe("handler", async () => {
 
       expect(response).toEqual({
         statusCode: 200,
-        body: JSON.stringify({
+        body: serializedBodyLike({
           status: "success",
           data: resultTemplate,
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
     });
 
@@ -1988,7 +2543,7 @@ describe("handler", async () => {
       // schema rejects it outright rather than silently ignoring it.
       const body = {
         ...generateSchemaData(
-          LeaseTemplateSchema.omit({
+          PersistedLeaseTemplateSchema.omit({
             uuid: true,
             createdBy: true,
             blueprintName: true,
@@ -2023,7 +2578,9 @@ describe("handler", async () => {
           field: "input",
           message: 'Unrecognized key: "createdBy"',
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(
+          responseHeadersWithErrorType("ValidationError"),
+        ),
       });
     });
 
@@ -2032,7 +2589,7 @@ describe("handler", async () => {
       // still put the ORIGINAL creator on the updated record (not drop it, and
       // not substitute the caller's identity).
       const originalCreatedBy = "original.author@example.com";
-      const persisted = generateSchemaData(LeaseTemplateSchema, {
+      const persisted = generateSchemaData(PersistedLeaseTemplateSchema, {
         uuid: mockUuid,
         createdBy: originalCreatedBy,
         costReportGroup: undefined,
@@ -2042,7 +2599,7 @@ describe("handler", async () => {
       });
 
       const body = generateSchemaData(
-        LeaseTemplateSchema.omit({
+        PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           blueprintName: true,
@@ -2096,7 +2653,7 @@ describe("handler", async () => {
         .mockResolvedValue({ result: undefined } as any);
 
       const body = generateSchemaData(
-        LeaseTemplateSchema.omit({
+        PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           blueprintName: true,
@@ -2128,7 +2685,7 @@ describe("handler", async () => {
         body: createFailureResponseBody({
           message: "Lease Template not found.",
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
       // Bailing early also avoids the needless blueprint lookup.
       expect(blueprintGet).not.toHaveBeenCalled();
@@ -2140,7 +2697,7 @@ describe("handler", async () => {
       });
 
       const body = generateSchemaData(
-        LeaseTemplateSchema.omit({
+        PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           blueprintName: true,
@@ -2172,17 +2729,17 @@ describe("handler", async () => {
         body: createFailureResponseBody({
           message: "Lease Template not found.",
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
     });
 
     it("should return 200 and update lease template visibility from PRIVATE to PUBLIC", async () => {
-      const oldTemplate = generateSchemaData(LeaseTemplateSchema, {
+      const oldTemplate = generateSchemaData(PersistedLeaseTemplateSchema, {
         visibility: "PRIVATE",
       });
 
       const updatedTemplate = generateSchemaData(
-        LeaseTemplateSchema.omit({
+        PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           blueprintName: true,
@@ -2227,17 +2784,17 @@ describe("handler", async () => {
 
       expect(response).toEqual({
         statusCode: 200,
-        body: JSON.stringify({
+        body: serializedBodyLike({
           status: "success",
           data: resultTemplate,
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
     });
 
     it("should return 404 response when the item is deleted between read and write", async () => {
       const leaseTemplate = generateSchemaData(
-        LeaseTemplateSchema.omit({
+        PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           blueprintName: true,
@@ -2281,14 +2838,14 @@ describe("handler", async () => {
         body: createFailureResponseBody({
           message: "Lease Template not found.",
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
     });
 
     it("should resolve blueprintName when blueprintId is provided on update", async () => {
       const blueprintId = "550e8400-e29b-41d4-a716-446655440000";
       const leaseTemplate = generateSchemaData(
-        LeaseTemplateSchema.omit({
+        PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           blueprintName: true,
@@ -2311,7 +2868,7 @@ describe("handler", async () => {
       const updateSpy = vi
         .spyOn(DynamoLeaseTemplateStore.prototype, "update")
         .mockResolvedValue({
-          oldItem: generateSchemaData(LeaseTemplateSchema),
+          oldItem: generateSchemaData(PersistedLeaseTemplateSchema),
           newItem: {
             ...leaseTemplate,
             uuid: mockUuid,
@@ -2347,7 +2904,7 @@ describe("handler", async () => {
 
     it("should return 400 when blueprintId references non-existent blueprint on update", async () => {
       const leaseTemplate = generateSchemaData(
-        LeaseTemplateSchema.omit({
+        PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           blueprintName: true,
@@ -2385,7 +2942,9 @@ describe("handler", async () => {
         body: createFailureResponseBody({
           message: "Referenced blueprint not found.",
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(
+          responseHeadersWithErrorType("ValidationError"),
+        ),
       });
     });
 
@@ -2400,7 +2959,7 @@ describe("handler", async () => {
       mockAppConfigMiddleware(disabledSharingConfig, mockedReportingConfig);
 
       const leaseTemplate = generateSchemaData(
-        LeaseTemplateSchema.omit({
+        PersistedLeaseTemplateSchema.omit({
           uuid: true,
           createdBy: true,
           blueprintName: true,
@@ -2436,7 +2995,9 @@ describe("handler", async () => {
           message:
             "Cannot enable allowOwnerToShareLease because lease sharing is not available.",
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(
+          responseHeadersWithErrorType("ValidationError"),
+        ),
       });
     });
   });
@@ -2454,7 +3015,7 @@ describe("handler", async () => {
 
       vi.spyOn(DynamoLeaseTemplateStore.prototype, "delete").mockReturnValue(
         Promise.resolve(
-          Promise.resolve(generateSchemaData(LeaseTemplateSchema)),
+          Promise.resolve(generateSchemaData(PersistedLeaseTemplateSchema)),
         ),
       );
 
@@ -2465,11 +3026,11 @@ describe("handler", async () => {
         ),
       ).toEqual({
         statusCode: 200,
-        body: JSON.stringify({
+        body: serializedBodyLike({
           status: "success",
           data: null,
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
     });
     it("should return 500 response when db call throws unexpected error", async () => {
@@ -2493,7 +3054,9 @@ describe("handler", async () => {
       ).toEqual({
         statusCode: 500,
         body: createErrorResponseBody("An unexpected error occurred."),
-        headers: responseHeaders,
+        headers: expect.objectContaining(
+          responseHeadersWithErrorType("InternalServerError"),
+        ),
       });
     });
   });

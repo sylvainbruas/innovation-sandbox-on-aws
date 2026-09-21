@@ -2,11 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { GlobalConfig } from "@amzn/innovation-sandbox-commons/data/global-config/global-config.js";
-import { LeaseTemplate } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
-import {
-  isMonitoredLease,
-  Lease,
-} from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
+import { PersistedLease } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
+import { LeaseTemplateWritable } from "@amzn/innovation-sandbox-shared/types/lease-template.js";
+import { isMonitoredLease } from "@amzn/innovation-sandbox-shared/types/lease.js";
 import { DateTime } from "luxon";
 
 export class ValidationException extends Error {
@@ -17,9 +15,9 @@ export class ValidationException extends Error {
 }
 
 export function validateLeaseCompliesWithGlobalConfig(
-  lease: Lease,
+  lease: PersistedLease,
   globalConfig: GlobalConfig,
-  options?: { previous: Lease },
+  options?: { previous: PersistedLease },
 ) {
   validateLeaseSharingEnabled(lease.allowOwnerToShareLease, globalConfig);
   validateMaxSpend(
@@ -46,12 +44,12 @@ export function validateLeaseCompliesWithGlobalConfig(
 
 export function validateLeaseTemplateCompliesWithGlobalConfig(
   leaseTemplate: Pick<
-    LeaseTemplate,
+    LeaseTemplateWritable,
     "maxSpend" | "leaseDurationInHours" | "allowOwnerToShareLease"
   >,
   globalConfig: GlobalConfig,
   options?: {
-    previous: Pick<LeaseTemplate, "maxSpend" | "leaseDurationInHours">;
+    previous: Pick<LeaseTemplateWritable, "maxSpend" | "leaseDurationInHours">;
   },
 ) {
   validateLeaseSharingEnabled(
@@ -74,7 +72,7 @@ export function validateLeaseTemplateCompliesWithGlobalConfig(
  * Duration in hours for a lease, using expirationDate (authoritative for
  * monitored leases) when present, else the configured leaseDurationInHours.
  */
-function leaseDurationInHours(lease: Lease): number | undefined {
+function leaseDurationInHours(lease: PersistedLease): number | undefined {
   if (isMonitoredLease(lease)) {
     const start = DateTime.fromISO(lease.startDate, { zone: "utc" });
     const expiration = lease.expirationDate

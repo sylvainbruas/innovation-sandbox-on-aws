@@ -16,20 +16,11 @@ import {
 } from "@amzn/innovation-sandbox-commons/data/encoding.js";
 import { IdcStackConfigStore } from "@amzn/innovation-sandbox-commons/data/idc-stack-config/ssm-idc-stack-config-store.js";
 import { LeaseStore } from "@amzn/innovation-sandbox-commons/data/lease/lease-store.js";
-import {
-  CriticalLockIntents,
-  type DesiredAssignmentWithDisplay,
-  isExpiredLease,
-  isFrozenLease,
-  type Lease,
-  LeaseKey,
-  type LeaseResourceLock,
-  MAX_ASSIGNMENTS,
-} from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
+import { type PersistedLease } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import { PrincipalStore } from "@amzn/innovation-sandbox-commons/data/principal/principal-store.js";
 import type {
-  GroupAssignment,
-  UserAssignment,
+  PersistedGroupAssignment,
+  PersistedUserAssignment,
 } from "@amzn/innovation-sandbox-commons/data/principal/principal.js";
 import { AssignmentRequestedEvent } from "@amzn/innovation-sandbox-commons/events/assignment-requested-event.js";
 import { getGroupMemberships } from "@amzn/innovation-sandbox-commons/isb-services/group-membership/index.js";
@@ -38,6 +29,15 @@ import {
   nowAsIsoDatetimeString,
   parseDatetime,
 } from "@amzn/innovation-sandbox-commons/utils/time-utils.js";
+import {
+  CriticalLockIntents,
+  type DesiredAssignmentWithDisplay,
+  isExpiredLease,
+  isFrozenLease,
+  LeaseKey,
+  type LeaseResourceLock,
+  MAX_ASSIGNMENTS,
+} from "@amzn/innovation-sandbox-shared/types/lease.js";
 
 import { ItemAlreadyExists } from "@amzn/innovation-sandbox-commons/data/errors.js";
 import {
@@ -415,7 +415,7 @@ function statusForUnassigned(props: {
 
 /** Builds an AssignmentView for a desired principal that has no live assignment yet. */
 function viewFromDesiredAssignment(props: {
-  lease: Lease;
+  lease: PersistedLease;
   desiredAssignment: DesiredAssignmentWithDisplay;
   noAccessExpected: boolean;
   isInFlight: boolean;
@@ -434,8 +434,8 @@ function viewFromDesiredAssignment(props: {
 
 /** Builds an AssignmentView for a principal that currently holds a live assignment. */
 function viewFromAssignment(props: {
-  lease: Lease;
-  assignment: UserAssignment | GroupAssignment;
+  lease: PersistedLease;
+  assignment: PersistedUserAssignment | PersistedGroupAssignment;
   desiredAssignment?: DesiredAssignmentWithDisplay;
   noAccessExpected: boolean;
   isInFlight: boolean;
@@ -482,8 +482,8 @@ function viewFromAssignment(props: {
  * acts.
  */
 export function deriveAssignmentView(
-  lease: Lease,
-  assignments: Array<UserAssignment | GroupAssignment>,
+  lease: PersistedLease,
+  assignments: Array<PersistedUserAssignment | PersistedGroupAssignment>,
 ): LeaseAssignmentsView {
   const { resourceLock } = lease;
   const operationInProgress =

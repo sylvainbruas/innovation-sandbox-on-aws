@@ -2,13 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 import { Aws, Token } from "aws-cdk-lib";
 import {
-  RestApi as ApiGatewayRestApi,
-  AuthorizationType,
+  ApiDefinition,
+  CfnRestApi,
   LogGroupLogDestination,
+  RestApiMode,
+  SpecRestApi,
 } from "aws-cdk-lib/aws-apigateway";
 import { EventBus } from "aws-cdk-lib/aws-events";
 import { Role, ServicePrincipal } from "aws-cdk-lib/aws-iam";
-import { LogGroup } from "aws-cdk-lib/aws-logs";
+import { IFunction } from "aws-cdk-lib/aws-lambda";
 import { Construct } from "constructs";
 
 import { AccountsApi } from "@amzn/innovation-sandbox-infrastructure/components/api/accounts-api";
@@ -16,12 +18,20 @@ import { BlueprintsApi } from "@amzn/innovation-sandbox-infrastructure/component
 import { ConfigurationsApi } from "@amzn/innovation-sandbox-infrastructure/components/api/configurations-api";
 import { LeaseTemplatesApi } from "@amzn/innovation-sandbox-infrastructure/components/api/lease-templates-api";
 import { LeasesApi } from "@amzn/innovation-sandbox-infrastructure/components/api/leases-api";
+import {
+  API_DOMAINS,
+  ApiDomain,
+  DomainLambdaArns,
+  prepareApiGatewaySpec,
+} from "@amzn/innovation-sandbox-infrastructure/components/api/prepare-api-gateway-spec";
 import { PrincipalsApi } from "@amzn/innovation-sandbox-infrastructure/components/api/principals-api";
 import { Waf } from "@amzn/innovation-sandbox-infrastructure/components/api/waf";
 import { IsbKmsKeys } from "@amzn/innovation-sandbox-infrastructure/components/kms";
 import { getContextFromMapping } from "@amzn/innovation-sandbox-infrastructure/helpers/cdk-context";
 import { addCfnGuardSuppression } from "@amzn/innovation-sandbox-infrastructure/helpers/cfn-guard";
 import { IsbComputeResources } from "@amzn/innovation-sandbox-infrastructure/isb-compute-resources";
+
+import openApiContract from "../../../../../docs/openapi/innovation-sandbox-api.json";
 
 export interface RestApiProps {
   intermediateRole: Role;
@@ -33,8 +43,7 @@ export interface RestApiProps {
   durableCleanupFunctionArn: string;
 }
 
-export class RestApi extends ApiGatewayRestApi {
-  public readonly logGroup: LogGroup;
+export class RestApi extends SpecRestApi {
   public readonly wafWebAclName: string;
 
   constructor(scope: Construct, id: string, props: RestApiProps) {
@@ -43,8 +52,22 @@ export class RestApi extends ApiGatewayRestApi {
       new ServicePrincipal("logs.amazonaws.com", { region: Aws.REGION }),
     );
 
+    // Create domain Lambdas first so their ARN tokens can be embedded in the
+    // OpenAPI definition required by super().
+    const domainLambdaFunctions = createDomainLambdaFunctions(scope, props);
+    const lambdaArns = getDomainLambdaArns(domainLambdaFunctions);
+
     super(scope, id, {
+      restApiName: "IsbRestApi",
       description: "Innovation Sandbox on AWS Rest API",
+      apiDefinition: ApiDefinition.fromInline(
+        prepareApiGatewaySpec(openApiContract, lambdaArns),
+      ),
+      mode: RestApiMode.OVERWRITE,
+      failOnWarnings: true,
+      parameters: {
+        basepath: "ignore",
+      },
       deployOptions: {
         accessLogDestination: new LogGroupLogDestination(
           IsbComputeResources.globalLogGroup,
@@ -61,10 +84,14 @@ export class RestApi extends ApiGatewayRestApi {
         cachingEnabled: false,
         cacheDataEncrypted: true,
       },
-      defaultMethodOptions: {
-        authorizationType: AuthorizationType.IAM,
-      },
     });
+
+    // Replace only the physical RestApi while preserving the construct path and
+    // the logical IDs of its Stage and surrounding resources. SpecRestApi applies
+    // its description to the deployment, so set the RestApi description explicitly.
+    const restApiResource = this.node.defaultChild as CfnRestApi;
+    restApiResource.description = "Innovation Sandbox on AWS Rest API";
+    restApiResource.overrideLogicalId("IsbOpenApiRestApi");
 
     addCfnGuardSuppression(this.deploymentStage, [
       "API_GW_CACHE_ENABLED_AND_ENCRYPTED",
@@ -79,13 +106,49 @@ export class RestApi extends ApiGatewayRestApi {
     });
     this.wafWebAclName = waf.webAcl.webAclRef.webAclName;
 
-    this.logGroup = IsbComputeResources.globalLogGroup;
-
-    new LeasesApi(this, scope, props);
-    new LeaseTemplatesApi(this, scope, props);
-    new AccountsApi(this, scope, props);
-    new BlueprintsApi(this, scope, props);
-    new ConfigurationsApi(this, scope, props);
-    new PrincipalsApi(this, scope, props);
+    this.grantApiGatewayInvoke(domainLambdaFunctions);
   }
+
+  private grantApiGatewayInvoke(lambdaFunctions: DomainLambdaFunctions): void {
+    for (const domain of API_DOMAINS) {
+      const lambdaFunction = lambdaFunctions[domain];
+      lambdaFunction.addPermission("ApiGatewayInvokeRoot", {
+        principal: new ServicePrincipal("apigateway.amazonaws.com"),
+        sourceArn: this.arnForExecuteApi("*", `/${domain}`),
+      });
+      lambdaFunction.addPermission("ApiGatewayInvokeDescendants", {
+        principal: new ServicePrincipal("apigateway.amazonaws.com"),
+        sourceArn: this.arnForExecuteApi("*", `/${domain}/*`),
+      });
+    }
+  }
+}
+
+type DomainLambdaFunctions = Readonly<Record<ApiDomain, IFunction>>;
+
+function createDomainLambdaFunctions(
+  scope: Construct,
+  props: RestApiProps,
+): DomainLambdaFunctions {
+  return {
+    leases: new LeasesApi(scope, props).lambdaFunction,
+    leaseTemplates: new LeaseTemplatesApi(scope, props).lambdaFunction,
+    accounts: new AccountsApi(scope, props).lambdaFunction,
+    blueprints: new BlueprintsApi(scope, props).lambdaFunction,
+    configurations: new ConfigurationsApi(scope, props).lambdaFunction,
+    principals: new PrincipalsApi(scope, props).lambdaFunction,
+  };
+}
+
+function getDomainLambdaArns(
+  lambdaFunctions: DomainLambdaFunctions,
+): DomainLambdaArns {
+  return {
+    accounts: lambdaFunctions.accounts.functionArn,
+    blueprints: lambdaFunctions.blueprints.functionArn,
+    configurations: lambdaFunctions.configurations.functionArn,
+    leases: lambdaFunctions.leases.functionArn,
+    leaseTemplates: lambdaFunctions.leaseTemplates.functionArn,
+    principals: lambdaFunctions.principals.functionArn,
+  };
 }

@@ -1,17 +1,17 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { BlueprintWithStackSets } from "@amzn/innovation-sandbox-commons/data/blueprint/blueprint.js";
+import { PersistedBlueprintWithStackSets } from "@amzn/innovation-sandbox-commons/data/blueprint/blueprint.js";
 import { PaginatedQueryResult } from "@amzn/innovation-sandbox-commons/data/common-types.js";
 import {
-  MonitoredLease,
-  PendingLeaseSchema,
+  PersistedMonitoredLease,
+  PersistedPendingLeaseSchema,
 } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import { PrincipalStore } from "@amzn/innovation-sandbox-commons/data/principal/principal-store.js";
-import { PrincipalCacheItemSchema } from "@amzn/innovation-sandbox-commons/data/principal/principal.js";
+import { PersistedPrincipalCacheItemSchema } from "@amzn/innovation-sandbox-commons/data/principal/principal.js";
 import {
-  SandboxAccount,
-  SandboxAccountSchema,
+  PersistedSandboxAccount,
+  PersistedSandboxAccountSchema,
 } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
 import {
   InnovationSandbox,
@@ -33,7 +33,7 @@ import { createMockOf } from "@amzn/innovation-sandbox-commons/test/mocking/mock
 import {
   IdcIdentitySchema,
   buildM2mSyntheticEmail,
-} from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
+} from "@amzn/innovation-sandbox-shared/utils/auth-utils.js";
 import { Logger } from "@aws-lambda-powertools/logger";
 import { Tracer } from "@aws-lambda-powertools/tracer";
 import { DateTime } from "luxon";
@@ -65,9 +65,12 @@ const mockUser = generateSchemaData(IdcIdentitySchema);
 describe("InnovationSandbox.approveLease()", () => {
   let mockContext: ReturnType<typeof createMockContext>;
 
-  const mockAvailableAccount = generateSchemaData(SandboxAccountSchema, {
-    status: "Available",
-  });
+  const mockAvailableAccount = generateSchemaData(
+    PersistedSandboxAccountSchema,
+    {
+      status: "Available",
+    },
+  );
 
   beforeEach(() => {
     mockContext = createMockContext();
@@ -103,7 +106,7 @@ describe("InnovationSandbox.approveLease()", () => {
     mockContext.principalStore.batchGetCacheItems.mockImplementation(
       async (keys) =>
         keys.map((k) =>
-          generateSchemaData(PrincipalCacheItemSchema, {
+          generateSchemaData(PersistedPrincipalCacheItemSchema, {
             sk: `${k.principalType.toLowerCase()}#${k.principalId}`,
             principalId: k.principalId,
             principalType: k.principalType,
@@ -125,7 +128,7 @@ describe("InnovationSandbox.approveLease()", () => {
 
     mockContext.sandboxAccountStore.findByStatus.mockResolvedValue({
       result: [mockAvailableAccount],
-    } as PaginatedQueryResult<SandboxAccount>);
+    } as PaginatedQueryResult<PersistedSandboxAccount>);
 
     mockContext.blueprintDeploymentService.validateBlueprintForDeployment.mockResolvedValue(
       {
@@ -172,7 +175,7 @@ describe("InnovationSandbox.approveLease()", () => {
             },
           },
         ],
-      } as BlueprintWithStackSets,
+      } as PersistedBlueprintWithStackSets,
     );
 
     vi.useFakeTimers();
@@ -186,7 +189,7 @@ describe("InnovationSandbox.approveLease()", () => {
   });
 
   test("Writes approved lease to DB", async () => {
-    const leaseToApprove = generateSchemaData(PendingLeaseSchema, {
+    const leaseToApprove = generateSchemaData(PersistedPendingLeaseSchema, {
       status: "PendingApproval",
       leaseDurationInHours: 100,
       userEmail: mockUser.email,
@@ -203,7 +206,7 @@ describe("InnovationSandbox.approveLease()", () => {
       mockContext,
     );
 
-    const expectedSavedLease: MonitoredLease = {
+    const expectedSavedLease: PersistedMonitoredLease = {
       ...leaseToApprove,
       status: "Active",
       approvedBy: approver,
@@ -249,7 +252,7 @@ describe("InnovationSandbox.approveLease()", () => {
   ])(
     "Writes LeaseApproval metric correctly for $scenario",
     async ({ createdBy, expectedCreationMethod }) => {
-      const leaseToApprove = generateSchemaData(PendingLeaseSchema, {
+      const leaseToApprove = generateSchemaData(PersistedPendingLeaseSchema, {
         status: "PendingApproval",
         leaseDurationInHours: 100,
         blueprintId: null,
@@ -281,7 +284,7 @@ describe("InnovationSandbox.approveLease()", () => {
   );
 
   test("Rejects an M2M-assignee lease with a logged error (defense-in-depth)", async () => {
-    const leaseToApprove = generateSchemaData(PendingLeaseSchema, {
+    const leaseToApprove = generateSchemaData(PersistedPendingLeaseSchema, {
       status: "PendingApproval",
       userEmail: buildM2mSyntheticEmail("some-client", "Admin"),
       blueprintId: null,
@@ -304,18 +307,24 @@ describe("InnovationSandbox.approveLease()", () => {
   });
 
   describe("Acquire available account", () => {
-    const accountWithoutTimestamp = generateSchemaData(SandboxAccountSchema, {
-      status: "Available",
-      lastCleanupCompletedAt: undefined,
-    });
+    const accountWithoutTimestamp = generateSchemaData(
+      PersistedSandboxAccountSchema,
+      {
+        status: "Available",
+        lastCleanupCompletedAt: undefined,
+      },
+    );
 
-    const accountWithOldTimestamp = generateSchemaData(SandboxAccountSchema, {
-      status: "Available",
-      lastCleanupCompletedAt: currentDateTime.minus({ hours: 48 }).toISO(),
-    });
+    const accountWithOldTimestamp = generateSchemaData(
+      PersistedSandboxAccountSchema,
+      {
+        status: "Available",
+        lastCleanupCompletedAt: currentDateTime.minus({ hours: 48 }).toISO(),
+      },
+    );
 
     const accountWithRecentTimestamp = generateSchemaData(
-      SandboxAccountSchema,
+      PersistedSandboxAccountSchema,
       {
         status: "Available",
         lastCleanupCompletedAt: currentDateTime.minus({ hours: 2 }).toISO(),
@@ -325,9 +334,9 @@ describe("InnovationSandbox.approveLease()", () => {
     test("Selects account with no cleanup timestamp (never used)", async () => {
       mockContext.sandboxAccountStore.findByStatus.mockResolvedValue({
         result: [accountWithoutTimestamp, accountWithRecentTimestamp],
-      } as PaginatedQueryResult<SandboxAccount>);
+      } as PaginatedQueryResult<PersistedSandboxAccount>);
 
-      const leaseToApprove = generateSchemaData(PendingLeaseSchema, {
+      const leaseToApprove = generateSchemaData(PersistedPendingLeaseSchema, {
         status: "PendingApproval",
         userEmail: mockUser.email,
         blueprintId: null,
@@ -337,7 +346,7 @@ describe("InnovationSandbox.approveLease()", () => {
       const { newItem: approvedLease } = (await InnovationSandbox.approveLease(
         { lease: leaseToApprove, approver: "test@example.com" },
         mockContext,
-      )) as { newItem: MonitoredLease };
+      )) as { newItem: PersistedMonitoredLease };
 
       expect(approvedLease.awsAccountId).toBe(
         accountWithoutTimestamp.awsAccountId,
@@ -348,9 +357,9 @@ describe("InnovationSandbox.approveLease()", () => {
     test("Selects account with timestamp > 24 hours old", async () => {
       mockContext.sandboxAccountStore.findByStatus.mockResolvedValue({
         result: [accountWithOldTimestamp, accountWithRecentTimestamp],
-      } as PaginatedQueryResult<SandboxAccount>);
+      } as PaginatedQueryResult<PersistedSandboxAccount>);
 
-      const leaseToApprove = generateSchemaData(PendingLeaseSchema, {
+      const leaseToApprove = generateSchemaData(PersistedPendingLeaseSchema, {
         status: "PendingApproval",
         userEmail: mockUser.email,
         blueprintId: null,
@@ -360,7 +369,7 @@ describe("InnovationSandbox.approveLease()", () => {
       const { newItem: approvedLease } = (await InnovationSandbox.approveLease(
         { lease: leaseToApprove, approver: "test@example.com" },
         mockContext,
-      )) as { newItem: MonitoredLease };
+      )) as { newItem: PersistedMonitoredLease };
 
       expect(approvedLease.awsAccountId).toBe(
         accountWithOldTimestamp.awsAccountId,
@@ -371,9 +380,9 @@ describe("InnovationSandbox.approveLease()", () => {
     test("Falls back to recent account when no preferred accounts available", async () => {
       mockContext.sandboxAccountStore.findByStatus.mockResolvedValue({
         result: [accountWithRecentTimestamp],
-      } as PaginatedQueryResult<SandboxAccount>);
+      } as PaginatedQueryResult<PersistedSandboxAccount>);
 
-      const leaseToApprove = generateSchemaData(PendingLeaseSchema, {
+      const leaseToApprove = generateSchemaData(PersistedPendingLeaseSchema, {
         status: "PendingApproval",
         userEmail: mockUser.email,
         blueprintId: null,
@@ -383,7 +392,7 @@ describe("InnovationSandbox.approveLease()", () => {
       const { newItem: approvedLease } = (await InnovationSandbox.approveLease(
         { lease: leaseToApprove, approver: "test@example.com" },
         mockContext,
-      )) as { newItem: MonitoredLease };
+      )) as { newItem: PersistedMonitoredLease };
 
       expect(approvedLease.awsAccountId).toBe(
         accountWithRecentTimestamp.awsAccountId,

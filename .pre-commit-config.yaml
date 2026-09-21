@@ -29,8 +29,6 @@ repos:
           )$
       - id: end-of-file-fixer
         name: Fix end of the files
-      - id: fix-encoding-pragma
-        name: Fix python encoding pragma
       - id: trailing-whitespace
         name: Trim trailing whitespace
       - id: mixed-line-ending
@@ -72,3 +70,9 @@ repos:
         entry: scripts/detect-empty-files.sh
         language: system
         pass_filenames: false
+      - id: verify-c2j-drift
+        name: Verify AWS CLI model is current
+        entry: scripts/m2m/verify-c2j-drift.sh
+        language: system
+        pass_filenames: false
+        files: ^(source/api-model/src/main/smithy/.*\.smithy|source/api-model/smithy-build-c2j\.json|scripts/m2m/internal/generate-c2j\.sh|scripts/m2m/verify-c2j-drift\.sh|docs/aws-cli-model/(service-2\.json|paginators-1\.json))$

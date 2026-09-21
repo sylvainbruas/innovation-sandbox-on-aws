@@ -1,13 +1,13 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 import {
-  MonitoredLease,
-  MonitoredLeaseSchema,
-  PendingLeaseSchema,
+  PersistedMonitoredLease,
+  PersistedMonitoredLeaseSchema,
+  PersistedPendingLeaseSchema,
 } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import {
-  GroupAssignmentSchema,
-  UserAssignmentSchema,
+  PersistedGroupAssignmentSchema,
+  PersistedUserAssignmentSchema,
 } from "@amzn/innovation-sandbox-commons/data/principal/principal.js";
 import { AssignmentProcessorEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/assignment-processor-environment.js";
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
@@ -127,7 +127,7 @@ function createHandleCompletionInput(
 }
 
 function createUserAssignmentRecord(userId: string, leaseId: string) {
-  return generateSchemaData(UserAssignmentSchema, {
+  return generateSchemaData(PersistedUserAssignmentSchema, {
     pk: `user#${userId}`,
     sk: `lease#${leaseId}`,
     userId,
@@ -140,7 +140,7 @@ function createUserAssignmentRecord(userId: string, leaseId: string) {
 }
 
 function createGroupAssignmentRecord(groupId: string, leaseId: string) {
-  return generateSchemaData(GroupAssignmentSchema, {
+  return generateSchemaData(PersistedGroupAssignmentSchema, {
     pk: `group#${groupId}`,
     sk: `lease#${leaseId}`,
     groupId,
@@ -153,9 +153,11 @@ function createGroupAssignmentRecord(groupId: string, leaseId: string) {
 }
 
 /** A leaseStore.get() result wrapping a schema-valid MonitoredLease. */
-function monitoredLeaseResult(overrides: Partial<MonitoredLease> = {}) {
+function monitoredLeaseResult(
+  overrides: Partial<PersistedMonitoredLease> = {},
+) {
   return {
-    result: generateSchemaData(MonitoredLeaseSchema, {
+    result: generateSchemaData(PersistedMonitoredLeaseSchema, {
       userEmail: TEST_OWNER_EMAIL,
       uuid: TEST_LEASE_ID,
       awsAccountId: TEST_ACCOUNT_ID,
@@ -263,7 +265,7 @@ describe("FAN_OUT action", () => {
   it("should throw when lease has no awsAccountId", async () => {
     // A pending lease has no awsAccountId yet
     mockLeaseStoreGet.mockResolvedValue({
-      result: generateSchemaData(PendingLeaseSchema, {
+      result: generateSchemaData(PersistedPendingLeaseSchema, {
         userEmail: TEST_OWNER_EMAIL,
         uuid: TEST_LEASE_ID,
         desiredAssignments: [

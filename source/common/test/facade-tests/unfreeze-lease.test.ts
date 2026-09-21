@@ -3,10 +3,10 @@
 
 import { ResourceLockConflictError } from "@amzn/innovation-sandbox-commons/data/errors.js";
 import {
-  ExpiredLeaseSchema,
-  MonitoredLeaseSchema,
+  PersistedExpiredLeaseSchema,
+  PersistedMonitoredLeaseSchema,
 } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
-import { SandboxAccountSchema } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
+import { PersistedSandboxAccountSchema } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
 import { LeaseUnfrozenEvent } from "@amzn/innovation-sandbox-commons/events/lease-unfrozen-event.js";
 import {
   AccountNotInFrozenError,
@@ -27,7 +27,7 @@ import {
   mockedOrgsService,
 } from "@amzn/innovation-sandbox-commons/test/mocking/common-mocks.js";
 import { createMockOf } from "@amzn/innovation-sandbox-commons/test/mocking/mock-utils.js";
-import { IdcIdentitySchema } from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
+import { IdcIdentitySchema } from "@amzn/innovation-sandbox-shared/utils/auth-utils.js";
 import { Logger } from "@aws-lambda-powertools/logger";
 import { Tracer } from "@aws-lambda-powertools/tracer";
 import { DateTime } from "luxon";
@@ -53,10 +53,10 @@ const currentDateTime = DateTime.fromISO("2024-12-20T08:45:00.000Z", {
 describe("InnovationSandbox.unfreezeLease()", async () => {
   let mockContext: ReturnType<typeof createMockContext>;
   const mockUser = generateSchemaData(IdcIdentitySchema);
-  const mockLeaseAccount = generateSchemaData(SandboxAccountSchema, {
+  const mockLeaseAccount = generateSchemaData(PersistedSandboxAccountSchema, {
     status: "Frozen",
   });
-  const mockLease = generateSchemaData(MonitoredLeaseSchema, {
+  const mockLease = generateSchemaData(PersistedMonitoredLeaseSchema, {
     status: "Frozen",
     awsAccountId: mockLeaseAccount.awsAccountId,
     userEmail: mockUser.email,
@@ -226,7 +226,7 @@ describe("InnovationSandbox.unfreezeLease()", async () => {
   });
 
   it("Fails when attempting to unfreeze a lease that is not frozen", async () => {
-    const alreadyExpiredLease = generateSchemaData(ExpiredLeaseSchema);
+    const alreadyExpiredLease = generateSchemaData(PersistedExpiredLeaseSchema);
 
     await expect(
       InnovationSandbox.unfreezeLease(

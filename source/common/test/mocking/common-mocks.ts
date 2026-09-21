@@ -8,9 +8,9 @@ import {
 } from "@amzn/innovation-sandbox-commons/data/common-types.js";
 import { LeaseTemplateStore } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template-store.js";
 import { LeaseStore } from "@amzn/innovation-sandbox-commons/data/lease/lease-store.js";
-import { Lease } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
+import { PersistedLease } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import { SandboxAccountStore } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account-store.js";
-import { SandboxAccount } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
+import { PersistedSandboxAccount } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
 import { BlueprintDeploymentService } from "@amzn/innovation-sandbox-commons/isb-services/blueprint-deployment-service.js";
 import { IdcService } from "@amzn/innovation-sandbox-commons/isb-services/idc-service.js";
 import { OrganizationsTaggingService } from "@amzn/innovation-sandbox-commons/isb-services/organizations-tagging-service.js";
@@ -25,30 +25,30 @@ export function mockedLeaseStore() {
     usingRealFunctions: ["transactionalUpdate"],
   });
 
-  mockLeaseStore.create.mockImplementation(async (lease: Lease) => {
+  mockLeaseStore.create.mockImplementation(async (lease: PersistedLease) => {
     return lease;
   });
 
-  mockLeaseStore.update.mockImplementation(async (lease: Lease) => {
+  mockLeaseStore.update.mockImplementation(async (lease: PersistedLease) => {
     return {
       newItem: lease,
-    } as PutResult<Lease>;
+    } as PutResult<PersistedLease>;
   });
 
   mockLeaseStore.findByUserEmail.mockImplementation(
     async () =>
       ({
-        result: [] as Lease[],
+        result: [] as PersistedLease[],
         nextPageIdentifier: null,
-      }) as PaginatedQueryResult<Lease>,
+      }) as PaginatedQueryResult<PersistedLease>,
   );
 
   mockLeaseStore.findByStatusAndAccountID.mockImplementation(
     async () =>
       ({
-        result: [] as Lease[],
+        result: [] as PersistedLease[],
         nextPageIdentifier: null,
-      }) as PaginatedQueryResult<Lease>,
+      }) as PaginatedQueryResult<PersistedLease>,
   );
 
   return mockLeaseStore;
@@ -59,11 +59,13 @@ export function mockedAccountStore() {
     usingRealFunctions: ["transactionalPut"],
   });
 
-  mockAccountStore.put.mockImplementation(async (account: SandboxAccount) => {
-    return {
-      newItem: account,
-    } as PutResult<SandboxAccount>;
-  });
+  mockAccountStore.put.mockImplementation(
+    async (account: PersistedSandboxAccount) => {
+      return {
+        newItem: account,
+      } as PutResult<PersistedSandboxAccount>;
+    },
+  );
 
   return mockAccountStore;
 }

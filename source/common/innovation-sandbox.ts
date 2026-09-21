@@ -6,27 +6,16 @@ import { BlueprintStore } from "@amzn/innovation-sandbox-commons/data/blueprint/
 import { PutResult } from "@amzn/innovation-sandbox-commons/data/common-types.js";
 import { GlobalConfig } from "@amzn/innovation-sandbox-commons/data/global-config/global-config.js";
 import { LeaseTemplateStore } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template-store.js";
-import { LeaseTemplate } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
+import { PersistedLeaseTemplate } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
 import { LeaseStore } from "@amzn/innovation-sandbox-commons/data/lease/lease-store.js";
 import {
-  DesiredAssignment,
-  ExpiredLeaseStatus,
-  isActiveLease,
-  isFrozenLease,
-  isMonitoredLease,
-  Lease,
-  LeaseKeySchema,
-  LeaseStatus,
-  MonitoredLease,
-  MonitoredLeaseStatusSchema,
-  PendingLease,
+  PersistedLease,
+  PersistedMonitoredLease,
+  PersistedPendingLease,
 } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import { PrincipalStore } from "@amzn/innovation-sandbox-commons/data/principal/principal-store.js";
 import { SandboxAccountStore } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account-store.js";
-import {
-  IsbOu,
-  SandboxAccount,
-} from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
+import { PersistedSandboxAccount } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
 import {
   collect,
   stream,
@@ -77,12 +66,6 @@ import {
   IsbEvent,
   IsbEventBridgeClient,
 } from "@amzn/innovation-sandbox-commons/sdk-clients/event-bridge-client.js";
-import {
-  type IsbUser,
-  getUserEmail,
-  isIdcUser,
-  isSyntheticM2mEmail,
-} from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
 import { ISB_ACCOUNT_TAG_SUFFIXES } from "@amzn/innovation-sandbox-commons/utils/isb-account-tags.js";
 import {
   calculateTtlInEpochSeconds,
@@ -92,6 +75,23 @@ import {
   parseDatetime,
 } from "@amzn/innovation-sandbox-commons/utils/time-utils.js";
 import { Transaction } from "@amzn/innovation-sandbox-commons/utils/transactions.js";
+import {
+  DesiredAssignment,
+  ExpiredLeaseStatus,
+  isActiveLease,
+  isFrozenLease,
+  isMonitoredLease,
+  LeaseKeySchema,
+  LeaseStatus,
+  MonitoredLeaseStatusSchema,
+} from "@amzn/innovation-sandbox-shared/types/lease.js";
+import { IsbOu } from "@amzn/innovation-sandbox-shared/types/sandbox-account.js";
+import {
+  type IsbUser,
+  getUserEmail,
+  isIdcUser,
+  isSyntheticM2mEmail,
+} from "@amzn/innovation-sandbox-shared/utils/auth-utils.js";
 import { Tracer } from "@aws-lambda-powertools/tracer";
 import { randomUUID } from "crypto";
 
@@ -138,14 +138,14 @@ export class InnovationSandbox {
       idcService: IdcService;
       organizationsTaggingService: OrganizationsTaggingService;
     }>,
-  ): Promise<SandboxAccount> {
+  ): Promise<PersistedSandboxAccount> {
     const { logger, eventBridgeClient, orgsService, idcService } = context;
 
     const account = await orgsService.describeAccount({ accountId });
     if (account === undefined) {
       throw new CouldNotFindAccountError("Could not find account to register.");
     }
-    let newSandboxAccount: SandboxAccount = {
+    let newSandboxAccount: PersistedSandboxAccount = {
       awsAccountId: accountId,
       email: account.email,
       name: account.name,
@@ -205,7 +205,7 @@ export class InnovationSandbox {
   @logErrors
   public static async requestLease(
     props: {
-      leaseTemplate: LeaseTemplate;
+      leaseTemplate: PersistedLeaseTemplate;
       comments?: string;
       targetUser: IsbUser;
       createdBy?: string;
@@ -283,7 +283,7 @@ export class InnovationSandbox {
       },
     );
 
-    let newLease: Lease = await leaseStore.create({
+    let newLease: PersistedLease = await leaseStore.create({
       userEmail: getUserEmail(targetUser),
       uuid: randomUUID(),
       status: "PendingApproval",
@@ -354,7 +354,7 @@ export class InnovationSandbox {
   @logErrors
   public static async freezeLease(
     props: {
-      lease: Lease;
+      lease: PersistedLease;
       reason: LeaseFrozenReason;
     },
     context: IsbContext<{
@@ -461,7 +461,7 @@ export class InnovationSandbox {
   @logErrors
   public static async terminateLease(
     props: {
-      lease: MonitoredLease;
+      lease: PersistedMonitoredLease;
       expiredStatus: ExpiredLeaseStatus;
       autoCleanup?: boolean; //default true
     },
@@ -584,7 +584,7 @@ export class InnovationSandbox {
   @logErrors
   public static async unfreezeLease(
     props: {
-      lease: Lease;
+      lease: PersistedLease;
     },
     context: IsbContext<{
       leaseStore: LeaseStore;
@@ -593,7 +593,7 @@ export class InnovationSandbox {
       eventBridgeClient: IsbEventBridgeClient;
       organizationsTaggingService: OrganizationsTaggingService;
     }>,
-  ): Promise<PutResult<Lease>> {
+  ): Promise<PutResult<PersistedLease>> {
     const { lease } = props;
     const {
       logger,
@@ -630,7 +630,7 @@ export class InnovationSandbox {
       { leaseStore, eventBridgeClient, tracer, logger },
     );
 
-    let transactionResult: PutResult<Lease>;
+    let transactionResult: PutResult<PersistedLease>;
     try {
       transactionResult = await new Transaction(
         leaseStore.transactionalUpdate({
@@ -692,7 +692,7 @@ export class InnovationSandbox {
   @logErrors
   public static async retryCleanup(
     props: {
-      sandboxAccount: SandboxAccount;
+      sandboxAccount: PersistedSandboxAccount;
       initiatedBy?: string;
     },
     context: IsbContext<{
@@ -773,7 +773,7 @@ export class InnovationSandbox {
   @logErrors
   public static async approveLease(
     props: {
-      lease: Lease;
+      lease: PersistedLease;
       approver: string;
     },
     context: IsbContext<{
@@ -788,7 +788,7 @@ export class InnovationSandbox {
       leaseTemplateStore: LeaseTemplateStore;
       organizationsTaggingService: OrganizationsTaggingService;
     }>,
-  ): Promise<PutResult<Lease>> {
+  ): Promise<PutResult<PersistedLease>> {
     const { lease, approver } = props;
     const {
       logger,
@@ -820,7 +820,7 @@ export class InnovationSandbox {
     // Simple conditional: no blueprint vs has blueprint
     if (!lease.blueprintId) {
       // No blueprint: move account and grant access immediately
-      const approvedLease: MonitoredLease = {
+      const approvedLease: PersistedMonitoredLease = {
         ...lease,
         approvedBy: approver,
         awsAccountId: freeAccount.awsAccountId,
@@ -872,7 +872,7 @@ export class InnovationSandbox {
           blueprintStore,
         );
 
-      const approvedLease: MonitoredLease = {
+      const approvedLease: PersistedMonitoredLease = {
         ...lease,
         approvedBy: approver,
         awsAccountId: freeAccount.awsAccountId,
@@ -957,7 +957,7 @@ export class InnovationSandbox {
   @logErrors
   public static async publishLease(
     props: {
-      lease: MonitoredLease;
+      lease: PersistedMonitoredLease;
     },
     context: IsbContext<{
       leaseStore: LeaseStore;
@@ -989,7 +989,7 @@ export class InnovationSandbox {
     }
 
     // Set lease to Active and set startDate/expirationDate when user gets access
-    const updatedLease: MonitoredLease = {
+    const updatedLease: PersistedMonitoredLease = {
       ...lease,
       status: "Active",
       startDate: nowAsIsoDatetimeString(),
@@ -1078,7 +1078,7 @@ export class InnovationSandbox {
   @logErrors
   public static async resetLease(
     props: {
-      lease: MonitoredLease;
+      lease: PersistedMonitoredLease;
       blueprintName: string;
     },
     context: IsbContext<{
@@ -1189,7 +1189,7 @@ export class InnovationSandbox {
   @logErrors
   public static async denyLease(
     props: {
-      lease: PendingLease;
+      lease: PersistedPendingLease;
       denier: IsbUser;
     },
     context: IsbContext<{
@@ -1234,7 +1234,7 @@ export class InnovationSandbox {
   @logErrors
   public static async ejectAccount(
     props: {
-      sandboxAccount: SandboxAccount;
+      sandboxAccount: PersistedSandboxAccount;
     },
     context: IsbContext<{
       orgsService: SandboxOuService;
@@ -1343,7 +1343,7 @@ export class InnovationSandbox {
       );
     }
 
-    const accountRecord: SandboxAccount = accountResponse.result ?? {
+    const accountRecord: PersistedSandboxAccount = accountResponse.result ?? {
       awsAccountId: accountId,
       status: "Quarantine",
       driftAtLastScan: true,
@@ -1455,7 +1455,10 @@ export class InnovationSandbox {
    * unreachable in normal operation, so reaching it signals legacy data or a
    * bypass path — log loudly and fail (maps to HTTP 500).
    */
-  private static assertAssigneeNotM2m(lease: Lease, logger: Logger): void {
+  private static assertAssigneeNotM2m(
+    lease: PersistedLease,
+    logger: Logger,
+  ): void {
     if (isSyntheticM2mEmail(lease.userEmail)) {
       logger.error(
         "M2M-assignee lease reached an IDC-grant code path — should be impossible",
@@ -1471,7 +1474,7 @@ export class InnovationSandbox {
     context: IsbContext<{
       sandboxAccountStore: SandboxAccountStore;
     }>,
-  ): Promise<SandboxAccount> {
+  ): Promise<PersistedSandboxAccount> {
     const { sandboxAccountStore, logger } = context;
 
     const availableAccounts = await collect(
@@ -1488,8 +1491,8 @@ export class InnovationSandbox {
 
     // Implement soft cooldown: separate accounts by 24-hour usage threshold
     const twentyFourHoursAgo = now().minus({ hours: 24 });
-    const preferredAccounts: SandboxAccount[] = [];
-    const fallbackAccounts: SandboxAccount[] = [];
+    const preferredAccounts: PersistedSandboxAccount[] = [];
+    const fallbackAccounts: PersistedSandboxAccount[] = [];
 
     for (const account of availableAccounts) {
       const lastCleanupTime = account.lastCleanupCompletedAt;
@@ -1506,7 +1509,7 @@ export class InnovationSandbox {
       }
     }
 
-    let selectedAccount: SandboxAccount;
+    let selectedAccount: PersistedSandboxAccount;
 
     if (preferredAccounts.length > 0) {
       // Randomly select from preferred accounts (no timestamp or > 24 hours old)

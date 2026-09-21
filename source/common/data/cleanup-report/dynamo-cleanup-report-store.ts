@@ -10,10 +10,10 @@ import {
 
 import { CleanupReportStore } from "@amzn/innovation-sandbox-commons/data/cleanup-report/cleanup-report-store.js";
 import {
-  CleanupReport,
   CleanupReportKey,
-  CleanupReportSchema,
   CleanupReportSchemaVersion,
+  PersistedCleanupReport,
+  PersistedCleanupReportSchema,
 } from "@amzn/innovation-sandbox-commons/data/cleanup-report/cleanup-report.js";
 import {
   AwsAccountId,
@@ -68,11 +68,11 @@ export class DynamoCleanupReportStore extends CleanupReportStore {
     reasonForCleanup: string;
     initiatedBy?: string;
     ttl: number;
-  }): Promise<CleanupReport> {
+  }): Promise<PersistedCleanupReport> {
     const { pk, sk } = resolveKey(input.key);
 
     const now = nowAsIsoDatetimeString();
-    const report: CleanupReport = CleanupReportSchema.parse({
+    const report: PersistedCleanupReport = PersistedCleanupReportSchema.parse({
       pk,
       sk,
       accountId: input.key.accountId,
@@ -105,7 +105,7 @@ export class DynamoCleanupReportStore extends CleanupReportStore {
 
   public async updateReport(
     input: Parameters<CleanupReportStore["updateReport"]>[0],
-  ): Promise<CleanupReport> {
+  ): Promise<PersistedCleanupReport> {
     const now = nowAsIsoDatetimeString();
     const { pk, sk } = resolveKey(input.key);
 
@@ -195,7 +195,7 @@ export class DynamoCleanupReportStore extends CleanupReportStore {
       }),
     );
 
-    return CleanupReportSchema.parse(result.Attributes);
+    return PersistedCleanupReportSchema.parse(result.Attributes);
   }
 
   public async addStep(
@@ -278,7 +278,7 @@ export class DynamoCleanupReportStore extends CleanupReportStore {
   public async getReport(
     key: CleanupReportKey,
     options?: { consistentRead?: boolean },
-  ): Promise<SingleItemResult<CleanupReport>> {
+  ): Promise<SingleItemResult<PersistedCleanupReport>> {
     const { pk, sk } = resolveKey(key);
     const result = await this.ddbClient.send(
       new GetCommand({
@@ -287,12 +287,12 @@ export class DynamoCleanupReportStore extends CleanupReportStore {
         ConsistentRead: options?.consistentRead,
       }),
     );
-    return parseSingleItemResult(result.Item, CleanupReportSchema);
+    return parseSingleItemResult(result.Item, PersistedCleanupReportSchema);
   }
 
   public async getLatestReport(
     accountId: AwsAccountId,
-  ): Promise<SingleItemResult<CleanupReport>> {
+  ): Promise<SingleItemResult<PersistedCleanupReport>> {
     const result = await this.ddbClient.send(
       new QueryCommand({
         TableName: this.tableName,
@@ -311,14 +311,14 @@ export class DynamoCleanupReportStore extends CleanupReportStore {
     );
 
     const item = result.Items?.[0];
-    return parseSingleItemResult(item, CleanupReportSchema);
+    return parseSingleItemResult(item, PersistedCleanupReportSchema);
   }
 
   public async listRecentReports(args: {
     accountId: AwsAccountId;
     limit?: number;
     pageIdentifier?: string;
-  }): Promise<PaginatedQueryResult<CleanupReport>> {
+  }): Promise<PaginatedQueryResult<PersistedCleanupReport>> {
     const limit = args.limit ?? 5;
 
     const result = await this.ddbClient.send(
@@ -340,7 +340,7 @@ export class DynamoCleanupReportStore extends CleanupReportStore {
     );
 
     return {
-      ...parseResults(result.Items, CleanupReportSchema),
+      ...parseResults(result.Items, PersistedCleanupReportSchema),
       nextPageIdentifier: base64EncodeCompositeKey(result.LastEvaluatedKey),
     };
   }

@@ -201,6 +201,9 @@ export class IsbAccountPoolResources {
     const writeProtectionScp = getInnovationSandboxWriteProtectionScp({
       namespace: props.namespace,
       scpDirectoryPath,
+      additionalPrincipalExceptions: props.additionalPrincipalExceptions,
+      hasAdditionalPrincipalExceptionsConditionId:
+        props.hasAdditionalPrincipalExceptions.logicalId,
     });
 
     new CfnPolicy(scope, "InnovationSandboxWriteProtectionScp", {
@@ -377,7 +380,7 @@ export class IsbAccountPoolResources {
       ],
     });
     const outdir = App.of(scope)!.outdir;
-    const sandboxAccountStackApp = new App({ outdir });
+    const sandboxAccountStackApp = new App({ outdir, autoSynth: false });
     const context = getSolutionContext(sandboxAccountStackApp.node);
     const sandboxAccountStack = new IsbSandboxAccountStack(
       sandboxAccountStackApp,

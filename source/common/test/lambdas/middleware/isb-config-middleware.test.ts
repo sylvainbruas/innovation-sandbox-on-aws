@@ -3,16 +3,14 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import {
-  ConfigSchemas,
-  ConfigSchemaVersion,
-} from "@amzn/innovation-sandbox-commons/data/config/config.js";
+import { ConfigSchemaVersion } from "@amzn/innovation-sandbox-commons/data/config/config.js";
 import { DynamoConfigStore } from "@amzn/innovation-sandbox-commons/data/config/dynamo-config-store.js";
 import { IsbServices } from "@amzn/innovation-sandbox-commons/isb-services/index.js";
 import {
   ContextWithConfig,
   isbConfigMiddleware,
 } from "@amzn/innovation-sandbox-commons/lambda/middleware/isb-config-middleware.js";
+import { ConfigSchemas } from "@amzn/innovation-sandbox-shared/types/configuration.js";
 
 const testEnv = {
   CONFIG_TABLE_NAME: "test-config-table",

@@ -3,10 +3,10 @@
 
 import { ReactNode } from "react";
 
-import type { IsbRole } from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
 import { FullPageLoader } from "@amzn/innovation-sandbox-frontend/components/FullPageLoader";
 import { Unauthorized } from "@amzn/innovation-sandbox-frontend/domains/home/pages/Unauthorized";
 import { useUser } from "@amzn/innovation-sandbox-frontend/hooks/useUser";
+import type { IsbRole } from "@amzn/innovation-sandbox-shared/utils/auth-utils.js";
 
 interface ProtectedRouteProps {
   allowedRoles: IsbRole[];

@@ -4,10 +4,6 @@ import { Logger } from "@aws-lambda-powertools/logger";
 import { Tracer } from "@aws-lambda-powertools/tracer";
 import { SQSEvent } from "aws-lambda";
 
-import {
-  isActiveLease,
-  isMonitoredLease,
-} from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import { AccountCleanupFailureEvent } from "@amzn/innovation-sandbox-commons/events/account-cleanup-failure-event.js";
 import { AccountCleanupSuccessfulEvent } from "@amzn/innovation-sandbox-commons/events/account-cleanup-successful-event.js";
 import { AccountDriftDetectedAlert } from "@amzn/innovation-sandbox-commons/events/account-drift-detected-alert.js";
@@ -37,6 +33,10 @@ import {
   fromTemporaryIsbIdcCredentials,
   fromTemporaryIsbOrgManagementCredentials,
 } from "@amzn/innovation-sandbox-commons/utils/cross-account-roles.js";
+import {
+  isActiveLease,
+  isMonitoredLease,
+} from "@amzn/innovation-sandbox-shared/types/lease.js";
 import { DateTime } from "luxon";
 
 const serviceName = "AccountLifecycleManager";

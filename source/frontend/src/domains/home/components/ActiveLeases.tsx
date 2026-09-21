@@ -5,10 +5,6 @@ import { Button, Header, SpaceBetween } from "@cloudscape-design/components";
 import { useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 
-import {
-  LeaseStatus,
-  LeaseWithLeaseId,
-} from "@amzn/innovation-sandbox-commons/data/lease/lease";
 import { ErrorPanel } from "@amzn/innovation-sandbox-frontend/components/ErrorPanel";
 import { InfoPanel } from "@amzn/innovation-sandbox-frontend/components/InfoPanel";
 import { Loader } from "@amzn/innovation-sandbox-frontend/components/Loader";
@@ -17,8 +13,15 @@ import {
   useGetSharedLeases,
   useLeasesForCurrentUser,
 } from "@amzn/innovation-sandbox-frontend/domains/leases/hooks";
+import { LeaseView } from "@amzn/innovation-sandbox-frontend/domains/leases/model";
+import { LeaseStatus } from "@amzn/innovation-sandbox-shared/types/lease.js";
 
-const ACTIVE_STATUSES: LeaseStatus[] = ["PendingApproval", "Active", "Frozen"];
+const ACTIVE_STATUSES: LeaseStatus[] = [
+  "PendingApproval",
+  "Active",
+  "Frozen",
+  "Provisioning",
+];
 
 /**
  * Unified Home page section showing all active leases the user can access
@@ -64,7 +67,7 @@ export const ActiveLeases = () => {
   const directResults = directData?.result;
   const groupResults = groupData?.result;
 
-  const activeLeases: LeaseWithLeaseId[] = useMemo(() => {
+  const activeLeases: LeaseView[] = useMemo(() => {
     // Owned first, then direct, then group — first occurrence wins dedup
     const all = [
       ...(myLeases ?? []),
@@ -120,7 +123,7 @@ export const ActiveLeases = () => {
     <SpaceBetween size="m">
       <Header
         variant="h2"
-        description="Active sandbox accounts you can access"
+        description="Current sandbox leases you own or that are shared with you"
         counter={
           !isLoading && !isError ? `(${activeLeases.length})` : undefined
         }

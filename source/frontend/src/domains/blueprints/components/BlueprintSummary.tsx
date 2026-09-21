@@ -10,17 +10,15 @@ import {
   SpaceBetween,
 } from "@cloudscape-design/components";
 
-import {
-  ConcurrencyMode,
-  DeploymentStrategy,
-  StackSet,
-} from "@amzn/innovation-sandbox-frontend/domains/blueprints/types";
+import { StackSetView } from "@amzn/innovation-sandbox-frontend/domains/blueprints/model";
+import { DeploymentStrategy } from "@amzn/innovation-sandbox-frontend/domains/blueprints/types";
+import { ConcurrencyMode } from "@amzn/innovation-sandbox-shared/types/blueprint";
 
 interface BlueprintSummaryProps {
   blueprint: {
     name: string;
     tags?: { key: string; value?: string }[];
-    selectedStackSet: StackSet | undefined;
+    selectedStackSet: StackSetView | undefined;
     selectedRegions: string[];
     deploymentTimeout: number;
     deploymentStrategy: DeploymentStrategy;

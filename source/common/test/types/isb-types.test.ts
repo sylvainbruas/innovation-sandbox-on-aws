@@ -13,7 +13,7 @@ import {
   isM2MUser,
   M2M_EMAIL_DOMAIN,
   M2MIdentitySchema,
-} from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
+} from "@amzn/innovation-sandbox-shared/utils/auth-utils.js";
 
 describe("isIdcUser", () => {
   it("should return true for user type", () => {

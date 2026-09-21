@@ -45,6 +45,18 @@ export default [
       ...reactPlugin.configs.recommended.rules,
       ...reactHooksPlugin.configs.recommended.rules,
       ...prettierConfig.rules,
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["@amzn/innovation-sandbox-commons/**"],
+              message:
+                "Frontend code must use the shared package or frontend-owned modules, not backend commons.",
+            },
+          ],
+        },
+      ],
       "prettier/prettier": [
         "warn",
         {

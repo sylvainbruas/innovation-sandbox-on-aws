@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
-  MonitoredLease,
-  MonitoredLeaseSchema,
+  PersistedMonitoredLease,
+  PersistedMonitoredLeaseSchema,
 } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import {
-  SandboxAccount,
-  SandboxAccountSchema,
+  PersistedSandboxAccount,
+  PersistedSandboxAccountSchema,
 } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
 import { CleanAccountRequest } from "@amzn/innovation-sandbox-commons/events/clean-account-request.js";
 import { InnovationSandbox } from "@amzn/innovation-sandbox-commons/innovation-sandbox.js";
@@ -40,11 +40,11 @@ function createMockContext() {
 
 describe("InnovationSandbox.resetLease()", () => {
   let mockContext: ReturnType<typeof createMockContext>;
-  let mockAccount: SandboxAccount;
+  let mockAccount: PersistedSandboxAccount;
 
   beforeEach(() => {
     mockContext = createMockContext();
-    mockAccount = generateSchemaData(SandboxAccountSchema, {
+    mockAccount = generateSchemaData(PersistedSandboxAccountSchema, {
       awsAccountId: "123456789012",
       status: "Active",
     });
@@ -64,7 +64,7 @@ describe("InnovationSandbox.resetLease()", () => {
   });
 
   test("should move account to CleanUp OU", async () => {
-    const lease = generateSchemaData(MonitoredLeaseSchema, {
+    const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
       status: "Provisioning",
       awsAccountId: mockAccount.awsAccountId,
       blueprintId: "650e8400-e29b-41d4-a716-446655440001",
@@ -82,7 +82,7 @@ describe("InnovationSandbox.resetLease()", () => {
   });
 
   test("should update lease status to PendingApproval", async () => {
-    const lease = generateSchemaData(MonitoredLeaseSchema, {
+    const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
       status: "Provisioning",
       awsAccountId: mockAccount.awsAccountId,
     });
@@ -101,7 +101,7 @@ describe("InnovationSandbox.resetLease()", () => {
   });
 
   test("should send LeaseProvisioningFailedEvent and CleanAccountRequest", async () => {
-    const lease = generateSchemaData(MonitoredLeaseSchema, {
+    const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
       status: "Provisioning",
       awsAccountId: mockAccount.awsAccountId,
     });
@@ -130,7 +130,7 @@ describe("InnovationSandbox.resetLease()", () => {
   });
 
   test("should log reset with searchable properties", async () => {
-    const lease = generateSchemaData(MonitoredLeaseSchema, {
+    const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
       status: "Provisioning",
       awsAccountId: mockAccount.awsAccountId,
     });
@@ -152,7 +152,7 @@ describe("InnovationSandbox.resetLease()", () => {
   });
 
   test("should delete stack instance metadata when lease has blueprintId", async () => {
-    const lease = generateSchemaData(MonitoredLeaseSchema, {
+    const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
       status: "Provisioning",
       awsAccountId: mockAccount.awsAccountId,
       blueprintId: "650e8400-e29b-41d4-a716-446655440001",
@@ -174,7 +174,7 @@ describe("InnovationSandbox.resetLease()", () => {
   });
 
   test("should throw error if account not found", async () => {
-    const lease = generateSchemaData(MonitoredLeaseSchema, {
+    const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
       awsAccountId: "nonexistent",
     });
 
@@ -187,7 +187,7 @@ describe("InnovationSandbox.resetLease()", () => {
   });
 
   test("should convert MonitoredLease to PendingLease correctly", async () => {
-    const lease = generateSchemaData(MonitoredLeaseSchema, {
+    const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
       status: "Provisioning",
       awsAccountId: mockAccount.awsAccountId,
       approvedBy: "manager@example.com",
@@ -201,7 +201,7 @@ describe("InnovationSandbox.resetLease()", () => {
     );
 
     const updateCall = mockContext.leaseStore.update.mock
-      .calls[0]?.[0] as MonitoredLease;
+      .calls[0]?.[0] as PersistedMonitoredLease;
 
     // Verify updateCall exists
     expect(updateCall).toBeDefined();

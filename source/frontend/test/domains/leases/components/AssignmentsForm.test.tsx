@@ -13,9 +13,9 @@ import {
   RequestLeaseFormValues,
   RequestLeaseValidationSchema,
 } from "@amzn/innovation-sandbox-frontend/domains/leases/validation";
+import { GroupAssignmentMode } from "@amzn/innovation-sandbox-shared/types/configuration.js";
 
-// Stub the typeahead with deterministic fixture buttons — same pattern the
-// AssignmentsTab tests use. The real component has its own test file.
+// Test-specific principals rendered by the shared deterministic typeahead stub.
 const TYPEAHEAD_FIXTURE = [
   {
     principalId: "user-1",
@@ -31,30 +31,23 @@ const TYPEAHEAD_FIXTURE = [
 ];
 vi.mock(
   "@amzn/innovation-sandbox-frontend/domains/leases/components/PrincipalTypeahead",
-  () => ({
-    PrincipalTypeahead: ({
-      onSelect,
-      shouldExclude = () => false,
-    }: {
-      onSelect: (p: (typeof TYPEAHEAD_FIXTURE)[number]) => void;
-      shouldExclude?: (p: (typeof TYPEAHEAD_FIXTURE)[number]) => boolean;
-    }) => (
-      <div data-testid="typeahead-stub">
-        {TYPEAHEAD_FIXTURE.filter((p) => !shouldExclude(p)).map((p) => (
-          <button key={p.principalId} type="button" onClick={() => onSelect(p)}>
-            Add {p.principalId}
-          </button>
-        ))}
-      </div>
-    ),
-  }),
+  async () => {
+    const { createPrincipalTypeaheadStub } =
+      await import("@amzn/innovation-sandbox-frontend-test/utils/principalTypeaheadStub");
+    return {
+      PrincipalTypeahead: createPrincipalTypeaheadStub(() => TYPEAHEAD_FIXTURE),
+    };
+  },
 );
 
 // Captures form state into a ref-like object so tests can assert on the
 // shape after interactions.
 function renderWithForm(
   captured: { values: RequestLeaseFormValues | null },
-  componentProps?: { ownerEmail?: string },
+  componentProps?: {
+    ownerEmail?: string;
+    groupAssignmentMode?: GroupAssignmentMode;
+  },
 ) {
   const Harness = () => {
     const methods = useForm<RequestLeaseFormValues>({
@@ -75,7 +68,10 @@ function renderWithForm(
 
     return (
       <FormProvider {...methods}>
-        <AssignmentsForm ownerEmail={componentProps?.ownerEmail} />
+        <AssignmentsForm
+          ownerEmail={componentProps?.ownerEmail}
+          groupAssignmentMode={componentProps?.groupAssignmentMode}
+        />
       </FormProvider>
     );
   };
@@ -87,6 +83,18 @@ describe("AssignmentsForm", () => {
   it("renders the empty state when no assignments are staged", () => {
     renderWithForm({ values: null });
     expect(screen.getByText("No one added yet")).toBeInTheDocument();
+  });
+
+  it("defaults to a users-only search", () => {
+    renderWithForm({ values: null });
+
+    expect(screen.getByTestId("typeahead-stub")).toHaveAttribute(
+      "data-search-type",
+      "users",
+    );
+    expect(
+      screen.queryByRole("button", { name: "Add group-1" }),
+    ).not.toBeInTheDocument();
   });
 
   it("stages a typeahead pick into form state", async () => {
@@ -113,7 +121,9 @@ describe("AssignmentsForm", () => {
 
   it("removes a staged row when Remove is clicked", async () => {
     const captured = { values: null as RequestLeaseFormValues | null };
-    renderWithForm(captured);
+    renderWithForm(captured, {
+      groupAssignmentMode: GroupAssignmentMode.ALL,
+    });
     const user = userEvent.setup();
 
     await user.click(screen.getByRole("button", { name: "Add user-1" }));
@@ -134,7 +144,10 @@ describe("AssignmentsForm", () => {
   });
 
   it("excludes already-staged principals from the typeahead suggestions", async () => {
-    renderWithForm({ values: null });
+    renderWithForm(
+      { values: null },
+      { groupAssignmentMode: GroupAssignmentMode.ALL },
+    );
     const user = userEvent.setup();
 
     expect(
@@ -154,7 +167,10 @@ describe("AssignmentsForm", () => {
 
   it("does not add the owner as a shared assignment", async () => {
     const captured = { values: null as RequestLeaseFormValues | null };
-    renderWithForm(captured, { ownerEmail: "alice@example.com" });
+    renderWithForm(captured, {
+      ownerEmail: "alice@example.com",
+      groupAssignmentMode: GroupAssignmentMode.ALL,
+    });
     const user = userEvent.setup();
 
     // The typeahead should exclude alice (owner) from suggestions entirely.

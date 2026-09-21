@@ -4,32 +4,34 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  PersistedApprovalDeniedLeaseSchema,
+  PersistedExpiredLease,
+  PersistedExpiredLeaseSchema,
+  PersistedLeaseSchema,
+  PersistedMonitoredLease,
+  PersistedMonitoredLeaseSchema,
+  PersistedPendingLease,
+  PersistedPendingLeaseSchema,
+} from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
+import {
   AllLeaseStatusSchema,
-  ApprovalDeniedLeaseSchema,
-  ExpiredLease,
-  ExpiredLeaseSchema,
-  LeaseSchema,
-  MonitoredLease,
-  MonitoredLeaseSchema,
-  PendingLease,
-  PendingLeaseSchema,
   isActiveLease,
   isApprovalDeniedLease,
   isExpiredLease,
   isFrozenLease,
   isMonitoredLease,
   isPendingLease,
-} from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
+} from "@amzn/innovation-sandbox-shared/types/lease.js";
 import {
   ResourceLockSchema,
   type ResourceLock,
-} from "@amzn/innovation-sandbox-commons/data/resource-lock.js";
+} from "@amzn/innovation-sandbox-shared/types/resource-lock.js";
 
 const baseMeta = {
   meta: { schemaVersion: 4, createdTime: "2024-01-01T00:00:00Z" },
 };
 
-const basePendingLease: PendingLease = {
+const basePendingLease: PersistedPendingLease = {
   userEmail: "user@example.com",
   uuid: "550e8400-e29b-41d4-a716-446655440000",
   status: "PendingApproval" as const,
@@ -38,7 +40,7 @@ const basePendingLease: PendingLease = {
   ...baseMeta,
 };
 
-const baseMonitoredLease: MonitoredLease = {
+const baseMonitoredLease: PersistedMonitoredLease = {
   ...basePendingLease,
   status: "Active" as const,
   awsAccountId: "123456789012",
@@ -48,7 +50,7 @@ const baseMonitoredLease: MonitoredLease = {
   totalCostAccrued: 0,
 };
 
-const baseExpiredLease: ExpiredLease = {
+const baseExpiredLease: PersistedExpiredLease = {
   ...baseMonitoredLease,
   status: "Expired" as const,
   endDate: "2024-02-01T00:00:00Z",
@@ -65,12 +67,12 @@ const validResourceLock: ResourceLock = {
 
 describe("PendingLeaseSchema", () => {
   it("should accept a minimal valid pending lease", () => {
-    const result = PendingLeaseSchema.safeParse(basePendingLease);
+    const result = PersistedPendingLeaseSchema.safeParse(basePendingLease);
     expect(result.success).toBe(true);
   });
 
   it("should accept pending lease with all optional fields", () => {
-    const result = PendingLeaseSchema.safeParse({
+    const result = PersistedPendingLeaseSchema.safeParse({
       ...basePendingLease,
       comments: "Test comment",
       createdBy: "creator@example.com",
@@ -90,7 +92,7 @@ describe("PendingLeaseSchema", () => {
   it.each(["not-an-email", "", "missing-at-sign"])(
     "should reject invalid userEmail: %s",
     (userEmail) => {
-      const result = PendingLeaseSchema.safeParse({
+      const result = PersistedPendingLeaseSchema.safeParse({
         ...basePendingLease,
         userEmail,
       });
@@ -101,7 +103,7 @@ describe("PendingLeaseSchema", () => {
   it.each(["not-a-uuid", "", "12345"])(
     "should reject invalid uuid: %s",
     (uuid) => {
-      const result = PendingLeaseSchema.safeParse({
+      const result = PersistedPendingLeaseSchema.safeParse({
         ...basePendingLease,
         uuid,
       });
@@ -110,7 +112,7 @@ describe("PendingLeaseSchema", () => {
   );
 
   it("should reject invalid status", () => {
-    const result = PendingLeaseSchema.safeParse({
+    const result = PersistedPendingLeaseSchema.safeParse({
       ...basePendingLease,
       status: "InvalidStatus",
     });
@@ -118,7 +120,7 @@ describe("PendingLeaseSchema", () => {
   });
 
   it.each([1, 2, 3, 4])("should accept schema version %i", (version) => {
-    const result = PendingLeaseSchema.safeParse({
+    const result = PersistedPendingLeaseSchema.safeParse({
       ...basePendingLease,
       meta: { schemaVersion: version },
     });
@@ -126,7 +128,7 @@ describe("PendingLeaseSchema", () => {
   });
 
   it.each([0, 5, -1])("should reject schema version %i", (version) => {
-    const result = PendingLeaseSchema.safeParse({
+    const result = PersistedPendingLeaseSchema.safeParse({
       ...basePendingLease,
       meta: { schemaVersion: version },
     });
@@ -136,7 +138,7 @@ describe("PendingLeaseSchema", () => {
 
 describe("Lease blueprintId validation", () => {
   it("should accept blueprintId=null", () => {
-    const result = PendingLeaseSchema.safeParse({
+    const result = PersistedPendingLeaseSchema.safeParse({
       ...basePendingLease,
       blueprintId: null,
       blueprintName: null,
@@ -148,7 +150,7 @@ describe("Lease blueprintId validation", () => {
   });
 
   it("should accept blueprintId=undefined (field absent from DynamoDB read)", () => {
-    const result = PendingLeaseSchema.safeParse({
+    const result = PersistedPendingLeaseSchema.safeParse({
       ...basePendingLease,
       // blueprintId intentionally omitted
     });
@@ -160,7 +162,7 @@ describe("Lease blueprintId validation", () => {
 
   it("should accept blueprintId as valid UUID", () => {
     const blueprintId = "660e8400-e29b-41d4-a716-446655440001";
-    const result = PendingLeaseSchema.safeParse({
+    const result = PersistedPendingLeaseSchema.safeParse({
       ...basePendingLease,
       blueprintId,
       blueprintName: "TestBlueprint",
@@ -172,7 +174,7 @@ describe("Lease blueprintId validation", () => {
   });
 
   it("should reject blueprintId with invalid UUID format", () => {
-    const result = PendingLeaseSchema.safeParse({
+    const result = PersistedPendingLeaseSchema.safeParse({
       ...basePendingLease,
       blueprintId: "not-a-uuid",
     });
@@ -182,7 +184,7 @@ describe("Lease blueprintId validation", () => {
 
 describe("Lease allowOwnerToShareLease validation", () => {
   it("should accept allowOwnerToShareLease=true", () => {
-    const result = PendingLeaseSchema.safeParse({
+    const result = PersistedPendingLeaseSchema.safeParse({
       ...basePendingLease,
       allowOwnerToShareLease: true,
     });
@@ -193,7 +195,7 @@ describe("Lease allowOwnerToShareLease validation", () => {
   });
 
   it("should accept allowOwnerToShareLease=false", () => {
-    const result = PendingLeaseSchema.safeParse({
+    const result = PersistedPendingLeaseSchema.safeParse({
       ...basePendingLease,
       allowOwnerToShareLease: false,
     });
@@ -204,7 +206,7 @@ describe("Lease allowOwnerToShareLease validation", () => {
   });
 
   it("should accept allowOwnerToShareLease=undefined (backward compatible)", () => {
-    const result = PendingLeaseSchema.safeParse(basePendingLease);
+    const result = PersistedPendingLeaseSchema.safeParse(basePendingLease);
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.allowOwnerToShareLease).toBeUndefined();
@@ -212,7 +214,7 @@ describe("Lease allowOwnerToShareLease validation", () => {
   });
 
   it("should reject non-boolean value", () => {
-    const result = PendingLeaseSchema.safeParse({
+    const result = PersistedPendingLeaseSchema.safeParse({
       ...basePendingLease,
       allowOwnerToShareLease: "yes",
     });
@@ -220,7 +222,7 @@ describe("Lease allowOwnerToShareLease validation", () => {
   });
 
   it("should propagate to MonitoredLeaseSchema", () => {
-    const result = MonitoredLeaseSchema.safeParse({
+    const result = PersistedMonitoredLeaseSchema.safeParse({
       ...baseMonitoredLease,
       allowOwnerToShareLease: true,
     });
@@ -231,7 +233,7 @@ describe("Lease allowOwnerToShareLease validation", () => {
   });
 
   it("should propagate to ExpiredLeaseSchema", () => {
-    const result = ExpiredLeaseSchema.safeParse({
+    const result = PersistedExpiredLeaseSchema.safeParse({
       ...baseExpiredLease,
       allowOwnerToShareLease: false,
     });
@@ -278,7 +280,7 @@ describe("ResourceLockSchema", () => {
 
 describe("Lease resourceLock field validation", () => {
   it("should accept resourceLock with valid data", () => {
-    const result = PendingLeaseSchema.safeParse({
+    const result = PersistedPendingLeaseSchema.safeParse({
       ...basePendingLease,
       resourceLock: validResourceLock,
     });
@@ -289,7 +291,7 @@ describe("Lease resourceLock field validation", () => {
   });
 
   it("should accept resourceLock=null (cleared after completion)", () => {
-    const result = PendingLeaseSchema.safeParse({
+    const result = PersistedPendingLeaseSchema.safeParse({
       ...basePendingLease,
       resourceLock: null,
     });
@@ -300,7 +302,7 @@ describe("Lease resourceLock field validation", () => {
   });
 
   it("should accept resourceLock=undefined (no lock ever acquired)", () => {
-    const result = PendingLeaseSchema.safeParse(basePendingLease);
+    const result = PersistedPendingLeaseSchema.safeParse(basePendingLease);
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.resourceLock).toBeUndefined();
@@ -308,7 +310,7 @@ describe("Lease resourceLock field validation", () => {
   });
 
   it("should reject resourceLock with invalid nested data", () => {
-    const result = PendingLeaseSchema.safeParse({
+    const result = PersistedPendingLeaseSchema.safeParse({
       ...basePendingLease,
       resourceLock: { ...validResourceLock, ownerId: "" },
     });
@@ -316,7 +318,7 @@ describe("Lease resourceLock field validation", () => {
   });
 
   it("should propagate to MonitoredLeaseSchema", () => {
-    const result = MonitoredLeaseSchema.safeParse({
+    const result = PersistedMonitoredLeaseSchema.safeParse({
       ...baseMonitoredLease,
       resourceLock: validResourceLock,
     });
@@ -329,7 +331,7 @@ describe("Lease resourceLock field validation", () => {
 
 describe("ApprovalDeniedLeaseSchema", () => {
   it("should accept valid denied lease", () => {
-    const result = ApprovalDeniedLeaseSchema.safeParse({
+    const result = PersistedApprovalDeniedLeaseSchema.safeParse({
       ...basePendingLease,
       status: "ApprovalDenied",
       ttl: 1706745600,
@@ -338,7 +340,7 @@ describe("ApprovalDeniedLeaseSchema", () => {
   });
 
   it("should require ttl", () => {
-    const result = ApprovalDeniedLeaseSchema.safeParse({
+    const result = PersistedApprovalDeniedLeaseSchema.safeParse({
       ...basePendingLease,
       status: "ApprovalDenied",
     });
@@ -350,7 +352,7 @@ describe("MonitoredLeaseSchema", () => {
   it.each(["Active", "Frozen", "Provisioning"])(
     "should accept %s status",
     (status) => {
-      const result = MonitoredLeaseSchema.safeParse({
+      const result = PersistedMonitoredLeaseSchema.safeParse({
         ...baseMonitoredLease,
         status,
       });
@@ -359,7 +361,7 @@ describe("MonitoredLeaseSchema", () => {
   );
 
   it("should accept AUTO_APPROVED as approvedBy", () => {
-    const result = MonitoredLeaseSchema.safeParse({
+    const result = PersistedMonitoredLeaseSchema.safeParse({
       ...baseMonitoredLease,
       approvedBy: "AUTO_APPROVED",
     });
@@ -367,7 +369,7 @@ describe("MonitoredLeaseSchema", () => {
   });
 
   it("should require awsAccountId as 12-digit string", () => {
-    const result = MonitoredLeaseSchema.safeParse({
+    const result = PersistedMonitoredLeaseSchema.safeParse({
       ...baseMonitoredLease,
       awsAccountId: "12345",
     });
@@ -375,7 +377,7 @@ describe("MonitoredLeaseSchema", () => {
   });
 
   it("should accept optional expirationDate", () => {
-    const result = MonitoredLeaseSchema.safeParse({
+    const result = PersistedMonitoredLeaseSchema.safeParse({
       ...baseMonitoredLease,
       expirationDate: "2024-02-01T00:00:00Z",
     });
@@ -385,7 +387,7 @@ describe("MonitoredLeaseSchema", () => {
 
 describe("ExpiredLeaseSchema", () => {
   it("should accept valid expired lease", () => {
-    const result = ExpiredLeaseSchema.safeParse(baseExpiredLease);
+    const result = PersistedExpiredLeaseSchema.safeParse(baseExpiredLease);
     expect(result.success).toBe(true);
   });
 
@@ -398,7 +400,7 @@ describe("ExpiredLeaseSchema", () => {
     "Ejected",
     "ProvisioningFailed",
   ])("should accept %s status", (status) => {
-    const result = ExpiredLeaseSchema.safeParse({
+    const result = PersistedExpiredLeaseSchema.safeParse({
       ...baseExpiredLease,
       status,
     });
@@ -407,35 +409,35 @@ describe("ExpiredLeaseSchema", () => {
 
   it("should require endDate", () => {
     const { endDate: _, ...withoutEndDate } = baseExpiredLease;
-    const result = ExpiredLeaseSchema.safeParse(withoutEndDate);
+    const result = PersistedExpiredLeaseSchema.safeParse(withoutEndDate);
     expect(result.success).toBe(false);
   });
 
   it("should require ttl", () => {
     const { ttl: _, ...withoutTtl } = baseExpiredLease;
-    const result = ExpiredLeaseSchema.safeParse(withoutTtl);
+    const result = PersistedExpiredLeaseSchema.safeParse(withoutTtl);
     expect(result.success).toBe(false);
   });
 });
 
 describe("LeaseSchema (discriminated union)", () => {
   it("should parse PendingApproval as PendingLease", () => {
-    const result = LeaseSchema.safeParse(basePendingLease);
+    const result = PersistedLeaseSchema.safeParse(basePendingLease);
     expect(result.success).toBe(true);
   });
 
   it("should parse Active as MonitoredLease", () => {
-    const result = LeaseSchema.safeParse(baseMonitoredLease);
+    const result = PersistedLeaseSchema.safeParse(baseMonitoredLease);
     expect(result.success).toBe(true);
   });
 
   it("should parse Expired as ExpiredLease", () => {
-    const result = LeaseSchema.safeParse(baseExpiredLease);
+    const result = PersistedLeaseSchema.safeParse(baseExpiredLease);
     expect(result.success).toBe(true);
   });
 
   it("should reject unknown status", () => {
-    const result = LeaseSchema.safeParse({
+    const result = PersistedLeaseSchema.safeParse({
       ...basePendingLease,
       status: "Unknown",
     });
@@ -470,14 +472,14 @@ describe("AllLeaseStatusSchema", () => {
 
 describe("Type guard functions", () => {
   it("isPendingLease identifies PendingApproval", () => {
-    const lease = LeaseSchema.parse(basePendingLease);
+    const lease = PersistedLeaseSchema.parse(basePendingLease);
     expect(isPendingLease(lease)).toBe(true);
     expect(isMonitoredLease(lease)).toBe(false);
     expect(isExpiredLease(lease)).toBe(false);
   });
 
   it("isApprovalDeniedLease identifies ApprovalDenied", () => {
-    const lease = LeaseSchema.parse({
+    const lease = PersistedLeaseSchema.parse({
       ...basePendingLease,
       status: "ApprovalDenied",
       ttl: 1706745600,
@@ -487,14 +489,14 @@ describe("Type guard functions", () => {
   });
 
   it("isMonitoredLease identifies Active", () => {
-    const lease = LeaseSchema.parse(baseMonitoredLease);
+    const lease = PersistedLeaseSchema.parse(baseMonitoredLease);
     expect(isMonitoredLease(lease)).toBe(true);
     expect(isActiveLease(lease)).toBe(true);
     expect(isFrozenLease(lease)).toBe(false);
   });
 
   it("isFrozenLease identifies Frozen", () => {
-    const lease = LeaseSchema.parse({
+    const lease = PersistedLeaseSchema.parse({
       ...baseMonitoredLease,
       status: "Frozen",
     });
@@ -504,7 +506,7 @@ describe("Type guard functions", () => {
   });
 
   it("isExpiredLease identifies Expired", () => {
-    const lease = LeaseSchema.parse(baseExpiredLease);
+    const lease = PersistedLeaseSchema.parse(baseExpiredLease);
     expect(isExpiredLease(lease)).toBe(true);
     expect(isMonitoredLease(lease)).toBe(false);
   });

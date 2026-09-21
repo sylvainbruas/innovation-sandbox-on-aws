@@ -8,6 +8,7 @@ import { cleanup, render } from "@testing-library/react";
 import React, { ReactNode } from "react";
 import { afterAll, afterEach, beforeAll, vi } from "vitest";
 
+import { resetApiSingletons } from "@amzn/innovation-sandbox-frontend/helpers/apiSingletons";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
 
 // Create a single QueryClient instance
@@ -24,6 +25,9 @@ afterEach(() => {
   cleanup();
   server.resetHandlers();
   queryClient.clear();
+  // Drop memoized API service/client singletons so state (and any memoized
+  // credentials) never leak across tests — mirrors the logout/user-change reset.
+  resetApiSingletons();
 });
 afterAll(() => server.close());
 
@@ -63,9 +67,8 @@ vi.mock("@amzn/innovation-sandbox-frontend/helpers/config", () => {
 
 // Mock Amplify auth modules used by CognitoAuthService
 vi.mock("aws-amplify/auth", async () => {
-  const { MOCK_ID_TOKEN, mockCognitoCredentials } = await import(
-    "@amzn/innovation-sandbox-frontend-test/utils/cognitoFixtures"
-  );
+  const { MOCK_ID_TOKEN, mockCognitoCredentials } =
+    await import("@amzn/innovation-sandbox-frontend-test/utils/cognitoFixtures");
   return {
     fetchAuthSession: vi.fn().mockResolvedValue({
       tokens: {
