@@ -21,7 +21,7 @@ import {
   BLUEPRINT_SK,
   generateBlueprintPK,
 } from "@amzn/innovation-sandbox-commons/data/blueprint/blueprint-dynamodb-keys.js";
-import type { BlueprintItem } from "@amzn/innovation-sandbox-commons/data/blueprint/blueprint.js";
+import type { PersistedBlueprintItem } from "@amzn/innovation-sandbox-commons/data/blueprint/blueprint.js";
 import { DynamoBlueprintStore } from "@amzn/innovation-sandbox-commons/data/blueprint/dynamo-blueprint-store.js";
 import { DynamoLeaseTemplateStore } from "@amzn/innovation-sandbox-commons/data/lease-template/dynamo-lease-template-store.js";
 import {
@@ -71,7 +71,7 @@ describe("Blueprint Unregistration Validation - Integration Test", () => {
       const blueprintId = randomUUID();
       const templateUuid = randomUUID();
 
-      const testBlueprint: BlueprintItem = {
+      const testBlueprint: PersistedBlueprintItem = {
         PK: generateBlueprintPK(blueprintId),
         SK: BLUEPRINT_SK,
         itemType: "BLUEPRINT",
@@ -133,7 +133,7 @@ describe("Blueprint Unregistration Validation - Integration Test", () => {
       // Arrange
       const blueprintId = randomUUID();
 
-      const testBlueprint: BlueprintItem = {
+      const testBlueprint: PersistedBlueprintItem = {
         PK: generateBlueprintPK(blueprintId),
         SK: BLUEPRINT_SK,
         itemType: "BLUEPRINT",
@@ -182,7 +182,7 @@ describe("Blueprint Unregistration Validation - Integration Test", () => {
     it("should call findByBlueprintId when validating", async () => {
       // Arrange
       const blueprintId = randomUUID();
-      const testBlueprint: BlueprintItem = {
+      const testBlueprint: PersistedBlueprintItem = {
         PK: generateBlueprintPK(blueprintId),
         SK: BLUEPRINT_SK,
         itemType: "BLUEPRINT",

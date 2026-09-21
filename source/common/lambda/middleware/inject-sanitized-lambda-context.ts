@@ -3,7 +3,7 @@
 
 import { BaseApiLambdaEnvironment } from "@amzn/innovation-sandbox-commons/lambda/environments/base-api-lambda-environment.js";
 import { IsbApiContext } from "@amzn/innovation-sandbox-commons/lambda/middleware/api-middleware-bundle.js";
-import { IDENTITY_HEADER } from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
+import { IDENTITY_HEADER } from "@amzn/innovation-sandbox-shared/utils/auth-utils.js";
 import { MiddlewareFn } from "@aws-lambda-powertools/commons/types";
 import { injectLambdaContext } from "@aws-lambda-powertools/logger/middleware";
 import { MiddlewareObj } from "@middy/core";

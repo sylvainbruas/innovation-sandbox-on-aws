@@ -31,9 +31,9 @@ import {
   userPk,
 } from "@amzn/innovation-sandbox-commons/data/principal/principal-dynamodb-keys.js";
 import {
-  GroupAssignmentSchema,
-  GroupMembershipCacheSchema,
-  UserAssignmentSchema,
+  PersistedGroupAssignmentSchema,
+  PersistedGroupMembershipCacheSchema,
+  PersistedUserAssignmentSchema,
 } from "@amzn/innovation-sandbox-commons/data/principal/principal.js";
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
 
@@ -46,7 +46,7 @@ const VALID_UUID_2 = "00000000-0000-4000-8000-000000000002";
 const NOW = "2024-01-01T00:00:00.000Z";
 
 function makeUserAssignment(overrides: Record<string, unknown> = {}) {
-  return generateSchemaData(UserAssignmentSchema, {
+  return generateSchemaData(PersistedUserAssignmentSchema, {
     pk: userPk(VALID_UUID),
     sk: leaseSk(VALID_UUID),
     userId: VALID_UUID,
@@ -62,7 +62,7 @@ function makeUserAssignment(overrides: Record<string, unknown> = {}) {
 }
 
 function makeGroupAssignment(overrides: Record<string, unknown> = {}) {
-  return generateSchemaData(GroupAssignmentSchema, {
+  return generateSchemaData(PersistedGroupAssignmentSchema, {
     pk: groupPk(VALID_UUID),
     sk: leaseSk(VALID_UUID),
     leaseId: VALID_UUID,
@@ -78,7 +78,7 @@ function makeGroupAssignment(overrides: Record<string, unknown> = {}) {
 }
 
 function makeGroupMembershipCache(overrides: Record<string, unknown> = {}) {
-  return generateSchemaData(GroupMembershipCacheSchema, {
+  return generateSchemaData(PersistedGroupMembershipCacheSchema, {
     pk: userPk(VALID_UUID),
     sk: GROUP_MEMBERSHIP_SK,
     groupIds: [VALID_UUID],
@@ -689,7 +689,7 @@ describe("DynamoPrincipalStore", () => {
       expect(result).toHaveLength(0);
     });
 
-    it("should drop records that fail GroupIndexProjectionSchema validation", async () => {
+    it("should drop records that fail PersistedGroupIndexProjectionSchema validation", async () => {
       // Each input record fails one or more schema constraints: bad groupId
       // format, pk pointing at the wrong principal type, and sk that isn't
       // `lease#<UUID>`. Only the first record passes and survives.
@@ -913,7 +913,7 @@ describe("DynamoPrincipalStore", () => {
       expect(result).toEqual([]);
     });
 
-    it("should drop records that fail GroupAssignmentSchema validation", async () => {
+    it("should drop records that fail PersistedGroupAssignmentSchema validation", async () => {
       // BatchGetItem can return records that exist physically but don't
       // satisfy the application-level schema (e.g., legacy records, partial
       // writes from a failed transaction, or attribute-level corruption).
@@ -922,7 +922,7 @@ describe("DynamoPrincipalStore", () => {
       const wrongPrincipalType = makeGroupAssignment({
         sk: leaseSk(VALID_UUID_2),
         leaseId: VALID_UUID_2,
-        principalType: "USER", // GroupAssignmentSchema requires "GROUP"
+        principalType: "USER", // PersistedGroupAssignmentSchema requires "GROUP"
       });
       // Record missing required `displayName` field.
       const missingGroupName = {

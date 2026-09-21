@@ -5,7 +5,7 @@ import { DateTime } from "luxon";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import type { CleanupReportStore } from "@amzn/innovation-sandbox-commons/data/cleanup-report/cleanup-report-store.js";
-import type { CleanupReport } from "@amzn/innovation-sandbox-commons/data/cleanup-report/cleanup-report.js";
+import type { PersistedCleanupReport } from "@amzn/innovation-sandbox-commons/data/cleanup-report/cleanup-report.js";
 import { CleanupReportKey } from "@amzn/innovation-sandbox-commons/data/cleanup-report/cleanup-report.js";
 import { CleanupReportWriter } from "@amzn/innovation-sandbox-durable-cleanup-orchestration/cleanup-report-writer.js";
 
@@ -273,8 +273,8 @@ describe("CleanupReportWriter", () => {
 });
 
 function buildMockReport(
-  overrides: Partial<CleanupReport> = {},
-): CleanupReport {
+  overrides: Partial<PersistedCleanupReport> = {},
+): PersistedCleanupReport {
   return {
     pk: "123456789012",
     sk: "CleanupReport#2024-06-01T12:00:00.000Z",

@@ -9,12 +9,12 @@ import {
 } from "@cloudscape-design/components";
 import { DateTime } from "luxon";
 
-import { DEPLOYMENT_HISTORY_RETENTION_DAYS } from "@amzn/innovation-sandbox-commons/data/blueprint/blueprint-dynamodb-keys.js";
 import { getDeploymentStatusConfig } from "@amzn/innovation-sandbox-frontend/domains/blueprints/helpers";
-import { DeploymentHistory as DeploymentHistoryType } from "@amzn/innovation-sandbox-frontend/domains/blueprints/types";
+import { DeploymentHistoryView } from "@amzn/innovation-sandbox-frontend/domains/blueprints/model";
+import { DEPLOYMENT_HISTORY_RETENTION_DAYS } from "@amzn/innovation-sandbox-shared/types/blueprint";
 
 interface DeploymentIndicatorProps {
-  deployment: DeploymentHistoryType;
+  deployment: DeploymentHistoryView;
 }
 
 const DeploymentIndicator = ({ deployment }: DeploymentIndicatorProps) => {
@@ -81,7 +81,7 @@ const DeploymentIndicator = ({ deployment }: DeploymentIndicatorProps) => {
 };
 
 interface DeploymentHistoryProps {
-  deployments?: DeploymentHistoryType[];
+  deployments?: DeploymentHistoryView[];
   totalDeploymentCount?: number;
 }
 

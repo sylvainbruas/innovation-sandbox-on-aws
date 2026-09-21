@@ -7,17 +7,17 @@ import {
   PutResult,
   SingleItemResult,
 } from "@amzn/innovation-sandbox-commons/data/common-types.js";
+import { PersistedLease } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
+import { Transaction } from "@amzn/innovation-sandbox-commons/utils/transactions.js";
 import {
   DesiredAssignmentWithDisplay,
   ExpiredLeaseStatus,
-  Lease,
   LeaseKey,
   type LeaseLockMeta,
   type LeaseResourceLock,
   LeaseStatus,
   MonitoredLeaseStatus,
-} from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
-import { Transaction } from "@amzn/innovation-sandbox-commons/utils/transactions.js";
+} from "@amzn/innovation-sandbox-shared/types/lease.js";
 
 export interface LeaseAcquireLockProps {
   leaseId: string;
@@ -74,20 +74,25 @@ export abstract class LeaseStore {
    */
   abstract releaseLock(props: LeaseReleaseLockProps): Promise<void>;
 
-  abstract create<T extends Lease>(lease: T): Promise<T>;
+  abstract create<T extends PersistedLease>(lease: T): Promise<T>;
 
-  abstract update<T extends Lease>(
+  abstract update<T extends PersistedLease>(
     lease: T,
     expected?: T, //fail the update if the lease has been modified from the expected (uses lastEdit meta)
   ): Promise<PutResult<T>>;
 
-  transactionalUpdate<T extends Lease>(lease: T): Transaction<PutResult<T>> {
+  transactionalUpdate<T extends PersistedLease>(
+    lease: T,
+  ): Transaction<PutResult<T>> {
     return new Transaction({
       beginTransaction: async () => {
         return this.update(lease);
       },
       rollbackTransaction: async (putResult) => {
-        await this.update(putResult.oldItem as Lease, putResult.newItem);
+        await this.update(
+          putResult.oldItem as PersistedLease,
+          putResult.newItem,
+        );
       },
     });
   }
@@ -97,38 +102,38 @@ export abstract class LeaseStore {
   abstract get(
     key: LeaseKey,
     options?: { consistentRead?: boolean },
-  ): Promise<SingleItemResult<Lease>>;
+  ): Promise<SingleItemResult<PersistedLease>>;
 
-  abstract batchGet(keys: LeaseKey[]): Promise<Lease[]>;
+  abstract batchGet(keys: LeaseKey[]): Promise<PersistedLease[]>;
 
   abstract findAll(props: {
     pageIdentifier?: string;
     pageSize?: number;
-  }): Promise<PaginatedQueryResult<Lease>>;
+  }): Promise<PaginatedQueryResult<PersistedLease>>;
 
   abstract findByUserEmail(props: {
     userEmail: EmailAddress;
     pageIdentifier?: string;
     pageSize?: number;
-  }): Promise<PaginatedQueryResult<Lease>>;
+  }): Promise<PaginatedQueryResult<PersistedLease>>;
 
   abstract findByLeaseTemplateUuid(props: {
     status: LeaseStatus;
     uuid: string;
     pageIdentifier?: string;
     pageSize?: number;
-  }): Promise<PaginatedQueryResult<Lease>>;
+  }): Promise<PaginatedQueryResult<PersistedLease>>;
 
   abstract findByStatus(props: {
     status: LeaseStatus;
     pageIdentifier?: string;
     pageSize?: number;
-  }): Promise<PaginatedQueryResult<Lease>>;
+  }): Promise<PaginatedQueryResult<PersistedLease>>;
 
   abstract findByStatusAndAccountID(props: {
     status: MonitoredLeaseStatus | ExpiredLeaseStatus;
     awsAccountId: string;
     pageIdentifier?: string;
     pageSize?: number;
-  }): Promise<PaginatedQueryResult<Lease>>;
+  }): Promise<PaginatedQueryResult<PersistedLease>>;
 }

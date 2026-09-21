@@ -3,13 +3,14 @@
 
 import { http, HttpResponse } from "msw";
 
-import { AdminConfig } from "@amzn/innovation-sandbox-commons/data/config/config.js";
-import { LeaseTemplate } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
-import { Lease } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
-import { SandboxAccount } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
-import { IDENTITY_HEADER } from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
-import { UnregisteredAccount } from "@amzn/innovation-sandbox-frontend/domains/accounts/types";
-import { BlueprintWithStackSets } from "@amzn/innovation-sandbox-frontend/domains/blueprints/types";
+import {
+  SandboxAccountView,
+  UnregisteredAccountView,
+} from "@amzn/innovation-sandbox-frontend/domains/accounts/model";
+import { BlueprintWithStackSetsView } from "@amzn/innovation-sandbox-frontend/domains/blueprints/model";
+import { LeaseView } from "@amzn/innovation-sandbox-frontend/domains/leases/model";
+import { LeaseTemplateView } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/model";
+import { AdminConfigurationView } from "@amzn/innovation-sandbox-frontend/domains/settings/model";
 import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import {
   ApiFailResponse,
@@ -17,6 +18,7 @@ import {
   ApiResponse,
   ApiSuccessResponse,
 } from "@amzn/innovation-sandbox-frontend/types";
+import { IDENTITY_HEADER } from "@amzn/innovation-sandbox-shared/utils/auth-utils.js";
 
 // `ALGORITHM_IDENTIFIER` from @smithy/signature-v4. Inlined because the
 // @smithy/signature-v4 version transitively pulled in by
@@ -278,15 +280,17 @@ class MockApi<T> {
   }
 }
 
-export const mockLeaseApi = new MockApi<Lease>("/leases");
-export const mockLeaseTemplateApi = new MockApi<LeaseTemplate>(
+export const mockLeaseApi = new MockApi<LeaseView>("/leases");
+export const mockLeaseTemplateApi = new MockApi<LeaseTemplateView>(
   "/leaseTemplates",
 );
-export const mockConfigurationApi = new MockApi<AdminConfig>("/configurations");
-export const mockUnregisteredAccountApi = new MockApi<UnregisteredAccount>(
+export const mockConfigurationApi = new MockApi<AdminConfigurationView>(
+  "/configurations",
+);
+export const mockUnregisteredAccountApi = new MockApi<UnregisteredAccountView>(
   "/accounts/unregistered",
 );
-export const mockAccountApi = new MockApi<SandboxAccount>("/accounts");
-export const mockBlueprintApi = new MockApi<BlueprintWithStackSets>(
+export const mockAccountApi = new MockApi<SandboxAccountView>("/accounts");
+export const mockBlueprintApi = new MockApi<BlueprintWithStackSetsView>(
   "/blueprints",
 );

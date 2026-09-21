@@ -11,7 +11,7 @@ import { mockClient } from "aws-sdk-client-mock";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { DynamoLeaseStore } from "@amzn/innovation-sandbox-commons/data/lease/dynamo-lease-store.js";
-import { PendingLeaseSchema } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
+import { PersistedPendingLeaseSchema } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
 
 const mockDynamoClient = mockClient(DynamoDBDocumentClient);
@@ -37,7 +37,7 @@ describe("DynamoLeaseStore - blueprintId transformation", () => {
 
   describe("create() - blueprintId transformation", () => {
     test("should remove blueprintId and blueprintName when values are null", async () => {
-      const lease = generateSchemaData(PendingLeaseSchema, {
+      const lease = generateSchemaData(PersistedPendingLeaseSchema, {
         userEmail: "user@example.com",
         uuid: "550e8400-e29b-41d4-a716-446655440000",
         status: "PendingApproval",
@@ -63,7 +63,7 @@ describe("DynamoLeaseStore - blueprintId transformation", () => {
     test("should preserve blueprintId and blueprintName when values exist", async () => {
       const blueprintId = "660e8400-e29b-41d4-a716-446655440001";
       const blueprintName = "TestBlueprint";
-      const lease = generateSchemaData(PendingLeaseSchema, {
+      const lease = generateSchemaData(PersistedPendingLeaseSchema, {
         userEmail: "user@example.com",
         uuid: "550e8400-e29b-41d4-a716-446655440000",
         status: "PendingApproval",
@@ -89,7 +89,7 @@ describe("DynamoLeaseStore - blueprintId transformation", () => {
 
   describe("update() - blueprintId transformation", () => {
     test("should remove blueprintId when updating to null", async () => {
-      const lease = generateSchemaData(PendingLeaseSchema, {
+      const lease = generateSchemaData(PersistedPendingLeaseSchema, {
         userEmail: "user@example.com",
         uuid: "550e8400-e29b-41d4-a716-446655440000",
         status: "PendingApproval",
@@ -111,7 +111,7 @@ describe("DynamoLeaseStore - blueprintId transformation", () => {
 
     test("should preserve blueprintId when updating to UUID", async () => {
       const blueprintId = "660e8400-e29b-41d4-a716-446655440001";
-      const lease = generateSchemaData(PendingLeaseSchema, {
+      const lease = generateSchemaData(PersistedPendingLeaseSchema, {
         userEmail: "user@example.com",
         uuid: "550e8400-e29b-41d4-a716-446655440000",
         status: "PendingApproval",

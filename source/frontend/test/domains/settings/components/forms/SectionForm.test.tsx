@@ -165,7 +165,7 @@ describe("SectionForm", () => {
 
   it("toasts an error and shows no conflict when a non-409 save fails", async () => {
     getCurrentUser.mockResolvedValue(adminUser);
-    // PUT fails with a bodyless 500, which ApiProxy surfaces as
+    // PUT fails with a bodyless 500, which the API client surfaces as
     // ApiError("HTTP error 500"). This exercises the save-error branch
     // (distinct from the 409 conflict path) and pins the toast format.
     server.use(
@@ -378,7 +378,6 @@ describe("SectionForm", () => {
           enabled: false,
           lastSavedBy: "admin@example.com",
           meta: {
-            schemaVersion: 1,
             createdTime: "2026-01-01T00:00:00.000Z",
             lastEditTime: "T1-stale",
           },
@@ -420,7 +419,6 @@ describe("SectionForm", () => {
             enabled: false,
             lastSavedBy: "admin@example.com",
             meta: {
-              schemaVersion: 1,
               createdTime: "2026-01-01T00:00:00.000Z",
               lastEditTime: "T2-fresh",
             },
@@ -438,7 +436,6 @@ describe("SectionForm", () => {
             enabled: false,
             lastSavedBy: "admin@example.com",
             meta: {
-              schemaVersion: 1,
               createdTime: "2026-01-01T00:00:00.000Z",
               lastEditTime: "T3-saved",
             },
@@ -486,7 +483,6 @@ describe("SectionForm", () => {
             enabled: false,
             lastSavedBy: "admin@example.com",
             meta: {
-              schemaVersion: 1,
               createdTime: "2026-01-01T00:00:00.000Z",
               lastEditTime: "T-after-save",
             },
@@ -513,7 +509,6 @@ describe("SectionForm", () => {
           enabled: false,
           lastSavedBy: "admin@example.com",
           meta: {
-            schemaVersion: 1,
             createdTime: "2026-01-01T00:00:00.000Z",
             lastEditTime: "T-initial",
           },
@@ -540,7 +535,6 @@ describe("SectionForm", () => {
           enabled: false,
           lastSavedBy: "admin@example.com",
           meta: {
-            schemaVersion: 1,
             createdTime: "2026-01-01T00:00:00.000Z",
             lastEditTime: "T-refreshed",
           },
@@ -581,7 +575,6 @@ describe("SectionForm", () => {
           enabled: false,
           lastSavedBy: "admin@example.com",
           meta: {
-            schemaVersion: 1,
             createdTime: "2026-01-01T00:00:00.000Z",
             lastEditTime: "T-initial",
           },
@@ -605,7 +598,6 @@ describe("SectionForm", () => {
           enabled: true,
           lastSavedBy: "admin@example.com",
           meta: {
-            schemaVersion: 1,
             createdTime: "2026-01-01T00:00:00.000Z",
             lastEditTime: "T-refreshed",
           },
@@ -639,7 +631,6 @@ describe("SectionForm", () => {
           enabled: false,
           lastSavedBy: "admin@example.com",
           meta: {
-            schemaVersion: 1,
             createdTime: "2026-01-01T00:00:00.000Z",
             lastEditTime: "T-initial",
           },
@@ -665,7 +656,6 @@ describe("SectionForm", () => {
           enabled: true,
           lastSavedBy: "admin@example.com",
           meta: {
-            schemaVersion: 1,
             createdTime: "2026-01-01T00:00:00.000Z",
             lastEditTime: "T-refreshed",
           },
@@ -812,7 +802,6 @@ describe("SectionForm", () => {
           enabled: false,
           lastSavedBy: "admin@example.com",
           meta: {
-            schemaVersion: 1,
             createdTime: "2026-01-01T00:00:00.000Z",
             lastEditTime: "T1-stale",
           },
@@ -848,7 +837,6 @@ describe("SectionForm", () => {
             enabled: false,
             lastSavedBy: "admin@example.com",
             meta: {
-              schemaVersion: 1,
               createdTime: "2026-01-01T00:00:00.000Z",
               lastEditTime: "T2-fresh",
             },

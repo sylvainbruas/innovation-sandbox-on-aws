@@ -2,10 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 import { z } from "zod";
 
-import {
-  CleanupValidationModeSchema,
-  ConfigSchemas,
-} from "@amzn/innovation-sandbox-commons/data/config/config.js";
+import { ConfigSchemas } from "@amzn/innovation-sandbox-shared/types/configuration.js";
+import { CleanupValidationModeSchema } from "@amzn/innovation-sandbox-shared/types/sandbox-account.js";
 
 export const GlobalConfigSchema = z.object({
   termsOfService: z.string().meta({
@@ -130,7 +128,7 @@ export type AppConfigGlobalConfig = z.infer<typeof GlobalConfigSchema>;
  * Section-based runtime configuration assembled by `isbConfigMiddleware` from
  * the DynamoDB Config table. Replaces the old flat shape; the context property
  * name `globalConfig` is preserved. Each section's shape comes from the shared
- * `ConfigSchemas` in `data/config/config.ts`.
+ * `ConfigSchemas` in the browser-safe shared configuration domain.
  */
 export type GlobalConfig = {
   [Section in keyof typeof ConfigSchemas]: z.infer<

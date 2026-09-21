@@ -3,18 +3,16 @@
 
 import { Container, Grid, Header } from "@cloudscape-design/components";
 
-import {
-  SandboxAccount,
-  SandboxAccountStatus,
-} from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account";
 import { AccountsLoading } from "@amzn/innovation-sandbox-frontend/components/AccountsSummary/components/AccountsLoading";
 import { AccountsPieChart } from "@amzn/innovation-sandbox-frontend/components/AccountsSummary/components/AccountsPieChart";
 import { AccountsSummaryTable } from "@amzn/innovation-sandbox-frontend/components/AccountsSummary/components/AccountsSummaryTable";
 import { NoAccounts } from "@amzn/innovation-sandbox-frontend/components/AccountsSummary/components/NoAccounts";
 import Animate from "@amzn/innovation-sandbox-frontend/components/Animate";
+import { SandboxAccountView } from "@amzn/innovation-sandbox-frontend/domains/accounts/model";
+import { SandboxAccountStatus } from "@amzn/innovation-sandbox-shared/types/sandbox-account";
 
 interface AccountsSummaryProps {
-  accounts?: SandboxAccount[];
+  accounts?: SandboxAccountView[];
   filter?: SandboxAccountStatus;
   isLoading?: boolean;
   onFilterUpdated?: (status?: SandboxAccountStatus) => void;

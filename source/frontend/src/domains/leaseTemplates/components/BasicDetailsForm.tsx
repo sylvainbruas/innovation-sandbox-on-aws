@@ -5,12 +5,12 @@ import { SpaceBetween } from "@cloudscape-design/components";
 import type { SelectProps } from "@cloudscape-design/components/select";
 import { useFormContext, useWatch } from "react-hook-form";
 
-import { Visibility } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template";
 import InputField from "@amzn/innovation-sandbox-frontend/components/FormFields/InputField";
 import SelectField from "@amzn/innovation-sandbox-frontend/components/FormFields/SelectField";
 import TextareaField from "@amzn/innovation-sandbox-frontend/components/FormFields/TextareaField";
 import ToggleField from "@amzn/innovation-sandbox-frontend/components/FormFields/ToggleField";
 import { SharingSettingsForm } from "@amzn/innovation-sandbox-frontend/components/Forms/SharingSettingsForm";
+import type { Visibility } from "@amzn/innovation-sandbox-shared/types/lease-template.js";
 
 export interface VisibilityOption {
   label: string;

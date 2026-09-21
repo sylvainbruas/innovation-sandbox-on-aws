@@ -2,11 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 import { LeaseStore } from "@amzn/innovation-sandbox-commons/data/lease/lease-store.js";
 import {
-  ExpiredLease,
-  ExpiredLeaseStatus,
-  isExpiredLease,
-  MonitoredLease,
-  MonitoredLeaseStatus,
+  PersistedExpiredLease,
+  PersistedMonitoredLease,
 } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import {
   collect,
@@ -24,6 +21,11 @@ import { ValidatedEnvironment } from "@amzn/innovation-sandbox-commons/lambda/mi
 import { IsbClients } from "@amzn/innovation-sandbox-commons/sdk-clients/index.js";
 import { fromTemporaryIsbOrgManagementCredentials } from "@amzn/innovation-sandbox-commons/utils/cross-account-roles.js";
 import { now } from "@amzn/innovation-sandbox-commons/utils/time-utils.js";
+import {
+  ExpiredLeaseStatus,
+  isExpiredLease,
+  MonitoredLeaseStatus,
+} from "@amzn/innovation-sandbox-shared/types/lease.js";
 import { Logger } from "@aws-lambda-powertools/logger";
 import { Tracer } from "@aws-lambda-powertools/tracer";
 import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
@@ -161,7 +163,7 @@ async function fetchRelevantLeases(
     "UserTerminated",
   ];
 
-  const leases: (MonitoredLease | ExpiredLease)[] = (
+  const leases: (PersistedMonitoredLease | PersistedExpiredLease)[] = (
     await Promise.all(
       statuses.map((status) =>
         backOff(
@@ -189,7 +191,7 @@ async function fetchRelevantLeases(
         ),
       ),
     )
-  ).flat() as (MonitoredLease | ExpiredLease)[];
+  ).flat() as (PersistedMonitoredLease | PersistedExpiredLease)[];
 
   return leases
     .filter((lease) =>
@@ -204,7 +206,7 @@ async function fetchRelevantLeases(
 }
 
 function isLeaseInReportPeriod(
-  lease: MonitoredLease | ExpiredLease,
+  lease: PersistedMonitoredLease | PersistedExpiredLease,
   startOfLastMonth: DateTime,
   endOfLastMonth: DateTime,
 ) {

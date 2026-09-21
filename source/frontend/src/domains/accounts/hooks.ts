@@ -9,20 +9,20 @@ import {
 } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef } from "react";
 
-import { AccountService } from "@amzn/innovation-sandbox-frontend/domains/accounts/service";
-import { CleanupReport } from "@amzn/innovation-sandbox-frontend/domains/accounts/types";
+import { getAccountService } from "@amzn/innovation-sandbox-frontend/domains/accounts/service";
+import { CleanupReportView } from "@amzn/innovation-sandbox-frontend/domains/accounts/types";
 
 export const useGetAccounts = () => {
   return useQuery({
     queryKey: ["accounts"],
-    queryFn: async () => await new AccountService().getAccounts(),
+    queryFn: async () => await getAccountService().getAccounts(),
   });
 };
 
 export const useGetAccountById = (accountId: string | undefined) => {
   return useQuery({
     queryKey: ["accounts", accountId],
-    queryFn: async () => await new AccountService().getAccountById(accountId!),
+    queryFn: async () => await getAccountService().getAccountById(accountId!),
     enabled: !!accountId,
     // Poll only while a cleanup is actively in flight
     refetchInterval: (query) =>
@@ -38,7 +38,7 @@ export const useGetCleanupReports = (accountId: string | undefined) => {
   const listQuery = useInfiniteQuery({
     queryKey: ["accounts", accountId, "cleanup-reports"],
     queryFn: async ({ pageParam }) =>
-      await new AccountService().getCleanupReports(accountId!, pageParam),
+      await getAccountService().getCleanupReports(accountId!, pageParam),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.nextPageIdentifier ?? undefined,
     enabled: !!accountId,
@@ -48,7 +48,7 @@ export const useGetCleanupReports = (accountId: string | undefined) => {
   const latestQuery = useQuery({
     queryKey: ["accounts", accountId, "cleanup-report-latest"],
     queryFn: async () =>
-      await new AccountService().getLatestCleanupReport(accountId!),
+      await getAccountService().getLatestCleanupReport(accountId!),
     enabled: !!accountId,
     refetchInterval: 10_000,
   });
@@ -89,7 +89,7 @@ export const useGetCleanupReports = (accountId: string | undefined) => {
   // Merge: replace reports[0] with the fresher polled version so
   // consumers always see the most up-to-date data in a single array.
   const reports = useMemo(() => {
-    const listReports: CleanupReport[] =
+    const listReports: CleanupReportView[] =
       listQuery.data?.pages.flatMap((page) => page.result) ?? [];
     if (
       latestQuery.data &&
@@ -115,7 +115,7 @@ export const useGetCleanupReports = (accountId: string | undefined) => {
 export const useGetUnregisteredAccounts = () => {
   return useQuery({
     queryKey: ["unregisteredAccounts"],
-    queryFn: async () => await new AccountService().getUnregisteredAccounts(),
+    queryFn: async () => await getAccountService().getUnregisteredAccounts(),
   });
 };
 
@@ -123,7 +123,7 @@ export const useAddAccount = (options?: { skipInvalidation?: boolean }) => {
   const client = useQueryClient();
   return useMutation({
     mutationFn: async (awsAccountId: string) =>
-      await new AccountService().addAccount(awsAccountId),
+      await getAccountService().addAccount(awsAccountId),
     onSuccess: () => {
       // Only invalidate if skipInvalidation is not set
       if (!options?.skipInvalidation) {
@@ -144,7 +144,7 @@ export const useEjectAccount = (options?: { skipInvalidation?: boolean }) => {
   const client = useQueryClient();
   return useMutation({
     mutationFn: async (awsAccountId: string) =>
-      await new AccountService().ejectAccount(awsAccountId),
+      await getAccountService().ejectAccount(awsAccountId),
     onSuccess: () => {
       // Only invalidate if skipInvalidation is not set
       if (!options?.skipInvalidation) {
@@ -162,7 +162,7 @@ export const useCleanupAccount = (options?: { skipInvalidation?: boolean }) => {
   const client = useQueryClient();
   return useMutation({
     mutationFn: async (awsAccountId: string) =>
-      await new AccountService().cleanupAccount(awsAccountId),
+      await getAccountService().cleanupAccount(awsAccountId),
     onSuccess: () => {
       // Only invalidate if skipInvalidation is not set
       if (!options?.skipInvalidation) {
@@ -181,7 +181,7 @@ export const useQuarantineAccount = (options?: {
   const client = useQueryClient();
   return useMutation({
     mutationFn: async (awsAccountId: string) =>
-      await new AccountService().quarantineAccount(awsAccountId),
+      await getAccountService().quarantineAccount(awsAccountId),
     onSuccess: () => {
       if (!options?.skipInvalidation) {
         client.invalidateQueries({
@@ -199,7 +199,7 @@ export const useSkipCooldown = (accountId: string | undefined) => {
   return useMutation({
     mutationFn: async () => {
       if (!accountId) throw new Error("Account ID is required");
-      await new AccountService().skipCooldown(accountId);
+      await getAccountService().skipCooldown(accountId);
     },
     onSuccess: () => {
       client.invalidateQueries({

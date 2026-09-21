@@ -42,10 +42,14 @@ describe("collectApiCallsByAuthType", () => {
   it("queries both count rules by their WAF metric names, WebACL, and Region", async () => {
     cloudWatchMock.on(GetMetricDataCommand).resolves({ MetricDataResults: [] });
 
-    await collectApiCallsByAuthType(new CloudWatchClient({}), WEB_ACL_NAME, REGION);
+    await collectApiCallsByAuthType(
+      new CloudWatchClient({}),
+      WEB_ACL_NAME,
+      REGION,
+    );
 
-    const input = cloudWatchMock.commandCalls(GetMetricDataCommand)[0]?.args[0]
-      .input;
+    const input =
+      cloudWatchMock.commandCalls(GetMetricDataCommand)[0]?.args[0].input;
     const queries = input?.MetricDataQueries ?? [];
     const ruleOf = (id: string) =>
       queries
@@ -77,8 +81,8 @@ describe("collectApiCallsByAuthType", () => {
       REGION,
     );
 
-    const input = cloudWatchMock.commandCalls(GetMetricDataCommand)[0]?.args[0]
-      .input;
+    const input =
+      cloudWatchMock.commandCalls(GetMetricDataCommand)[0]?.args[0].input;
     const start = input?.StartTime as Date;
     const end = input?.EndTime as Date;
 

@@ -10,7 +10,7 @@ import { createHttpJSendError } from "@amzn/innovation-sandbox-commons/lambda/mi
 import type {
   IsbRole,
   IsbUser,
-} from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
+} from "@amzn/innovation-sandbox-shared/utils/auth-utils.js";
 import { MiddlewareFn } from "@aws-lambda-powertools/commons/types";
 import { MiddlewareObj } from "@middy/core";
 import { APIGatewayProxyEvent } from "aws-lambda";
@@ -91,6 +91,7 @@ export function rbacAuthorizer<
     if (allowedRoles.length === 0) {
       throw createHttpJSendError({
         statusCode: 403,
+        errorType: "AccessDeniedError",
         data: {
           errors: [{ message: "Access denied." }],
         },
@@ -105,6 +106,7 @@ export function rbacAuthorizer<
     if (!hasAllowedRole) {
       throw createHttpJSendError({
         statusCode: 403,
+        errorType: "AccessDeniedError",
         data: {
           errors: [{ message: "Access denied." }],
         },
@@ -116,6 +118,7 @@ export function rbacAuthorizer<
       if (!isAllowedInMaintenanceMode(user, path, method)) {
         throw createHttpJSendError({
           statusCode: 403,
+          errorType: "AccessDeniedError",
           data: {
             errors: [
               {

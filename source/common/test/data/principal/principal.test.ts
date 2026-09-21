@@ -4,17 +4,19 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  GroupAssignmentSchema,
-  GroupMembershipCacheSchema,
-  IdcPrincipalIdSchema,
+  PersistedGroupAssignmentSchema,
+  PersistedGroupMembershipCacheSchema,
+  PersistedPrincipalCacheItemSchema,
+  PersistedUserAssignmentSchema,
   PRINCIPAL_CACHE_GROUP_SK_PREFIX,
   PRINCIPAL_CACHE_PK,
   PRINCIPAL_CACHE_USER_SK_PREFIX,
-  PrincipalCacheItemSchema,
   PrincipalSchemaVersion,
-  PrincipalTypeSchema,
-  UserAssignmentSchema,
 } from "@amzn/innovation-sandbox-commons/data/principal/principal.js";
+import {
+  IdcPrincipalIdSchema,
+  PrincipalTypeSchema,
+} from "@amzn/innovation-sandbox-shared/types/principal.js";
 
 const VALID_UUID = "00000000-0000-4000-8000-000000000001";
 const VALID_IDC_ID_PREFIXED = "0000000000-00000000-0000-0000-0000-000000000002";
@@ -99,16 +101,16 @@ describe("Principal Validation", () => {
     });
   });
 
-  describe("UserAssignmentSchema", () => {
+  describe("PersistedUserAssignmentSchema", () => {
     it("should accept a valid user assignment", () => {
       expect(
-        UserAssignmentSchema.safeParse(validUserAssignment()).success,
+        PersistedUserAssignmentSchema.safeParse(validUserAssignment()).success,
       ).toBe(true);
     });
 
     it("should accept with optional fields populated", () => {
       expect(
-        UserAssignmentSchema.safeParse(
+        PersistedUserAssignmentSchema.safeParse(
           validUserAssignment({
             accountId: "123456789012",
             permissionSetArn: "arn:aws:sso:::permissionSet/ssoins-1234/ps-1234",
@@ -119,7 +121,7 @@ describe("Principal Validation", () => {
 
     it("should accept with prefixed IDC ID in pk", () => {
       expect(
-        UserAssignmentSchema.safeParse(
+        PersistedUserAssignmentSchema.safeParse(
           validUserAssignment({
             pk: "user#" + VALID_IDC_ID_PREFIXED,
             userId: VALID_IDC_ID_PREFIXED,
@@ -137,21 +139,23 @@ describe("Principal Validation", () => {
       ["extra fields (strict)", { unexpectedField: "value" }],
     ])("should reject %s", (_label, overrides) => {
       expect(
-        UserAssignmentSchema.safeParse(validUserAssignment(overrides)).success,
+        PersistedUserAssignmentSchema.safeParse(validUserAssignment(overrides))
+          .success,
       ).toBe(false);
     });
   });
 
-  describe("GroupAssignmentSchema", () => {
+  describe("PersistedGroupAssignmentSchema", () => {
     it("should accept a valid group assignment", () => {
       expect(
-        GroupAssignmentSchema.safeParse(validGroupAssignment()).success,
+        PersistedGroupAssignmentSchema.safeParse(validGroupAssignment())
+          .success,
       ).toBe(true);
     });
 
     it("should accept with prefixed IDC ID in pk and groupId", () => {
       expect(
-        GroupAssignmentSchema.safeParse(
+        PersistedGroupAssignmentSchema.safeParse(
           validGroupAssignment({
             pk: "group#" + VALID_IDC_ID_PREFIXED,
             groupId: VALID_IDC_ID_PREFIXED,
@@ -168,23 +172,25 @@ describe("Principal Validation", () => {
       ["extra fields (strict)", { unexpectedField: "value" }],
     ])("should reject %s", (_label, overrides) => {
       expect(
-        GroupAssignmentSchema.safeParse(validGroupAssignment(overrides))
-          .success,
+        PersistedGroupAssignmentSchema.safeParse(
+          validGroupAssignment(overrides),
+        ).success,
       ).toBe(false);
     });
   });
 
-  describe("GroupMembershipCacheSchema", () => {
+  describe("PersistedGroupMembershipCacheSchema", () => {
     it("should accept a valid cache record", () => {
       expect(
-        GroupMembershipCacheSchema.safeParse(validGroupMembershipCache())
-          .success,
+        PersistedGroupMembershipCacheSchema.safeParse(
+          validGroupMembershipCache(),
+        ).success,
       ).toBe(true);
     });
 
     it("should accept empty groupIds array", () => {
       expect(
-        GroupMembershipCacheSchema.safeParse(
+        PersistedGroupMembershipCacheSchema.safeParse(
           validGroupMembershipCache({ groupIds: [] }),
         ).success,
       ).toBe(true);
@@ -199,14 +205,14 @@ describe("Principal Validation", () => {
       ["extra fields (strict)", { unexpectedField: "value" }],
     ])("should reject %s", (_label, overrides) => {
       expect(
-        GroupMembershipCacheSchema.safeParse(
+        PersistedGroupMembershipCacheSchema.safeParse(
           validGroupMembershipCache(overrides),
         ).success,
       ).toBe(false);
     });
   });
 
-  describe("PrincipalCacheItemSchema", () => {
+  describe("PersistedPrincipalCacheItemSchema", () => {
     function createUserCacheItem(overrides = {}) {
       return {
         pk: PRINCIPAL_CACHE_PK,
@@ -236,19 +242,21 @@ describe("Principal Validation", () => {
 
     it("should accept a valid USER cache item", () => {
       expect(
-        PrincipalCacheItemSchema.safeParse(createUserCacheItem()).success,
+        PersistedPrincipalCacheItemSchema.safeParse(createUserCacheItem())
+          .success,
       ).toBe(true);
     });
 
     it("should accept a valid GROUP cache item", () => {
       expect(
-        PrincipalCacheItemSchema.safeParse(createGroupCacheItem()).success,
+        PersistedPrincipalCacheItemSchema.safeParse(createGroupCacheItem())
+          .success,
       ).toBe(true);
     });
 
     it("should reject wrong pk value", () => {
       expect(
-        PrincipalCacheItemSchema.safeParse(
+        PersistedPrincipalCacheItemSchema.safeParse(
           createUserCacheItem({ pk: "wrongValue" }),
         ).success,
       ).toBe(false);
@@ -256,7 +264,7 @@ describe("Principal Validation", () => {
 
     it("should reject empty displayName", () => {
       expect(
-        PrincipalCacheItemSchema.safeParse(
+        PersistedPrincipalCacheItemSchema.safeParse(
           createUserCacheItem({ displayName: "" }),
         ).success,
       ).toBe(false);
@@ -264,7 +272,7 @@ describe("Principal Validation", () => {
 
     it("should reject invalid email format", () => {
       expect(
-        PrincipalCacheItemSchema.safeParse(
+        PersistedPrincipalCacheItemSchema.safeParse(
           createUserCacheItem({ email: "not-an-email" }),
         ).success,
       ).toBe(false);
@@ -272,12 +280,14 @@ describe("Principal Validation", () => {
 
     it("should reject missing required fields", () => {
       const { principalId, ...missing } = createUserCacheItem();
-      expect(PrincipalCacheItemSchema.safeParse(missing).success).toBe(false);
+      expect(PersistedPrincipalCacheItemSchema.safeParse(missing).success).toBe(
+        false,
+      );
     });
 
     it("should reject extra fields (strict mode)", () => {
       expect(
-        PrincipalCacheItemSchema.safeParse(
+        PersistedPrincipalCacheItemSchema.safeParse(
           createUserCacheItem({ unexpectedField: "value" }),
         ).success,
       ).toBe(false);

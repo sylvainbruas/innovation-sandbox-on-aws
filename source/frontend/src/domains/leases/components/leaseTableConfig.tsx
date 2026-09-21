@@ -4,12 +4,6 @@
 import { StatusIndicator } from "@cloudscape-design/components";
 import { PropertyFilterProps } from "@cloudscape-design/components/property-filter";
 
-import {
-  isExpiredLease,
-  isMonitoredLease,
-  LeaseWithLeaseId as Lease,
-  LeaseStatus,
-} from "@amzn/innovation-sandbox-commons/data/lease/lease";
 import { AccessTypeBadge } from "@amzn/innovation-sandbox-frontend/components/AccessTypeBadge";
 import { AccountId } from "@amzn/innovation-sandbox-frontend/components/AccountId";
 import { AccountLoginLink } from "@amzn/innovation-sandbox-frontend/components/AccountLoginLink";
@@ -21,16 +15,26 @@ import { LeaseName } from "@amzn/innovation-sandbox-frontend/components/LeaseNam
 import { LeaseTemplateName } from "@amzn/innovation-sandbox-frontend/components/LeaseTemplateName";
 import { LeaseStatusBadge } from "@amzn/innovation-sandbox-frontend/domains/leases/components/LeaseStatusBadge";
 import {
+  canLoginToLease,
   leaseExpirySortingComparator,
+  type LeaseLoginPermissions,
   leaseStatusSortingComparator,
 } from "@amzn/innovation-sandbox-frontend/domains/leases/helpers";
-import { SharedLeaseAccessType } from "@amzn/innovation-sandbox-frontend/domains/leases/types";
+import {
+  LeaseView,
+  SharedLeaseAccessType,
+} from "@amzn/innovation-sandbox-frontend/domains/leases/model";
 import { getLeaseExpiryInfo } from "@amzn/innovation-sandbox-frontend/helpers/LeaseExpiryInfo";
+import {
+  isExpiredLease,
+  isMonitoredLease,
+  LeaseStatus,
+} from "@amzn/innovation-sandbox-shared/types/lease.js";
 
 // ─── Column Definitions ────────────────────────────────────────────────────────
 
 /** Lease item as rendered in the table — accessType is optional since not all code paths set it. */
-export type LeaseTableItem = Lease & {
+export type LeaseTableItem = LeaseView & {
   accessType?: SharedLeaseAccessType;
 };
 
@@ -39,7 +43,9 @@ export type LeaseTableItem = Lease & {
  * All data columns are always included; visibility is controlled by
  * default visible columns preferences, not by omitting definitions.
  */
-export function getLeaseColumnDefinitions(): FilterableColumnDefinition<LeaseTableItem>[] {
+export function getLeaseColumnDefinitions(
+  permissions: LeaseLoginPermissions,
+): FilterableColumnDefinition<LeaseTableItem>[] {
   return [
     {
       id: "name",
@@ -49,7 +55,7 @@ export function getLeaseColumnDefinitions(): FilterableColumnDefinition<LeaseTab
         <LeaseName
           uuid={lease.uuid}
           templateName={lease.originalLeaseTemplateName}
-          leaseId={(lease as Lease).leaseId}
+          leaseId={lease.leaseId}
         />
       ),
     },
@@ -152,13 +158,10 @@ export function getLeaseColumnDefinitions(): FilterableColumnDefinition<LeaseTab
     {
       id: "access",
       header: "Access",
-      cell: (lease) => (
-        <>
-          {isMonitoredLease(lease) && (
-            <AccountLoginLink accountId={lease.awsAccountId} />
-          )}
-        </>
-      ),
+      cell: (lease) =>
+        canLoginToLease(lease, permissions) ? (
+          <AccountLoginLink accountId={lease.awsAccountId} wrapText={false} />
+        ) : null,
     },
   ];
 }

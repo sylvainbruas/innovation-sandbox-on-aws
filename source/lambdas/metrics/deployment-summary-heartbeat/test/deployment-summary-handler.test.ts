@@ -52,9 +52,8 @@ vi.spyOn(Logger.prototype, "error").mockImplementation(() => {});
 beforeAll(async () => {
   bulkStubEnv(testEnv);
 
-  const { DynamoConfigStore } = await import(
-    "@amzn/innovation-sandbox-commons/data/config/dynamo-config-store.js"
-  );
+  const { DynamoConfigStore } =
+    await import("@amzn/innovation-sandbox-commons/data/config/dynamo-config-store.js");
   vi.doMock("@amzn/innovation-sandbox-commons/isb-services/index.js", () => ({
     IsbServices: {
       leaseTemplateStore: vi.fn().mockReturnValue(mockLeaseTemplateStore),

@@ -3,14 +3,16 @@
 import { DateTime } from "luxon";
 import { z } from "zod";
 
-import { CleanupValidationModeSchema } from "@amzn/innovation-sandbox-commons/data/config/config.js";
 import {
   createItemWithMetadataSchema,
   createVersionRangeSchema,
 } from "@amzn/innovation-sandbox-commons/data/metadata.js";
-import { CleanupStatusSchema } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
 import { CleanupReasonBackwardCompatibleSchema } from "@amzn/innovation-sandbox-commons/events/clean-account-request.js";
 import { AwsAccountIdSchema } from "@amzn/innovation-sandbox-commons/utils/zod.js";
+import {
+  CleanupStatusSchema,
+  CleanupValidationModeSchema,
+} from "@amzn/innovation-sandbox-shared/types/sandbox-account.js";
 
 // IMPORTANT -- this value must be updated whenever the schema changes.
 export const CleanupReportSchemaVersion = 1;
@@ -162,7 +164,7 @@ export const AccessCleanupSummarySchema = z.object({
 
 export type AccessCleanupSummary = z.infer<typeof AccessCleanupSummarySchema>;
 
-export const CleanupReportSchema = z
+export const PersistedCleanupReportSchema = z
   .object({
     pk: AwsAccountIdSchema,
     sk: z
@@ -189,7 +191,9 @@ export const CleanupReportSchema = z
   })
   .merge(CleanupReportItemWithMetadataSchema);
 
-export type CleanupReport = z.infer<typeof CleanupReportSchema>;
+export type PersistedCleanupReport = z.infer<
+  typeof PersistedCleanupReportSchema
+>;
 export type CleanupReportStatus = z.infer<typeof CleanupReportStatusSchema>;
 export type CleanupStatusDetail = z.infer<typeof CleanupStatusSchema>;
 export type { CleanupReason as ReasonForCleanup } from "@amzn/innovation-sandbox-commons/events/clean-account-request.js";

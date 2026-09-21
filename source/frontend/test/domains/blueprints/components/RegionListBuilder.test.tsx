@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { RegionListBuilder } from "@amzn/innovation-sandbox-frontend/domains/blueprints/components/RegionListBuilder";
 import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
+import { createConfiguration } from "@amzn/innovation-sandbox-frontend/mocks/factories/configurationFactory";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
 import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
 
@@ -20,9 +21,9 @@ describe("RegionListBuilder", () => {
       http.get(`${getConfig().ApiUrl}/configurations`, () => {
         return HttpResponse.json({
           status: "success",
-          data: {
+          data: createConfiguration({
             isbManagedRegions: ["us-east-1", "us-west-2", "eu-west-1"],
-          },
+          }),
         });
       }),
     );
@@ -31,15 +32,15 @@ describe("RegionListBuilder", () => {
       <RegionListBuilder selectedRegions={[]} onChange={mockOnChange} />,
     );
 
-    // Wait for component to load
-    await waitFor(() => {
-      expect(screen.getByText("Add all regions")).toBeInTheDocument();
-    });
-
     // Click Add all regions
     const addAllButton = screen.getByRole("button", {
       name: /Add all regions/i,
     });
+
+    // The button renders immediately but stays disabled until the config query
+    // resolves (it is disabled while loading / when no regions are known), so wait
+    // for it to be enabled rather than merely present before clicking.
+    await waitFor(() => expect(addAllButton).toBeEnabled());
 
     await user.click(addAllButton);
 
@@ -60,9 +61,9 @@ describe("RegionListBuilder", () => {
       http.get(`${getConfig().ApiUrl}/configurations`, () => {
         return HttpResponse.json({
           status: "success",
-          data: {
+          data: createConfiguration({
             isbManagedRegions: ["us-east-1", "us-west-2"],
-          },
+          }),
         });
       }),
     );
@@ -93,9 +94,9 @@ describe("RegionListBuilder", () => {
       http.get(`${getConfig().ApiUrl}/configurations`, () => {
         return HttpResponse.json({
           status: "success",
-          data: {
+          data: createConfiguration({
             isbManagedRegions: ["us-east-1", "us-west-2"],
-          },
+          }),
         });
       }),
     );

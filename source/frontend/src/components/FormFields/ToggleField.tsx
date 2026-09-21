@@ -60,7 +60,8 @@ export default function ToggleField<
   // An explicit `children` always wins; otherwise `stateLabel` renders a live
   // "Enabled"/"Disabled" label from the current value.
   const label =
-    children ?? (stateLabel ? (fieldValue ? "Enabled" : "Disabled") : undefined);
+    children ??
+    (stateLabel ? (fieldValue ? "Enabled" : "Disabled") : undefined);
 
   return (
     <FormField {...formFieldProps} errorText={fieldError?.message}>

@@ -2,19 +2,19 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import type {
-  BlueprintItem,
-  DeploymentHistoryItem,
-  StackSetItem,
+  PersistedBlueprintItem,
+  PersistedDeploymentHistoryItem,
+  PersistedStackSetItem,
 } from "@amzn/innovation-sandbox-commons/data/blueprint/blueprint.js";
 import { nowAsIsoDatetimeString } from "@amzn/innovation-sandbox-commons/utils/time-utils.js";
 
 /**
- * Creates a test BlueprintItem with sensible defaults.
+ * Creates a test PersistedBlueprintItem with sensible defaults.
  * Override any fields as needed for specific test scenarios.
  */
 export function createTestBlueprintItem(
-  overrides?: Partial<BlueprintItem>,
-): BlueprintItem {
+  overrides?: Partial<PersistedBlueprintItem>,
+): PersistedBlueprintItem {
   const blueprintId =
     overrides?.blueprintId ?? "650e8400-e29b-41d4-a716-446655440000";
   const now = nowAsIsoDatetimeString();
@@ -43,12 +43,12 @@ export function createTestBlueprintItem(
 }
 
 /**
- * Creates a test StackSetItem with sensible defaults.
+ * Creates a test PersistedStackSetItem with sensible defaults.
  * Override any fields as needed for specific test scenarios.
  */
 export function createTestStackSetItem(
-  overrides?: Partial<StackSetItem>,
-): StackSetItem {
+  overrides?: Partial<PersistedStackSetItem>,
+): PersistedStackSetItem {
   const blueprintId =
     overrides?.blueprintId ?? "650e8400-e29b-41d4-a716-446655440000";
   const stackSetId =
@@ -85,12 +85,12 @@ export function createTestStackSetItem(
 }
 
 /**
- * Creates a test DeploymentHistoryItem with sensible defaults.
+ * Creates a test PersistedDeploymentHistoryItem with sensible defaults.
  * Override any fields as needed for specific test scenarios.
  */
 export function createTestDeploymentHistoryItem(
-  overrides?: Partial<DeploymentHistoryItem>,
-): DeploymentHistoryItem {
+  overrides?: Partial<PersistedDeploymentHistoryItem>,
+): PersistedDeploymentHistoryItem {
   const deploymentTimestamp =
     overrides?.deploymentStartedAt ?? "2024-01-15T10:00:00.000Z";
   const operationId =
@@ -123,7 +123,7 @@ export function createTestDeploymentHistoryItem(
  * Creates multiple test BlueprintItems with sequential IDs.
  * Useful for testing list operations and pagination.
  */
-export function createTestBlueprints(count: number): BlueprintItem[] {
+export function createTestBlueprints(count: number): PersistedBlueprintItem[] {
   return Array.from({ length: count }, (_, i) =>
     createTestBlueprintItem({
       blueprintId: `650e8400-e29b-41d4-a716-44665544000${i}`,
@@ -139,7 +139,7 @@ export function createTestBlueprints(count: number): BlueprintItem[] {
 export function createTestStackSets(
   blueprintId: string,
   count: number,
-): StackSetItem[] {
+): PersistedStackSetItem[] {
   return Array.from({ length: count }, (_, i) =>
     createTestStackSetItem({
       blueprintId,
@@ -156,7 +156,7 @@ export function createTestStackSets(
 export function createTestDeploymentHistory(
   blueprintId: string,
   count: number,
-): DeploymentHistoryItem[] {
+): PersistedDeploymentHistoryItem[] {
   return Array.from({ length: count }, (_, i) => {
     const day = String(15 - i).padStart(2, "0");
     const timestamp = `2024-01-${day}T10:00:00.000Z`;

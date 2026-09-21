@@ -8,6 +8,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { RegisterBlueprintWizard } from "@amzn/innovation-sandbox-frontend/domains/blueprints/pages/RegisterBlueprintWizard";
 import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
+import { createConfiguration } from "@amzn/innovation-sandbox-frontend/mocks/factories/configurationFactory";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
 import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
 
@@ -42,7 +43,7 @@ describe("RegisterBlueprintWizard Integration", () => {
         http.get(`${getConfig().ApiUrl}/configurations`, () => {
           return HttpResponse.json({
             status: "success",
-            data: { isbManagedRegions: ["us-east-1"] },
+            data: createConfiguration({ isbManagedRegions: ["us-east-1"] }),
           });
         }),
       );
@@ -89,7 +90,7 @@ describe("RegisterBlueprintWizard Integration", () => {
         http.get(`${getConfig().ApiUrl}/configurations`, () => {
           return HttpResponse.json({
             status: "success",
-            data: { isbManagedRegions: ["us-east-1"] },
+            data: createConfiguration({ isbManagedRegions: ["us-east-1"] }),
           });
         }),
       );
@@ -142,7 +143,7 @@ describe("RegisterBlueprintWizard Integration", () => {
         http.get(`${getConfig().ApiUrl}/configurations`, () => {
           return HttpResponse.json({
             status: "success",
-            data: { isbManagedRegions: ["us-east-1"] },
+            data: createConfiguration({ isbManagedRegions: ["us-east-1"] }),
           });
         }),
       );
@@ -206,7 +207,9 @@ describe("RegisterBlueprintWizard Integration", () => {
         http.get(`${getConfig().ApiUrl}/configurations`, () => {
           return HttpResponse.json({
             status: "success",
-            data: { isbManagedRegions: ["us-east-1", "us-west-2"] },
+            data: createConfiguration({
+              isbManagedRegions: ["us-east-1", "us-west-2"],
+            }),
           });
         }),
       );
@@ -278,7 +281,7 @@ describe("RegisterBlueprintWizard Integration", () => {
         http.get(`${getConfig().ApiUrl}/configurations`, () => {
           return HttpResponse.json({
             status: "success",
-            data: { isbManagedRegions: ["us-east-1"] },
+            data: createConfiguration({ isbManagedRegions: ["us-east-1"] }),
           });
         }),
       );
@@ -349,9 +352,9 @@ describe("RegisterBlueprintWizard Integration", () => {
       http.get(`${getConfig().ApiUrl}/configurations`, () => {
         return HttpResponse.json({
           status: "success",
-          data: {
+          data: createConfiguration({
             isbManagedRegions: ["us-east-1", "us-west-2", "eu-west-1"],
-          },
+          }),
         });
       }),
       // Mock blueprint registration
@@ -487,9 +490,9 @@ describe("RegisterBlueprintWizard Integration", () => {
       http.get(`${getConfig().ApiUrl}/configurations`, () => {
         return HttpResponse.json({
           status: "success",
-          data: {
+          data: createConfiguration({
             isbManagedRegions: ["us-east-1"],
-          },
+          }),
         });
       }),
       http.post(`${getConfig().ApiUrl}/blueprints`, () => {
@@ -564,9 +567,9 @@ describe("RegisterBlueprintWizard Integration", () => {
       http.get(`${getConfig().ApiUrl}/configurations`, () => {
         return HttpResponse.json({
           status: "success",
-          data: {
+          data: createConfiguration({
             isbManagedRegions: ["us-east-1"],
-          },
+          }),
         });
       }),
     );
@@ -623,9 +626,9 @@ describe("RegisterBlueprintWizard Integration", () => {
       http.get(`${getConfig().ApiUrl}/configurations`, () => {
         return HttpResponse.json({
           status: "success",
-          data: {
+          data: createConfiguration({
             isbManagedRegions: ["us-east-1", "us-west-2"],
-          },
+          }),
         });
       }),
       http.post(`${getConfig().ApiUrl}/blueprints`, async ({ request }) => {

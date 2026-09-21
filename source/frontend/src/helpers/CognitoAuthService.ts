@@ -8,14 +8,16 @@ import {
   signOut,
 } from "aws-amplify/auth";
 
+import { resetApiSingletons } from "@amzn/innovation-sandbox-frontend/helpers/apiSingletons";
+
+import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import {
   COGNITO_IDC_USER_ID_CLAIM,
   CognitoEmailClaims,
   type IdcIdentity,
   parseRolesClaim,
   resolveEmailFromClaims,
-} from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
-import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
+} from "@amzn/innovation-sandbox-shared/utils/auth-utils.js";
 
 export type AuthResult =
   | { status: "authenticated"; user: IdcIdentity }
@@ -88,6 +90,7 @@ export class CognitoAuthService {
       accessKeyId: c.accessKeyId,
       secretAccessKey: c.secretAccessKey,
       sessionToken: c.sessionToken,
+      expiration: c.expiration,
     };
   }
 
@@ -98,6 +101,11 @@ export class CognitoAuthService {
 
   /** Signs the user out of Cognito. */
   static async logout(): Promise<void> {
+    // Clear memoized API service/client singletons BEFORE signing out. `signOut`
+    // with an oauth redirect navigates away, so anything after it may not run;
+    // and a memoized SigV4 credential stays valid past logout, so a stale client
+    // must not survive into the next session.
+    resetApiSingletons();
     await signOut({
       global: false,
       oauth: { redirectUrl: getConfig().AwsAccessPortalUrl },

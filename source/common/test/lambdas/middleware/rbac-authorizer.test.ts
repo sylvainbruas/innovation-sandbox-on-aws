@@ -11,7 +11,7 @@ import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/genera
 import {
   type IsbRole,
   IdcIdentitySchema,
-} from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
+} from "@amzn/innovation-sandbox-shared/utils/auth-utils.js";
 
 describe("getAllowedRoles", () => {
   it("should return roles for exact path and method", () => {

@@ -12,7 +12,6 @@ import {
   useGetLeases,
   useGetLeasesByEmail,
   useGetPendingApprovals,
-  useGetPrincipals,
   useGetSharedLeases,
   useLeasesForCurrentUser,
   useRequestNewLease,
@@ -22,14 +21,17 @@ import {
   useUpdateAssignments,
   useUpdateLease,
 } from "@amzn/innovation-sandbox-frontend/domains/leases/hooks";
+import { LeaseAssignmentView } from "@amzn/innovation-sandbox-frontend/domains/leases/model";
 import {
   AssignmentPrincipalRef,
-  LeaseAssignment,
   LeasePatchRequest,
   NewLeaseRequest,
 } from "@amzn/innovation-sandbox-frontend/domains/leases/types";
 import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
-import { mockLease } from "@amzn/innovation-sandbox-frontend/mocks/handlers/leaseHandlers";
+import {
+  mockApiLease,
+  mockLease,
+} from "@amzn/innovation-sandbox-frontend/mocks/handlers/leaseHandlers";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
 import { createQueryClientWrapper } from "@amzn/innovation-sandbox-frontend/setupTests";
 
@@ -49,6 +51,12 @@ vi.mock(
   },
 );
 
+// The read-path assertions below serve `mockApiLease` (not the raw `mockLease`)
+// as the response body: it's the shape the real server puts on the wire — the
+// restJson1 serializer drops `null`/unset/`schemaVersion` members. Serving the
+// raw `mockLease` would leak faker-random `null` members that `HttpResponse.json`
+// preserves and the client deserializer keeps, so the round-trip would flake
+// (an extra key some runs, not others). Keep these handlers on `mockApiLease`.
 describe("Lease hooks", () => {
   describe("useLeasesForCurrentUser", () => {
     it("should fetch leases successfully", async () => {
@@ -56,7 +64,7 @@ describe("Lease hooks", () => {
         http.get(`${getConfig().ApiUrl}/leases`, () => {
           return HttpResponse.json({
             status: "success",
-            data: { result: [mockLease], nextPageIdentifier: null },
+            data: { result: [mockApiLease], nextPageIdentifier: null },
           });
         }),
       );
@@ -67,7 +75,7 @@ describe("Lease hooks", () => {
 
       await waitFor(() => expect(result.current.isSuccess).toBe(true));
 
-      expect(result.current.data).toEqual([mockLease]);
+      expect(result.current.data).toEqual([mockApiLease]);
     });
 
     it("should handle error when fetching leases fails", async () => {
@@ -177,96 +185,9 @@ describe("Lease hooks", () => {
     });
   });
 
-  describe("useGetPrincipals", () => {
-    const mockPrincipals = [
-      {
-        principalId: "user-1",
-        principalType: "USER" as const,
-        displayName: "Alice Smith",
-        email: "alice@example.com",
-      },
-      {
-        principalId: "group-1",
-        principalType: "GROUP" as const,
-        displayName: "Engineering",
-      },
-    ];
-
-    it("should not fetch when query is shorter than 2 characters", async () => {
-      let apiCalled = false;
-      server.use(
-        http.get(`${getConfig().ApiUrl}/principals/search`, () => {
-          apiCalled = true;
-          return HttpResponse.json({
-            status: "success",
-            data: { principals: mockPrincipals, totalMatches: 2 },
-          });
-        }),
-      );
-
-      const { result } = renderHook(() => useGetPrincipals("all", "a"), {
-        wrapper: createQueryClientWrapper(),
-      });
-
-      // Give React Query a chance to start a fetch (it shouldn't)
-      await new Promise((resolve) => setTimeout(resolve, 50));
-
-      expect(apiCalled).toBe(false);
-      expect(result.current.fetchStatus).toBe("idle");
-      expect(result.current.data).toBeUndefined();
-    });
-
-    it("should fetch when query has 2 or more characters", async () => {
-      let receivedUrl: URL | undefined;
-      server.use(
-        http.get(`${getConfig().ApiUrl}/principals/search`, ({ request }) => {
-          receivedUrl = new URL(request.url);
-          return HttpResponse.json({
-            status: "success",
-            data: { principals: mockPrincipals, totalMatches: 2 },
-          });
-        }),
-      );
-
-      const { result } = renderHook(
-        () => useGetPrincipals("users", "alice", 10),
-        { wrapper: createQueryClientWrapper() },
-      );
-
-      await waitFor(() => expect(result.current.isSuccess).toBe(true));
-
-      expect(result.current.data).toEqual({
-        principals: mockPrincipals,
-        totalMatches: 2,
-      });
-      expect(receivedUrl?.searchParams.get("q")).toBe("alice");
-      expect(receivedUrl?.searchParams.get("type")).toBe("users");
-      expect(receivedUrl?.searchParams.get("limit")).toBe("10");
-    });
-
-    it("should handle errors from the principals search endpoint", async () => {
-      server.use(
-        http.get(`${getConfig().ApiUrl}/principals/search`, () => {
-          return HttpResponse.json(
-            { status: "error", message: "boom" },
-            { status: 500 },
-          );
-        }),
-      );
-
-      const { result } = renderHook(() => useGetPrincipals("all", "alice"), {
-        wrapper: createQueryClientWrapper(),
-      });
-
-      await waitFor(() => expect(result.current.isError).toBe(true));
-
-      expect(result.current.error).toBeDefined();
-    });
-  });
-
   describe("useGetAssignments", () => {
     const leaseId = "lease-uuid-1";
-    const mockAssignments: LeaseAssignment[] = [
+    const mockAssignments: LeaseAssignmentView[] = [
       {
         principalId: "user-1",
         principalType: "USER",
@@ -503,7 +424,7 @@ describe("Lease hooks", () => {
         http.get(`${getConfig().ApiUrl}/leases`, () => {
           return HttpResponse.json({
             status: "success",
-            data: { result: [mockLease], nextPageIdentifier: null },
+            data: { result: [mockApiLease], nextPageIdentifier: null },
           });
         }),
       );
@@ -513,7 +434,7 @@ describe("Lease hooks", () => {
       });
 
       await waitFor(() => expect(result.current.isSuccess).toBe(true));
-      expect(result.current.data).toEqual([mockLease]);
+      expect(result.current.data).toEqual([mockApiLease]);
     });
 
     it("should handle error when fetching leases fails", async () => {
@@ -601,7 +522,7 @@ describe("Lease hooks", () => {
           receivedUrl = new URL(request.url);
           return HttpResponse.json({
             status: "success",
-            data: { result: [mockLease], nextPageIdentifier: null },
+            data: { result: [mockApiLease], nextPageIdentifier: null },
           });
         }),
       );
@@ -611,7 +532,7 @@ describe("Lease hooks", () => {
       });
 
       await waitFor(() => expect(result.current.isSuccess).toBe(true));
-      expect(result.current.data).toEqual([mockLease]);
+      expect(result.current.data).toEqual([mockApiLease]);
       expect(receivedUrl?.searchParams.get("userEmail")).toBe(email);
     });
 
@@ -643,7 +564,7 @@ describe("Lease hooks", () => {
         http.get(`${getConfig().ApiUrl}/leases/${leaseId}`, () => {
           return HttpResponse.json({
             status: "success",
-            data: mockLease,
+            data: mockApiLease,
           });
         }),
       );
@@ -653,7 +574,7 @@ describe("Lease hooks", () => {
       });
 
       await waitFor(() => expect(result.current.isSuccess).toBe(true));
-      expect(result.current.data).toEqual(mockLease);
+      expect(result.current.data).toEqual(mockApiLease);
     });
 
     it("should not fetch when uuid is undefined", async () => {

@@ -1,15 +1,12 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
-import { LambdaIntegration } from "aws-cdk-lib/aws-apigateway";
+import { IFunction } from "aws-cdk-lib/aws-lambda";
 import { Construct } from "constructs";
 import path from "path";
 
 import { LeaseTemplateLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/lease-template-lambda-environment.js";
-import {
-  RestApi,
-  RestApiProps,
-} from "@amzn/innovation-sandbox-infrastructure/components/api/rest-api-all";
-import { IsbLambdaFunction } from "@amzn/innovation-sandbox-infrastructure/components/isb-lambda-function";
+import type { RestApiProps } from "@amzn/innovation-sandbox-infrastructure/components/api/rest-api-all";
+import { IsbApiLambdaFunction } from "@amzn/innovation-sandbox-infrastructure/components/isb-lambda-function";
 import { IsbKmsKeys } from "@amzn/innovation-sandbox-infrastructure/components/kms";
 import {
   grantIsbDbReadOnly,
@@ -18,7 +15,9 @@ import {
 import { IsbComputeStack } from "@amzn/innovation-sandbox-infrastructure/isb-compute-stack";
 
 export class LeaseTemplatesApi {
-  constructor(restApi: RestApi, scope: Construct, props: RestApiProps) {
+  public readonly lambdaFunction: IFunction;
+
+  constructor(scope: Construct, props: RestApiProps) {
     const { namespace } = props;
     const {
       configTableName,
@@ -28,7 +27,7 @@ export class LeaseTemplatesApi {
       cognitoAppClientId,
     } = IsbComputeStack.sharedSpokeConfig.data;
 
-    const leaseTemplatesLambdaFunction = new IsbLambdaFunction(
+    const leaseTemplatesLambdaFunction = new IsbApiLambdaFunction(
       scope,
       "LeaseTemplatesLambdaFunction",
       {
@@ -56,10 +55,10 @@ export class LeaseTemplatesApi {
           COGNITO_APP_CLIENT_ID: cognitoAppClientId,
           ISB_NAMESPACE: namespace,
         },
-        logGroup: restApi.logGroup,
         envSchema: LeaseTemplateLambdaEnvironmentSchema,
       },
     );
+    this.lambdaFunction = leaseTemplatesLambdaFunction.lambdaFunction;
 
     grantIsbDbReadWrite(
       scope,
@@ -76,21 +75,5 @@ export class LeaseTemplatesApi {
     IsbKmsKeys.get(scope, namespace).grantEncryptDecrypt(
       leaseTemplatesLambdaFunction.lambdaFunction,
     );
-
-    const leaseTemplatesResource = restApi.root.addResource("leaseTemplates", {
-      defaultIntegration: new LambdaIntegration(
-        leaseTemplatesLambdaFunction.lambdaFunction,
-        { allowTestInvoke: true, proxy: true },
-      ),
-    });
-    leaseTemplatesResource.addMethod("GET");
-    leaseTemplatesResource.addMethod("POST");
-
-    const leaseTemplateNameResource = leaseTemplatesResource.addResource(
-      "{leaseTemplateName}",
-    );
-    leaseTemplateNameResource.addMethod("GET");
-    leaseTemplateNameResource.addMethod("PUT");
-    leaseTemplateNameResource.addMethod("DELETE");
   }
 }

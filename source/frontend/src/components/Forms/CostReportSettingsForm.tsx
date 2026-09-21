@@ -98,6 +98,8 @@ export function CostReportSettingsForm({
           }}
           selectProps={{
             options: costReportGroupOptions,
+            filteringType: "auto",
+            filteringPlaceholder: "Find a cost report group",
             placeholder: "Select a cost report group",
             valueToOption: (value) =>
               getCostReportGroupOption(value, costReportGroupOptions),

@@ -3,8 +3,8 @@
 
 import { Badge } from "@cloudscape-design/components";
 
-import { Lease } from "@amzn/innovation-sandbox-commons/data/lease/lease";
 import { getLeaseStatusDisplayName } from "@amzn/innovation-sandbox-frontend/domains/leases/helpers";
+import { LeaseView } from "@amzn/innovation-sandbox-frontend/domains/leases/model";
 
 const getBadgeColor = (status: string) => {
   if (status === "Active") {
@@ -27,7 +27,7 @@ const getBadgeColor = (status: string) => {
   return "red";
 };
 
-export const LeaseStatusBadge = ({ lease }: { lease: Lease }) => {
+export const LeaseStatusBadge = ({ lease }: { lease: LeaseView }) => {
   return (
     <Badge color={getBadgeColor(lease.status)} data-badge>
       {getLeaseStatusDisplayName(lease.status)}

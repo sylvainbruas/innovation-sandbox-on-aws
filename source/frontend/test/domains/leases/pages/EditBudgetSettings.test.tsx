@@ -11,9 +11,10 @@ import {
   showErrorToast,
   showSuccessToast,
 } from "@amzn/innovation-sandbox-frontend/components/Toast";
+import { MonitoredLeaseView } from "@amzn/innovation-sandbox-frontend/domains/leases/model";
 import { EditBudgetSettings } from "@amzn/innovation-sandbox-frontend/domains/leases/pages/EditBudgetSettings";
-import { MonitoredLeaseWithLeaseId } from "@amzn/innovation-sandbox-frontend/domains/leases/types";
 import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
+import { createConfiguration } from "@amzn/innovation-sandbox-frontend/mocks/factories/configurationFactory";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
 import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
 import { ApiResponse } from "@amzn/innovation-sandbox-frontend/types";
@@ -38,8 +39,8 @@ vi.mock("@amzn/innovation-sandbox-frontend/components/Toast", () => ({
   showErrorToast: vi.fn(),
 }));
 
-const mockLease: MonitoredLeaseWithLeaseId = {
-  uuid: "lease-123",
+const mockLease: MonitoredLeaseView = {
+  uuid: "11111111-1111-4111-8111-111111111111",
   leaseId: "lease-123",
   userEmail: "user@example.com",
   maxSpend: 100,
@@ -57,18 +58,19 @@ const mockLease: MonitoredLeaseWithLeaseId = {
   totalCostAccrued: 0,
 };
 
-const mockConfig = {
-  costReportGroups: [],
-  requireCostReportGroup: false,
+// Full AdminConfig (all six sections + deploy fields) via the shared factory:
+// the generated client's `getConfigurations` requires every section, so a partial
+// hand-rolled mock now fails to load. Overrides carry the leases values this
+// suite asserts.
+const mockConfig = createConfiguration({
   leases: {
     maxBudget: 500,
     requireMaxBudget: false,
     maxDurationHours: 720,
     requireMaxDuration: false,
   },
-  termsOfService: "Terms",
   isbManagedRegions: ["us-east-1"],
-};
+});
 
 describe("EditBudgetSettings", () => {
   const renderComponent = () =>
@@ -84,7 +86,7 @@ describe("EditBudgetSettings", () => {
     // Setup default MSW handlers
     server.use(
       http.get(`${getConfig().ApiUrl}/leases/lease-123`, () => {
-        const response: ApiResponse<MonitoredLeaseWithLeaseId> = {
+        const response: ApiResponse<MonitoredLeaseView> = {
           status: "success",
           data: mockLease,
         };
@@ -151,7 +153,7 @@ describe("EditBudgetSettings", () => {
     // Test retry functionality
     server.use(
       http.get(`${getConfig().ApiUrl}/leases/lease-123`, () => {
-        const response: ApiResponse<MonitoredLeaseWithLeaseId> = {
+        const response: ApiResponse<MonitoredLeaseView> = {
           status: "success",
           data: mockLease,
         };
@@ -403,7 +405,7 @@ describe("EditBudgetSettings", () => {
   });
 
   it("handles lease with no budget settings", async () => {
-    const leaseWithNoBudget: MonitoredLeaseWithLeaseId = {
+    const leaseWithNoBudget: MonitoredLeaseView = {
       ...mockLease,
       maxSpend: undefined,
       budgetThresholds: [],
@@ -411,7 +413,7 @@ describe("EditBudgetSettings", () => {
 
     server.use(
       http.get(`${getConfig().ApiUrl}/leases/lease-123`, () => {
-        const response: ApiResponse<MonitoredLeaseWithLeaseId> = {
+        const response: ApiResponse<MonitoredLeaseView> = {
           status: "success",
           data: leaseWithNoBudget,
         };
@@ -438,7 +440,7 @@ describe("EditBudgetSettings", () => {
       ...mockConfig,
       leases: { ...mockConfig.leases, requireMaxBudget: true },
     };
-    const leaseWithNoBudget: MonitoredLeaseWithLeaseId = {
+    const leaseWithNoBudget: MonitoredLeaseView = {
       ...mockLease,
       maxSpend: undefined,
       budgetThresholds: [],

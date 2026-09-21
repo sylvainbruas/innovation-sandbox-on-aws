@@ -15,7 +15,7 @@ import {
 import { Controller, useFormContext } from "react-hook-form";
 
 import { useListStackSets } from "@amzn/innovation-sandbox-frontend/domains/blueprints/hooks";
-import { StackSet } from "@amzn/innovation-sandbox-frontend/domains/blueprints/types";
+import { StackSetView } from "@amzn/innovation-sandbox-frontend/domains/blueprints/model";
 import { BlueprintWizardFormValues } from "@amzn/innovation-sandbox-frontend/domains/blueprints/validation";
 
 export function StackSetSelectionForm() {
@@ -43,17 +43,17 @@ export function StackSetSelectionForm() {
       },
     });
 
-  const columnDefinitions: TableProps.ColumnDefinition<StackSet>[] = [
+  const columnDefinitions: TableProps.ColumnDefinition<StackSetView>[] = [
     {
       id: "stackSetName",
       header: "StackSet name",
-      cell: (item: StackSet) => item.stackSetName,
+      cell: (item: StackSetView) => item.stackSetName,
       sortingField: "stackSetName",
     },
     {
       id: "description",
       header: "Description",
-      cell: (item: StackSet) => item.description || "-",
+      cell: (item: StackSetView) => item.description || "-",
     },
   ];
 

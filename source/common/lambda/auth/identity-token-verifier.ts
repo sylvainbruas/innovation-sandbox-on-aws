@@ -4,7 +4,7 @@ import { Logger } from "@aws-lambda-powertools/logger";
 import { CognitoJwtVerifier } from "aws-jwt-verify";
 import { APIGatewayProxyEvent } from "aws-lambda";
 
-import { IDENTITY_HEADER } from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
+import { IDENTITY_HEADER } from "@amzn/innovation-sandbox-shared/utils/auth-utils.js";
 
 const logger = new Logger({ serviceName: "IdentityTokenVerifier" });
 
@@ -30,11 +30,13 @@ export interface IdentityVerifierEnv {
 // Cache the verifier across invocations: aws-jwt-verify holds the JWKS in
 // memory inside the instance, so reusing it for the lifetime of the Lambda
 // execution environment avoids re-fetching keys on every request.
-let verifier: ReturnType<typeof CognitoJwtVerifier.create<{
-  userPoolId: string;
-  tokenUse: "id";
-  clientId: string;
-}>> | null = null;
+let verifier: ReturnType<
+  typeof CognitoJwtVerifier.create<{
+    userPoolId: string;
+    tokenUse: "id";
+    clientId: string;
+  }>
+> | null = null;
 
 function getVerifier(env: IdentityVerifierEnv) {
   if (verifier) return verifier;
@@ -56,9 +58,7 @@ export function extractSubFromAuthProvider(
   return match?.[1] ?? null;
 }
 
-export function readIdentityHeader(
-  event: APIGatewayProxyEvent,
-): string | null {
+export function readIdentityHeader(event: APIGatewayProxyEvent): string | null {
   const entry = Object.entries(event.headers ?? {}).find(
     ([name, value]) => name.toLowerCase() === IDENTITY_HEADER && value,
   );

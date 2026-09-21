@@ -3,21 +3,19 @@
 
 import { http, HttpResponse } from "msw";
 
-import {
-  AdminConfig,
-  ConfigSection,
-} from "@amzn/innovation-sandbox-frontend/domains/settings/service";
+import { AdminConfigurationView } from "@amzn/innovation-sandbox-frontend/domains/settings/model";
 import { ConfigSchemas } from "@amzn/innovation-sandbox-frontend/domains/settings/validation";
 import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import { createConfiguration } from "@amzn/innovation-sandbox-frontend/mocks/factories/configurationFactory";
 import { mockConfigurationApi } from "@amzn/innovation-sandbox-frontend/mocks/mockApi";
+import { ConfigSection } from "@amzn/innovation-sandbox-shared/types/configuration.js";
 
 // --- Default `GET /configurations` handler ---------------------------------
-// `GET /configurations` serves the section-based AdminConfig shape consumed by
+// `GET /configurations` serves the section-based view consumed by
 // every config reader (Admin Settings, lease/leaseTemplate/blueprint pages, the
 // maintenance banner). Registered as the default handler below.
 
-export const mockConfiguration: AdminConfig = createConfiguration({
+export const mockConfiguration: AdminConfigurationView = createConfiguration({
   isbManagedRegions: ["us-east-1", "us-west-2"],
 });
 mockConfigurationApi.returns(mockConfiguration);
@@ -33,18 +31,21 @@ const MOCK_CREATED_TIME = "2026-04-04T10:00:00.000Z";
 const MOCK_LAST_EDIT_TIME = "2026-04-04T12:30:00.000Z";
 const MOCK_LAST_SAVED_BY = "admin@example.com";
 
-/** The response envelope a saved section carries: who saved it and when. */
+/**
+ * The response envelope a saved section carries: who saved it and when. Matches
+ * the Smithy-client wire: `meta.schemaVersion` is dropped (the Configurations
+ * model does not put it on the wire), so the mock omits it too.
+ */
 const savedEnvelope = () => ({
   lastSavedBy: MOCK_LAST_SAVED_BY,
   meta: {
-    schemaVersion: 1,
     createdTime: MOCK_CREATED_TIME,
     lastEditTime: MOCK_LAST_EDIT_TIME,
   },
 });
 
 /**
- * Builds a section-based AdminConfig mock. By default every section is rendered
+ * Builds a section-based configuration mock. By default every section is rendered
  * "saved" (non-null `lastSavedBy` + `meta`). Pass `unsaved` section keys to
  * render those as never-saved (code defaults, `lastSavedBy: null`, no `meta`)
  * to exercise finish-setup alerts. Note that unsaved sections deliberately omit
@@ -53,7 +54,7 @@ const savedEnvelope = () => ({
  */
 export function createAdminConfig(options?: {
   unsaved?: ConfigSection[];
-}): AdminConfig {
+}): AdminConfigurationView {
   const unsaved = new Set(options?.unsaved ?? []);
   const sections = Object.fromEntries(
     (Object.keys(ConfigSchemas) as ConfigSection[]).map((section) => {
@@ -69,15 +70,17 @@ export function createAdminConfig(options?: {
     ...sections,
     isbManagedRegions: ["us-east-1", "us-west-2"],
     awsAccessPortalUrl: "https://d-0000000000.awsapps.com/start",
-  } as AdminConfig;
+  } as AdminConfigurationView;
 }
 
-export const mockAdminConfig: AdminConfig = createAdminConfig();
+export const mockAdminConfig: AdminConfigurationView = createAdminConfig();
 
 const apiUrl = () => getConfig().ApiUrl;
 
-/** `GET /configurations` returning the section-based AdminConfig shape. */
-export const adminConfigGetHandler = (config: AdminConfig = mockAdminConfig) =>
+/** `GET /configurations` returning the aggregate frontend view. */
+export const adminConfigGetHandler = (
+  config: AdminConfigurationView = mockAdminConfig,
+) =>
   http.get(`${apiUrl()}/configurations`, () =>
     HttpResponse.json({ status: "success", data: config }),
   );
@@ -88,7 +91,7 @@ const isConfigSection = (value: string): value is ConfigSection =>
 
 /** `GET /configurations/{section}` returning a single section. */
 export const configurationSectionGetHandler = (
-  config: AdminConfig = mockAdminConfig,
+  config: AdminConfigurationView = mockAdminConfig,
 ) =>
   http.get(`${apiUrl()}/configurations/:section`, ({ params }) => {
     const section = params.section as string;

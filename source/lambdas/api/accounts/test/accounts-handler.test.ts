@@ -16,15 +16,15 @@ import {
   vi,
 } from "vitest";
 
-import { CleanupReport } from "@amzn/innovation-sandbox-commons/data/cleanup-report/cleanup-report.js";
+import { PersistedCleanupReport } from "@amzn/innovation-sandbox-commons/data/cleanup-report/cleanup-report.js";
 import { DynamoCleanupReportStore } from "@amzn/innovation-sandbox-commons/data/cleanup-report/dynamo-cleanup-report-store.js";
 import { GlobalConfig } from "@amzn/innovation-sandbox-commons/data/global-config/global-config.js";
 import { DynamoLeaseStore } from "@amzn/innovation-sandbox-commons/data/lease/dynamo-lease-store.js";
-import { MonitoredLeaseSchema } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
+import { PersistedMonitoredLeaseSchema } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import { DynamoSandboxAccountStore } from "@amzn/innovation-sandbox-commons/data/sandbox-account/dynamo-sandbox-account-store.js";
 import {
-  SandboxAccount,
-  SandboxAccountSchema,
+  PersistedSandboxAccount,
+  PersistedSandboxAccountSchema,
 } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
 import { EventDetailTypes } from "@amzn/innovation-sandbox-commons/events/index.js";
 import {
@@ -45,9 +45,12 @@ import {
   createFailureResponseBody,
   isbAuthorizedUser,
   isbAuthorizedUserUserRoleOnly,
+  jsendFailBodyLike,
   mockAuthorizedContext,
   mockGlobalConfig,
+  rawBodyLike,
   responseHeaders,
+  responseHeadersWithErrorType,
 } from "@amzn/innovation-sandbox-commons/test/lambdas/fixtures.js";
 import {
   bulkStubEnv,
@@ -65,6 +68,28 @@ const MOCK_ACQUIRED_LOCK = {
   acquiredAt: "2024-06-01T12:00:00.000Z",
   expiresAt: "2024-06-01T12:15:00.000Z",
 };
+
+// The generated restJson1 serializer projects each account to its modeled shape:
+// only `meta.schemaVersion` is dropped from the wire (documented accepted
+// deviation, see accounts.smithy). `resourceLock` IS on the wire — the frontend
+// reads `resourceLock.expiresAt` — so it passes through unchanged. Expected
+// success bodies are matched with the shared `rawBodyLike` matcher
+// (order-insensitive, null/undefined dropped, timestamps NOT canonicalized since
+// accounts models them as raw `String`) against this projection.
+function projectAccount(account: PersistedSandboxAccount) {
+  const { meta, ...rest } = account;
+  return {
+    ...rest,
+    ...(meta
+      ? {
+          meta: {
+            createdTime: meta.createdTime,
+            lastEditTime: meta.lastEditTime,
+          },
+        }
+      : {}),
+  };
+}
 
 let mockedGlobalConfig: GlobalConfig;
 let handler: typeof import("@amzn/innovation-sandbox-accounts/accounts-handler.js").handler;
@@ -99,16 +124,16 @@ describe("Accounts Handler", () => {
     expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
       statusCode: 500,
       body: createErrorResponseBody("An unexpected error occurred."),
-      headers: responseHeaders,
+      headers: responseHeadersWithErrorType("InternalServerError"),
     });
   });
 
   describe("GET /accounts", () => {
-    const allAccounts: SandboxAccount[] = [
-      generateSchemaData(SandboxAccountSchema, {
+    const allAccounts: PersistedSandboxAccount[] = [
+      generateSchemaData(PersistedSandboxAccountSchema, {
         awsAccountId: "000000000000",
       }),
-      generateSchemaData(SandboxAccountSchema, {
+      generateSchemaData(PersistedSandboxAccountSchema, {
         awsAccountId: "111111111111",
       }),
     ];
@@ -130,14 +155,14 @@ describe("Accounts Handler", () => {
       );
       expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
         statusCode: 200,
-        body: JSON.stringify({
+        body: rawBodyLike({
           status: "success",
           data: {
-            result: allAccounts,
+            result: allAccounts.map(projectAccount),
             nextPageIdentifier: null,
           },
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
     });
 
@@ -159,15 +184,15 @@ describe("Accounts Handler", () => {
       );
       expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
         statusCode: 200,
-        body: JSON.stringify({
+        body: rawBodyLike({
           status: "success",
           data: {
-            result: allAccounts,
+            result: allAccounts.map(projectAccount),
             nextPageIdentifier: null,
             error: "Some validation error",
           },
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
     });
 
@@ -197,14 +222,14 @@ describe("Accounts Handler", () => {
         );
       expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
         statusCode: 200,
-        body: JSON.stringify({
+        body: rawBodyLike({
           status: "success",
           data: {
-            result: allAccounts,
+            result: allAccounts.map(projectAccount),
             nextPageIdentifier: null,
           },
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
       expect(findAllMethod.mock.calls).toHaveLength(1);
       expect(findAllMethod.mock.calls[0]).toEqual([
@@ -242,11 +267,14 @@ describe("Accounts Handler", () => {
 
       expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
         statusCode: 400,
+        // Accepted deviation: a malformed integer query param now surfaces as the
+        // framework's SerializationException→400 (a generic message) instead of
+        // the pre-Smithy Zod field error. Still a 400.
         body: createFailureResponseBody({
-          field: "maxResults",
-          message: "Invalid input: expected number, received NaN",
+          message:
+            "Invalid JSON in request body. Please check your JSON syntax.",
         }),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("ValidationError"),
       });
       expect(findAllMethod.mock.calls).toHaveLength(0);
     });
@@ -269,7 +297,7 @@ describe("Accounts Handler", () => {
       expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
         statusCode: 500,
         body: createErrorResponseBody("An unexpected error occurred."),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("InternalServerError"),
       });
     });
   });
@@ -285,13 +313,20 @@ describe("Accounts Handler", () => {
         isbUser: isbAuthorizedUser.user,
       });
       expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
-        statusCode: 415,
-        body: createFailureResponseBody({ message: "Body not provided." }),
-        headers: responseHeaders,
+        statusCode: 400,
+        // Accepted deviation: with no body the model rejects the required
+        // awsAccountId (generated ValidationError, alphabetized envelope) rather
+        // than the pre-Smithy "Body not provided." message.
+        body: jsendFailBodyLike({
+          field: "awsAccountId",
+          message:
+            "Value at '/awsAccountId' failed to satisfy constraint: Member must not be null",
+        }),
+        headers: responseHeadersWithErrorType("ValidationError"),
       });
     });
 
-    it("should return 415 when the body is malformed json string", async () => {
+    it("should return 400 when the body is malformed json string", async () => {
       const event = createAPIGatewayProxyEvent({
         httpMethod: "POST",
         path: "/accounts",
@@ -302,29 +337,25 @@ describe("Accounts Handler", () => {
         isbUser: isbAuthorizedUser.user,
       });
       expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
-        statusCode: 415,
+        statusCode: 400,
         body: createFailureResponseBody({
           message:
             "Invalid JSON in request body. Please check your JSON syntax.",
         }),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("ValidationError"),
       });
     });
 
-    it("should return 400 when the body is not a valid sandbox account object", async () => {
+    it("should return 400 when the registration body carries unknown keys", async () => {
+      // The registration schema is standalone and strict (Task 3.4a/b): it accepts
+      // only awsAccountId and rejects any other key — including former
+      // PersistedSandboxAccount fields, which are no longer implicitly accepted.
       const event = createAPIGatewayProxyEvent({
         httpMethod: "POST",
         path: "/accounts",
         body: JSON.stringify({
-          ...generateSchemaData(SandboxAccountSchema, {
-            awsAccountId: "000000000000",
-            driftAtLastScan: true,
-            cleanupExecutionContext: {
-              stateMachineExecutionArn:
-                "arn:aws:states:us-east-1:000000000000:execution:sm:execId",
-              stateMachineExecutionStartTime: "2024-01-01T00:00:00.000Z",
-            },
-          }),
+          awsAccountId: "000000000000",
+          status: "Available",
           extra: "Something extra",
         }),
         headers: {
@@ -336,22 +367,68 @@ describe("Accounts Handler", () => {
         statusCode: 400,
         body: createFailureResponseBody({
           field: "input",
-          message:
-            'Unrecognized keys: "cleanupExecutionContext", "status", "driftAtLastScan", "extra"',
+          message: 'Unrecognized keys: "status", "extra"',
         }),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("ValidationError"),
       });
     });
 
+    it("should return 400 for a field the pre-Smithy schema accepted (narrowing)", async () => {
+      // `name` is a valid PersistedSandboxAccount field the pre-Smithy omit-schema accepted
+      // (and ignored). The standalone schema narrows acceptance to awsAccountId, so
+      // it now rejects `name` — this is the documented contract narrowing.
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "POST",
+        path: "/accounts",
+        body: JSON.stringify({
+          awsAccountId: "000000000000",
+          name: "Previously accepted",
+        }),
+        headers: {
+          "Content-Type": "application/json",
+        },
+        isbUser: isbAuthorizedUser.user,
+      });
+      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+        statusCode: 400,
+        body: createFailureResponseBody({
+          field: "input",
+          message: 'Unrecognized key: "name"',
+        }),
+        headers: responseHeadersWithErrorType("ValidationError"),
+      });
+    });
+
+    it("should return 403 when the user has only 'User' role", async () => {
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "POST",
+        path: "/accounts",
+        body: JSON.stringify({ awsAccountId: "000000000000" }),
+        headers: { "Content-Type": "application/json" },
+        isbUser: isbAuthorizedUserUserRoleOnly.user,
+      });
+      const registerAccountSpy = vi
+        .spyOn(InnovationSandbox, "registerAccount")
+        .mockResolvedValue({} as never);
+      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+        statusCode: 403,
+        body: createFailureResponseBody({ message: "Access denied." }),
+        headers: responseHeadersWithErrorType("AccessDeniedError"),
+      });
+      expect(registerAccountSpy).not.toHaveBeenCalled();
+    });
+
     it("should return 201 with valid input", async () => {
-      const account = generateSchemaData(SandboxAccountSchema, {
+      const account = generateSchemaData(PersistedSandboxAccountSchema, {
         awsAccountId: "000000000000",
       });
       const event = createAPIGatewayProxyEvent({
         httpMethod: "POST",
         path: "/accounts",
         body: JSON.stringify(
-          generateSchemaData(SandboxAccountSchema.pick({ awsAccountId: true })),
+          generateSchemaData(
+            PersistedSandboxAccountSchema.pick({ awsAccountId: true }),
+          ),
         ),
         headers: {
           "Content-Type": "application/json",
@@ -361,11 +438,11 @@ describe("Accounts Handler", () => {
       vi.spyOn(InnovationSandbox, "registerAccount").mockResolvedValue(account);
       expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
         statusCode: 201,
-        body: JSON.stringify({
+        body: rawBodyLike({
           status: "success",
-          data: account,
+          data: projectAccount(account),
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
     });
 
@@ -398,7 +475,7 @@ describe("Accounts Handler", () => {
           body: createFailureResponseBody({
             message: `Account is an ISB administration account. Aborting registration.`,
           }),
-          headers: responseHeaders,
+          headers: responseHeadersWithErrorType("ValidationError"),
         });
 
         expect(registerAccountSpy).not.toHaveBeenCalled();
@@ -410,7 +487,9 @@ describe("Accounts Handler", () => {
         httpMethod: "POST",
         path: "/accounts",
         body: JSON.stringify(
-          generateSchemaData(SandboxAccountSchema.pick({ awsAccountId: true })),
+          generateSchemaData(
+            PersistedSandboxAccountSchema.pick({ awsAccountId: true }),
+          ),
         ),
         headers: {
           "Content-Type": "application/json",
@@ -429,7 +508,7 @@ describe("Accounts Handler", () => {
           message:
             "The account could not be found where it was expected to be located. Someone else may have recently moved it.",
         }),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("ConflictError"),
       });
     });
 
@@ -438,7 +517,9 @@ describe("Accounts Handler", () => {
         httpMethod: "POST",
         path: "/accounts",
         body: JSON.stringify(
-          generateSchemaData(SandboxAccountSchema.pick({ awsAccountId: true })),
+          generateSchemaData(
+            PersistedSandboxAccountSchema.pick({ awsAccountId: true }),
+          ),
         ),
         headers: {
           "Content-Type": "application/json",
@@ -457,7 +538,7 @@ describe("Accounts Handler", () => {
           message:
             "Could not move account due to concurrent modification of the organization. Please try again.",
         }),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("ConflictError"),
       });
     });
 
@@ -466,7 +547,9 @@ describe("Accounts Handler", () => {
         httpMethod: "POST",
         path: "/accounts",
         body: JSON.stringify(
-          generateSchemaData(SandboxAccountSchema.pick({ awsAccountId: true })),
+          generateSchemaData(
+            PersistedSandboxAccountSchema.pick({ awsAccountId: true }),
+          ),
         ),
         headers: {
           "Content-Type": "application/json",
@@ -485,7 +568,7 @@ describe("Accounts Handler", () => {
           message:
             "Could not move account due to too many requests. Please try again momentarily.",
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
     });
 
@@ -494,7 +577,9 @@ describe("Accounts Handler", () => {
         httpMethod: "POST",
         path: "/accounts",
         body: JSON.stringify(
-          generateSchemaData(SandboxAccountSchema.pick({ awsAccountId: true })),
+          generateSchemaData(
+            PersistedSandboxAccountSchema.pick({ awsAccountId: true }),
+          ),
         ),
         headers: {
           "Content-Type": "application/json",
@@ -509,14 +594,14 @@ describe("Accounts Handler", () => {
       expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
         statusCode: 500,
         body: createErrorResponseBody("An unexpected error occurred."),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("InternalServerError"),
       });
     });
   });
 
   describe("GET /accounts/{awsAccountId}", () => {
     it("should return 200 with the account", async () => {
-      const mockedAccount = generateSchemaData(SandboxAccountSchema);
+      const mockedAccount = generateSchemaData(PersistedSandboxAccountSchema);
       const event = createAPIGatewayProxyEvent({
         httpMethod: "GET",
         path: `/accounts/${mockedAccount.awsAccountId}`,
@@ -532,11 +617,11 @@ describe("Accounts Handler", () => {
       );
       expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
         statusCode: 200,
-        body: JSON.stringify({
+        body: rawBodyLike({
           status: "success",
-          data: mockedAccount,
+          data: projectAccount(mockedAccount),
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
     });
 
@@ -560,7 +645,7 @@ describe("Accounts Handler", () => {
         body: createFailureResponseBody({
           message: `Account not found.`,
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
     });
 
@@ -582,14 +667,14 @@ describe("Accounts Handler", () => {
       expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
         statusCode: 500,
         body: createErrorResponseBody("An unexpected error occurred."),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("InternalServerError"),
       });
     });
   });
 
   describe("POST /accounts/{awsAccountId}/eject", () => {
     it("should return 200 and invoke ejectAccount", async () => {
-      const mockedAccount = generateSchemaData(SandboxAccountSchema, {
+      const mockedAccount = generateSchemaData(PersistedSandboxAccountSchema, {
         status: "Active",
       });
       const event = createAPIGatewayProxyEvent({
@@ -613,14 +698,14 @@ describe("Accounts Handler", () => {
         body: JSON.stringify({
           status: "success",
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
       expect(getAccountSpy).toHaveBeenCalledOnce();
       expect(ejectAccountSpy).toHaveBeenCalledOnce();
     });
 
     it("should return 404 when the account not found", async () => {
-      const mockedAccount = generateSchemaData(SandboxAccountSchema, {
+      const mockedAccount = generateSchemaData(PersistedSandboxAccountSchema, {
         status: "Active",
       });
       const event = createAPIGatewayProxyEvent({
@@ -644,14 +729,14 @@ describe("Accounts Handler", () => {
         body: createFailureResponseBody({
           message: `Account not found.`,
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
       expect(getAccountSpy).toHaveBeenCalledOnce();
       expect(ejectAccountSpy).not.toHaveBeenCalledOnce();
     });
 
     it("should return 409 when eject call returns validation error", async () => {
-      const mockedAccount = generateSchemaData(SandboxAccountSchema, {
+      const mockedAccount = generateSchemaData(PersistedSandboxAccountSchema, {
         status: "CleanUp",
       });
       const event = createAPIGatewayProxyEvent({
@@ -679,14 +764,14 @@ describe("Accounts Handler", () => {
         body: createFailureResponseBody({
           message: "Accounts cannot be ejected while in the CleanUp state",
         }),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("ConflictError"),
       });
       expect(getAccountSpy).toHaveBeenCalledOnce();
       expect(ejectAccountSpy).toHaveBeenCalledOnce();
     });
 
     it("should return 409 when org api throws AccountNotFoundException", async () => {
-      const mockedAccount = generateSchemaData(SandboxAccountSchema, {
+      const mockedAccount = generateSchemaData(PersistedSandboxAccountSchema, {
         status: "Active",
       });
       const event = createAPIGatewayProxyEvent({
@@ -712,12 +797,12 @@ describe("Accounts Handler", () => {
           message:
             "The account could not be found where it was expected to be located. Someone else may have recently moved it.",
         }),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("ConflictError"),
       });
     });
 
     it("should return 409 when org api throws ConcurrentModificationException", async () => {
-      const mockedAccount = generateSchemaData(SandboxAccountSchema, {
+      const mockedAccount = generateSchemaData(PersistedSandboxAccountSchema, {
         status: "Active",
       });
       const event = createAPIGatewayProxyEvent({
@@ -743,12 +828,12 @@ describe("Accounts Handler", () => {
           message:
             "Could not move account due to concurrent modification of the organization. Please try again.",
         }),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("ConflictError"),
       });
     });
 
     it("should return 429 when org api throws TooManyRequestsException", async () => {
-      const mockedAccount = generateSchemaData(SandboxAccountSchema, {
+      const mockedAccount = generateSchemaData(PersistedSandboxAccountSchema, {
         status: "Active",
       });
       const event = createAPIGatewayProxyEvent({
@@ -774,12 +859,12 @@ describe("Accounts Handler", () => {
           message:
             "Could not move account due to too many requests. Please try again momentarily.",
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
     });
 
     it("should return 500 when the ejectAccount action fails", async () => {
-      const mockedAccount = generateSchemaData(SandboxAccountSchema, {
+      const mockedAccount = generateSchemaData(PersistedSandboxAccountSchema, {
         status: "Active",
       });
       const event = createAPIGatewayProxyEvent({
@@ -803,10 +888,28 @@ describe("Accounts Handler", () => {
       expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
         statusCode: 500,
         body: createErrorResponseBody("An unexpected error occurred."),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("InternalServerError"),
       });
       expect(getAccountSpy).toHaveBeenCalledOnce();
       expect(ejectAccountSpy).toHaveBeenCalledOnce();
+    });
+
+    it("should return 403 when the user has only 'User' role", async () => {
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "POST",
+        path: `/accounts/000000000000/eject`,
+        headers: { "Content-Type": "application/json" },
+        isbUser: isbAuthorizedUserUserRoleOnly.user,
+      });
+      const ejectAccountSpy = vi
+        .spyOn(InnovationSandbox, "ejectAccount")
+        .mockResolvedValue();
+      expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
+        statusCode: 403,
+        body: createFailureResponseBody({ message: "Access denied." }),
+        headers: responseHeadersWithErrorType("AccessDeniedError"),
+      });
+      expect(ejectAccountSpy).not.toHaveBeenCalled();
     });
   });
 
@@ -814,9 +917,12 @@ describe("Accounts Handler", () => {
     it.each(["Available", "Active", "Frozen"] as const)(
       "should return 200 and invoke quarantineAccount for %s account",
       async (status) => {
-        const mockedAccount = generateSchemaData(SandboxAccountSchema, {
-          status,
-        });
+        const mockedAccount = generateSchemaData(
+          PersistedSandboxAccountSchema,
+          {
+            status,
+          },
+        );
         const event = createAPIGatewayProxyEvent({
           httpMethod: "POST",
           path: `/accounts/${mockedAccount.awsAccountId}/quarantine`,
@@ -838,7 +944,7 @@ describe("Accounts Handler", () => {
           body: JSON.stringify({
             status: "success",
           }),
-          headers: responseHeaders,
+          headers: expect.objectContaining(responseHeaders),
         });
         expect(getAccountSpy).toHaveBeenCalledOnce();
         expect(quarantineAccountSpy).toHaveBeenCalledOnce();
@@ -874,14 +980,14 @@ describe("Accounts Handler", () => {
         body: createFailureResponseBody({
           message: `Account not found.`,
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
       expect(getAccountSpy).toHaveBeenCalledOnce();
       expect(quarantineAccountSpy).not.toHaveBeenCalled();
     });
 
     it("should return 409 when the account is already quarantined", async () => {
-      const mockedAccount = generateSchemaData(SandboxAccountSchema, {
+      const mockedAccount = generateSchemaData(PersistedSandboxAccountSchema, {
         status: "Quarantine",
       });
       const event = createAPIGatewayProxyEvent({
@@ -905,7 +1011,7 @@ describe("Accounts Handler", () => {
         body: createFailureResponseBody({
           message: "Account is already quarantined.",
         }),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("ConflictError"),
       });
       expect(getAccountSpy).toHaveBeenCalledOnce();
       expect(quarantineAccountSpy).not.toHaveBeenCalled();
@@ -925,13 +1031,13 @@ describe("Accounts Handler", () => {
       expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
         statusCode: 403,
         body: createFailureResponseBody({ message: "Access denied." }),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("AccessDeniedError"),
       });
       expect(quarantineAccountSpy).not.toHaveBeenCalled();
     });
 
     it("should return 409 when the account is in CleanUp", async () => {
-      const mockedAccount = generateSchemaData(SandboxAccountSchema, {
+      const mockedAccount = generateSchemaData(PersistedSandboxAccountSchema, {
         status: "CleanUp",
       });
       const event = createAPIGatewayProxyEvent({
@@ -956,7 +1062,7 @@ describe("Accounts Handler", () => {
           message:
             "Account cannot be quarantined while cleanup is in progress.",
         }),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("ConflictError"),
       });
       expect(getAccountSpy).toHaveBeenCalledOnce();
       expect(quarantineAccountSpy).not.toHaveBeenCalled();
@@ -1017,7 +1123,7 @@ describe("Accounts Handler", () => {
     }
 
     it("Available account moves to Quarantine OU and publishes AccountQuarantined event without terminating any lease", async () => {
-      const mockedAccount = generateSchemaData(SandboxAccountSchema, {
+      const mockedAccount = generateSchemaData(PersistedSandboxAccountSchema, {
         status: "Available",
       });
       vi.spyOn(DynamoSandboxAccountStore.prototype, "get").mockResolvedValue({
@@ -1047,7 +1153,7 @@ describe("Accounts Handler", () => {
       expect(response).toEqual({
         statusCode: 200,
         body: JSON.stringify({ status: "success" }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
       // Lease store queried for each monitored status, but no lease found
       expect(findLeasesByStatusSpy).toHaveBeenCalled();
@@ -1075,10 +1181,10 @@ describe("Accounts Handler", () => {
     });
 
     it("Active account with active lease terminates lease, revokes SSO access, moves to Quarantine OU, publishes events", async () => {
-      const mockedAccount = generateSchemaData(SandboxAccountSchema, {
+      const mockedAccount = generateSchemaData(PersistedSandboxAccountSchema, {
         status: "Active",
       });
-      const activeLease = generateSchemaData(MonitoredLeaseSchema, {
+      const activeLease = generateSchemaData(PersistedMonitoredLeaseSchema, {
         awsAccountId: mockedAccount.awsAccountId,
         status: "Active",
       });
@@ -1151,10 +1257,10 @@ describe("Accounts Handler", () => {
     });
 
     it("Frozen account with frozen lease terminates lease and moves to Quarantine OU", async () => {
-      const mockedAccount = generateSchemaData(SandboxAccountSchema, {
+      const mockedAccount = generateSchemaData(PersistedSandboxAccountSchema, {
         status: "Frozen",
       });
-      const frozenLease = generateSchemaData(MonitoredLeaseSchema, {
+      const frozenLease = generateSchemaData(PersistedMonitoredLeaseSchema, {
         awsAccountId: mockedAccount.awsAccountId,
         status: "Frozen",
       });
@@ -1206,7 +1312,7 @@ describe("Accounts Handler", () => {
 
   describe("POST /accounts/{awsAccountId}/retryCleanup", () => {
     it("should return 200 and invoke retryCleanup", async () => {
-      const mockedAccount = generateSchemaData(SandboxAccountSchema, {
+      const mockedAccount = generateSchemaData(PersistedSandboxAccountSchema, {
         status: "Quarantine",
       });
       const event = createAPIGatewayProxyEvent({
@@ -1233,7 +1339,7 @@ describe("Accounts Handler", () => {
         body: JSON.stringify({
           status: "success",
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
 
       expect(getAccountByIdSpy.mock.calls).toHaveLength(1);
@@ -1241,7 +1347,7 @@ describe("Accounts Handler", () => {
     });
 
     it("should return 404 when account not found", async () => {
-      const mockedAccount = generateSchemaData(SandboxAccountSchema, {
+      const mockedAccount = generateSchemaData(PersistedSandboxAccountSchema, {
         status: "Quarantine",
       });
       const event = createAPIGatewayProxyEvent({
@@ -1268,7 +1374,7 @@ describe("Accounts Handler", () => {
         body: createFailureResponseBody({
           message: `Account not found.`,
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
 
       expect(getAccountByIdSpy).toHaveBeenCalledOnce();
@@ -1276,7 +1382,7 @@ describe("Accounts Handler", () => {
     });
 
     it("should return 409 when retryCleanup call returns validation error", async () => {
-      const mockedAccount = generateSchemaData(SandboxAccountSchema, {
+      const mockedAccount = generateSchemaData(PersistedSandboxAccountSchema, {
         status: "Active",
       });
       const event = createAPIGatewayProxyEvent({
@@ -1307,7 +1413,7 @@ describe("Accounts Handler", () => {
         body: createFailureResponseBody({
           message: `Only Quarantined accounts can retry cleanup. Received (${mockedAccount.awsAccountId}) in state (${mockedAccount.status}).`,
         }),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("ConflictError"),
       });
 
       expect(getAccountByIdSpy.mock.calls).toHaveLength(1);
@@ -1315,7 +1421,7 @@ describe("Accounts Handler", () => {
     });
 
     it("should return 409 when a cleanup execution is already running (active lock)", async () => {
-      const mockedAccount = generateSchemaData(SandboxAccountSchema, {
+      const mockedAccount = generateSchemaData(PersistedSandboxAccountSchema, {
         status: "CleanUp",
       });
       const event = createAPIGatewayProxyEvent({
@@ -1342,12 +1448,12 @@ describe("Accounts Handler", () => {
           message:
             "A cleanup execution is already running for this account. Wait for it to finish before retrying.",
         }),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("ConflictError"),
       });
     });
 
     it("should return 409 when org api throws AccountNotFoundException", async () => {
-      const mockedAccount = generateSchemaData(SandboxAccountSchema, {
+      const mockedAccount = generateSchemaData(PersistedSandboxAccountSchema, {
         status: "Quarantine",
       });
       const event = createAPIGatewayProxyEvent({
@@ -1373,12 +1479,12 @@ describe("Accounts Handler", () => {
           message:
             "The account could not be found where it was expected to be located. Someone else may have recently moved it.",
         }),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("ConflictError"),
       });
     });
 
     it("should return 409 when org api throws ConcurrentModificationException", async () => {
-      const mockedAccount = generateSchemaData(SandboxAccountSchema, {
+      const mockedAccount = generateSchemaData(PersistedSandboxAccountSchema, {
         status: "Quarantine",
       });
       const event = createAPIGatewayProxyEvent({
@@ -1404,12 +1510,12 @@ describe("Accounts Handler", () => {
           message:
             "Could not move account due to concurrent modification of the organization. Please try again.",
         }),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("ConflictError"),
       });
     });
 
     it("should return 429 when org api throws TooManyRequestsException", async () => {
-      const mockedAccount = generateSchemaData(SandboxAccountSchema, {
+      const mockedAccount = generateSchemaData(PersistedSandboxAccountSchema, {
         status: "Quarantine",
       });
       const event = createAPIGatewayProxyEvent({
@@ -1435,12 +1541,12 @@ describe("Accounts Handler", () => {
           message:
             "Could not move account due to too many requests. Please try again momentarily.",
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
     });
 
     it("should return 500 when retryCleanup action fails", async () => {
-      const mockedAccount = generateSchemaData(SandboxAccountSchema, {
+      const mockedAccount = generateSchemaData(PersistedSandboxAccountSchema, {
         status: "Quarantine",
       });
       const event = createAPIGatewayProxyEvent({
@@ -1467,7 +1573,7 @@ describe("Accounts Handler", () => {
       expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
         statusCode: 500,
         body: createErrorResponseBody("An unexpected error occurred."),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("InternalServerError"),
       });
 
       expect(getAccountByIdSpy).toHaveBeenCalledOnce();
@@ -1508,13 +1614,13 @@ describe("Accounts Handler", () => {
 
       expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
         statusCode: 200,
-        body: JSON.stringify({
+        body: rawBodyLike({
           status: "success",
           data: {
             result: unregisteredAccounts,
           },
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
       expect(listAccountsInOUSpy).toHaveBeenCalledWith({
         ouName: "Entry",
@@ -1549,11 +1655,14 @@ describe("Accounts Handler", () => {
 
       expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
         statusCode: 400,
+        // Accepted deviation: a malformed integer query param now surfaces as the
+        // framework's SerializationException→400 (a generic message) instead of
+        // the pre-Smithy Zod field error. Still a 400.
         body: createFailureResponseBody({
-          field: "maxResults",
-          message: "Invalid input: expected number, received NaN",
+          message:
+            "Invalid JSON in request body. Please check your JSON syntax.",
         }),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("ValidationError"),
       });
       expect(listAccountsInOUSpy.mock.calls).toHaveLength(0);
     });
@@ -1576,14 +1685,14 @@ describe("Accounts Handler", () => {
       expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
         statusCode: 500,
         body: createErrorResponseBody("An unexpected error occurred."),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("InternalServerError"),
       });
     });
   });
 
   function createMockCleanupReport(
-    overrides: Partial<CleanupReport> = {},
-  ): CleanupReport {
+    overrides: Partial<PersistedCleanupReport> = {},
+  ): PersistedCleanupReport {
     const accountId = overrides.pk ?? "123456789012";
     return {
       pk: accountId,
@@ -1652,7 +1761,9 @@ describe("Accounts Handler", () => {
       expect(body.data.result[0].meta).toBeUndefined();
       expect(body.data.result[0].accountId).toBe(accountId);
       expect(body.data.result[0].cleanupStatus).toBe("COMPLETED");
-      expect(body.data.nextPageIdentifier).toBeNull();
+      // The serializer drops a null member; the frontend adapter re-coalesces it
+      // to null (accepted wire deviation).
+      expect(body.data.nextPageIdentifier).toBeUndefined();
     });
 
     it("should return 200 with empty results when no reports exist", async () => {
@@ -1804,8 +1915,8 @@ describe("Accounts Handler", () => {
     const accountId = "123456789012";
 
     function createCooldownReport(
-      overrides: Partial<CleanupReport> = {},
-    ): CleanupReport {
+      overrides: Partial<PersistedCleanupReport> = {},
+    ): PersistedCleanupReport {
       return createMockCleanupReport({
         status: "IN_PROGRESS",
         cleanupStatus: "COOLING_DOWN",

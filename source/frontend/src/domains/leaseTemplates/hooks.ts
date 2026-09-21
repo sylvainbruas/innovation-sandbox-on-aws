@@ -3,15 +3,15 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { LeaseTemplate } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template";
+import { LeaseTemplateView } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/model";
 
-import { LeaseTemplateService } from "./service";
-import { NewLeaseTemplate } from "./types";
+import { getLeaseTemplateService } from "./service";
+import { CreateLeaseTemplateRequest } from "./types";
 
 export const useGetLeaseTemplates = () => {
   return useQuery({
     queryKey: ["leaseTemplates"],
-    queryFn: async () => await new LeaseTemplateService().getLeaseTemplates(),
+    queryFn: async () => await getLeaseTemplateService().getLeaseTemplates(),
   });
 };
 
@@ -19,7 +19,7 @@ export const useGetLeaseTemplateById = (uuid?: string) => {
   return useQuery({
     queryKey: ["leaseTemplates", uuid],
     queryFn: async () =>
-      await new LeaseTemplateService().getLeaseTemplateById(uuid!),
+      await getLeaseTemplateService().getLeaseTemplateById(uuid!),
     enabled: !!uuid,
   });
 };
@@ -28,7 +28,7 @@ export const useDeleteLeaseTemplates = () => {
   const client = useQueryClient();
   return useMutation({
     mutationFn: async (leaseTemplateIds: string[]) =>
-      await new LeaseTemplateService().deleteLeaseTemplates(leaseTemplateIds),
+      await getLeaseTemplateService().deleteLeaseTemplates(leaseTemplateIds),
     onSuccess: () =>
       client.invalidateQueries({
         queryKey: ["leaseTemplates"],
@@ -40,8 +40,8 @@ export const useDeleteLeaseTemplates = () => {
 export const useUpdateLeaseTemplate = () => {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: async (leaseTemplate: LeaseTemplate) =>
-      await new LeaseTemplateService().updateLeaseTemplate(leaseTemplate),
+    mutationFn: async (leaseTemplate: LeaseTemplateView) =>
+      await getLeaseTemplateService().updateLeaseTemplate(leaseTemplate),
     onSuccess: () =>
       client.invalidateQueries({
         queryKey: ["leaseTemplates"],
@@ -53,8 +53,8 @@ export const useUpdateLeaseTemplate = () => {
 export const useAddLeaseTemplate = () => {
   const client = useQueryClient();
   return useMutation({
-    mutationFn: async (leaseTemplate: NewLeaseTemplate) =>
-      await new LeaseTemplateService().addLeaseTemplate(leaseTemplate),
+    mutationFn: async (leaseTemplate: CreateLeaseTemplateRequest) =>
+      await getLeaseTemplateService().addLeaseTemplate(leaseTemplate),
     onSuccess: () =>
       client.invalidateQueries({
         queryKey: ["leaseTemplates"],

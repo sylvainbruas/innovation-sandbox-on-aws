@@ -2,9 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 export type JSendResponse =
-  | JSendSuccessResponse
-  | JSendFailResponse
-  | JSendErrorResponse;
+  JSendSuccessResponse | JSendFailResponse | JSendErrorResponse;
 
 export type JSendSuccessResponse = {
   status: "success";

@@ -67,15 +67,19 @@ describe("Error Handling", () => {
       expect(response.statusCode).toBe(400);
       const body = JSON.parse(response.body);
       expect(body.status).toBe("fail");
+      // Accepted deviation: the model's `@pattern` on the `blueprintId` httpLabel
+      // replaces the pre-Smithy Zod "Invalid UUID" message; still a 400 on
+      // `blueprintId`.
       expect(body.data.errors[0]).toMatchObject({
         field: "blueprintId",
-        message: "Invalid UUID",
+        message:
+          "Value at '/blueprintId' failed to satisfy constraint: Member must satisfy regular expression pattern: ^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$",
       });
     });
   });
 
   describe("Malformed JSON in request body", () => {
-    it("should return 415 with clear error message", async () => {
+    it("should return 400 with clear error message", async () => {
       const event = createAPIGatewayProxyEvent({
         httpMethod: "POST",
         path: "/blueprints",
@@ -88,7 +92,10 @@ describe("Error Handling", () => {
 
       const response = await handler(event, mockAuthorizedContext(testEnv));
 
-      expect(response.statusCode).toBe(415);
+      expect(response.statusCode).toBe(400);
+      expect(response.headers).toMatchObject({
+        "x-amzn-errortype": "ValidationError",
+      });
       const body = JSON.parse(response.body);
       expect(body.status).toBe("fail");
       expect(body.data.errors[0].message).toContain("Invalid JSON");
@@ -116,9 +123,12 @@ describe("Error Handling", () => {
 
       expect(response.statusCode).toBe(400);
       const body = JSON.parse(response.body);
+      // Accepted deviation: a type-mismatched body member is now rejected at the
+      // restJson1 deserialization layer as a generic 400 (no per-field detail),
+      // where the pre-Smithy Zod re-parse produced a `deploymentTimeoutMinutes`
+      // field error. Still a 400 ValidationError.
       expect(body.data.errors[0]).toMatchObject({
-        field: "deploymentTimeoutMinutes",
-        message: "Invalid input: expected number, received string",
+        message: "Invalid JSON in request body. Please check your JSON syntax.",
       });
     });
   });
@@ -145,7 +155,12 @@ describe("Error Handling", () => {
       expect(response.statusCode).toBe(400);
       const body = JSON.parse(response.body);
       expect(body.data.errors[0].message).not.toContain("INVALID_TYPE");
-      expect(body.data.errors[0].message).toContain("Expected one of");
+      // Accepted deviation: the model enum-validation message ("Member must satisfy
+      // enum value set: [...]") replaces the pre-Smithy Zod "Expected one of ...".
+      // Still safe — it does not reflect the caller's invalid input.
+      expect(body.data.errors[0].message).toContain(
+        "Member must satisfy enum value set",
+      );
     });
   });
 });

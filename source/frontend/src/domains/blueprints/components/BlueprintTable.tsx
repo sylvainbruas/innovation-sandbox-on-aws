@@ -24,25 +24,24 @@ import {
   showErrorToast,
   showSuccessToast,
 } from "@amzn/innovation-sandbox-frontend/components/Toast";
-import { useModal } from "@amzn/innovation-sandbox-frontend/hooks/useModal";
-import { useUser } from "@amzn/innovation-sandbox-frontend/hooks/useUser";
-
 import { DeploymentHistory } from "@amzn/innovation-sandbox-frontend/domains/blueprints/components/DeploymentHistory";
 import { deploymentSuccessRateSortingComparator } from "@amzn/innovation-sandbox-frontend/domains/blueprints/helpers";
 import {
   useGetBlueprints,
   useUnregisterBlueprints,
 } from "@amzn/innovation-sandbox-frontend/domains/blueprints/hooks";
-import { Blueprint } from "@amzn/innovation-sandbox-frontend/domains/blueprints/types";
+import { BlueprintView } from "@amzn/innovation-sandbox-frontend/domains/blueprints/model";
 import { createDateSortingComparator } from "@amzn/innovation-sandbox-frontend/helpers/date-sorting-comparator";
+import { useModal } from "@amzn/innovation-sandbox-frontend/hooks/useModal";
+import { useUser } from "@amzn/innovation-sandbox-frontend/hooks/useUser";
 
-const NameCell = ({ item }: { item: Blueprint }) => (
+const NameCell = ({ item }: { item: BlueprintView }) => (
   <Box>
     <TextLink to={`/blueprints/${item.blueprintId}`}>{item.name}</TextLink>
   </Box>
 );
 
-const DeploymentSuccessCell = ({ item }: { item: Blueprint }) => {
+const DeploymentSuccessCell = ({ item }: { item: BlueprintView }) => {
   const { totalDeploymentCount, totalSuccessfulCount } =
     item.totalHealthMetrics;
 
@@ -57,7 +56,7 @@ const DeploymentSuccessCell = ({ item }: { item: Blueprint }) => {
   );
 };
 
-const LastDeploymentCell = ({ item }: { item: Blueprint }) => {
+const LastDeploymentCell = ({ item }: { item: BlueprintView }) => {
   if (!item.totalHealthMetrics.lastDeploymentAt) {
     return <Box>-</Box>;
   }
@@ -94,13 +93,13 @@ export const BlueprintTable = () => {
     ],
   });
 
-  const [selectedItems, setSelectedItems] = useState<Blueprint[]>([]);
+  const [selectedItems, setSelectedItems] = useState<BlueprintView[]>([]);
 
   const { mutateAsync: unregisterBlueprint } = useUnregisterBlueprints({
     skipInvalidation: true,
   });
 
-  const allBlueprints: Blueprint[] =
+  const allBlueprints: BlueprintView[] =
     response?.blueprints?.map((b) => ({
       ...b.blueprint,
       recentDeployments: b.recentDeployments,
@@ -140,25 +139,25 @@ export const BlueprintTable = () => {
         id: "name",
         header: "Name",
         sortingField: "name",
-        cell: (item: Blueprint) => <NameCell item={item} />, // NOSONAR typescript:S6478 - Table API requires cell render functions
+        cell: (item: BlueprintView) => <NameCell item={item} />, // NOSONAR typescript:S6478 - Table API requires cell render functions
       },
       {
         id: "createdBy",
         header: "Created by",
         sortingField: "createdBy",
-        cell: (item: Blueprint) => item.createdBy,
+        cell: (item: BlueprintView) => item.createdBy,
       },
       {
         id: "deploymentSuccess",
         header: "Successful deployments",
         sortingComparator: deploymentSuccessRateSortingComparator,
-        cell: (item: Blueprint) => <DeploymentSuccessCell item={item} />, // NOSONAR typescript:S6478 - Table API requires cell render functions
+        cell: (item: BlueprintView) => <DeploymentSuccessCell item={item} />, // NOSONAR typescript:S6478 - Table API requires cell render functions
       },
       {
         id: "deploymentHistory",
         header: "Deployment history",
         // prettier-ignore
-        cell: (item: Blueprint) => ( // NOSONAR typescript:S6478 - Table API requires cell render functions
+        cell: (item: BlueprintView) => ( // NOSONAR typescript:S6478 - Table API requires cell render functions
           <DeploymentHistory
             deployments={item.recentDeployments}
             totalDeploymentCount={item.totalHealthMetrics.totalDeploymentCount}
@@ -168,24 +167,24 @@ export const BlueprintTable = () => {
       {
         id: "lastDeployment",
         header: "Last deployment",
-        sortingComparator: createDateSortingComparator<Blueprint>(
+        sortingComparator: createDateSortingComparator<BlueprintView>(
           (a) => a.totalHealthMetrics.lastDeploymentAt,
         ),
-        cell: (item: Blueprint) => <LastDeploymentCell item={item} />, // NOSONAR typescript:S6478 - Table API requires cell render functions
+        cell: (item: BlueprintView) => <LastDeploymentCell item={item} />, // NOSONAR typescript:S6478 - Table API requires cell render functions
       },
       {
         id: "deploymentTimeout",
         header: "Timeout",
         sortingField: "deploymentTimeoutMinutes",
-        cell: (item: Blueprint) => `${item.deploymentTimeoutMinutes} min`,
+        cell: (item: BlueprintView) => `${item.deploymentTimeoutMinutes} min`,
       },
       {
         id: "meta.lastEditTime",
         header: "Last updated",
-        sortingComparator: createDateSortingComparator<Blueprint>(
+        sortingComparator: createDateSortingComparator<BlueprintView>(
           (a) => a.meta?.lastEditTime,
         ),
-        cell: (item: Blueprint) =>
+        cell: (item: BlueprintView) =>
           item.meta?.lastEditTime
             ? DateTime.fromISO(item.meta.lastEditTime).toRelative()
             : "",
@@ -210,17 +209,17 @@ export const BlueprintTable = () => {
             {
               id: "name",
               header: "Name",
-              cell: (item: Blueprint) => item.name,
+              cell: (item: BlueprintView) => item.name,
             },
             {
               id: "createdBy",
               header: "Created By",
-              cell: (item: Blueprint) => item.createdBy,
+              cell: (item: BlueprintView) => item.createdBy,
             },
           ]}
           identifierKey="blueprintId"
           sequential
-          onSubmit={async (blueprint: Blueprint) => {
+          onSubmit={async (blueprint: BlueprintView) => {
             await unregisterBlueprint([blueprint.blueprintId]);
             deselectBlueprint(blueprint.blueprintId);
           }}

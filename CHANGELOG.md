@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.3] - 2026-09-21
+
+### Added
+
+- Added a global setting to allow or deny new IAM Identity Center group assignments while preserving existing group assignments
+- Increased the number of searchable cost report groups to 250 and added filtering to the lease template cost group selector ([#186](https://github.com/aws-solutions/innovation-sandbox-on-aws/pull/186))
+- Added an AWS CLI-compatible service model and installer for using Innovation Sandbox operations through `aws isb`
+- Added support for creating and cleaning up Amazon S3 Files resources in sandbox accounts ([#162](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/162))
+
+### Changed
+
+- Defined the HTTP API with Smithy and generated the server adapters, TypeScript client, OpenAPI document, and AWS CLI model from the shared contract
+- Updated `aws-nuke` from 3.66.0 to 3.67.0 and refreshed the Amazon Linux 2023 minimal account cleaner base image
+
+### Fixed
+
+- Prevented customer-managed service roles from being blocked by the write-protection SCP during account cleanup ([#189](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/189))
+- Ensured M2M client stack deployments refresh the API endpoint after the compute stack replaces the REST API
+- Forwarded additional principal exceptions and Amazon Bedrock inference profile patterns through `scripts/cdk/deploy.sh` for CDK deployments of the Account Pool stack
+- Corrected lease visibility and access while leases are provisioning
+- Prevented table action buttons from wrapping
+
 ## [1.3.2] - 2026-09-11
 
 ### Security
@@ -42,7 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Cleanup summary reports visible in the UI showing per-stage outcomes and execution history
 - Account tagging for native AWS cost allocation, enabling Cost Explorer, Budgets, and Cost Anomaly Detection analysis by user, team, and lease template
 - SCP customization parameters (`AdditionalAllowedServices`, `AdditionalPrincipalExceptions`, `BedrockInferenceProfilePatterns`) that persist across upgrades ([#74](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/74), [#83](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/83), [#39](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/39))
-- 18 new services added to the baseline allowed services SCP including `sts:*`, `ssm-guiconnect:*`, `execute-api:*`, `ecr-public:*`, `eks-auth:*`, Bedrock AgentCore, S3 Tables, S3 Vectors, and Textract ([#59](https://github.com/aws-solutions/innovation-sandbox-on-aws/pull/59) @YutaOkoshi, [#67](https://github.com/aws-solutions/innovation-sandbox-on-aws/pull/67) @marcpeiser, [#73](https://github.com/aws-solutions/innovation-sandbox-on-aws/pull/73) @chrisns, [#163](https://github.com/aws-solutions/innovation-sandbox-on-aws/pull/163) @ia9, [#81](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/81), [#109](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/109), [#162](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/162))
+- 18 new services added to the baseline allowed services SCP including `sts:*`, `ssm-guiconnect:*`, `execute-api:*`, `ecr-public:*`, `eks-auth:*`, Bedrock AgentCore, S3 Tables, S3 Vectors, and Textract ([#59](https://github.com/aws-solutions/innovation-sandbox-on-aws/pull/59) @YutaOkoshi, [#67](https://github.com/aws-solutions/innovation-sandbox-on-aws/pull/67) @marcpeiser, [#73](https://github.com/aws-solutions/innovation-sandbox-on-aws/pull/73) @chrisns, [#163](https://github.com/aws-solutions/innovation-sandbox-on-aws/pull/163) @ia9, [#81](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/81), [#109](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/109))
 - Manual account quarantine allowing administrators to temporarily isolate accounts from the UI ([#85](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/85))
 - User self-service lease termination from the lease details page ([#33](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/33))
 - Custom domain support for CloudFront with BYO ACM certificate ([#65](https://github.com/aws-solutions/innovation-sandbox-on-aws/issues/65))

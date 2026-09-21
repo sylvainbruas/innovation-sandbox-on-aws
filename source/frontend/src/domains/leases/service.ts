@@ -1,51 +1,39 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { LeaseWithLeaseId } from "@amzn/innovation-sandbox-commons/data/lease/lease";
+import {
+  GetLeaseAssignmentsResponse,
+  LeaseView,
+  UpdateLeaseAssignmentsResponse,
+} from "@amzn/innovation-sandbox-frontend/domains/leases/model";
 import {
   AssignmentPrincipalRef,
-  GetLeaseAssignmentsResponse,
   LeasePatchRequest,
-  MonitoredLeaseWithLeaseId,
   NewLeaseRequest,
-  PrincipalSearchResponse,
-  PrincipalSearchType,
-  SharedLeaseAccessType,
   SharedLeasesResponse,
-  UpdateLeaseAssignmentsResponse,
 } from "@amzn/innovation-sandbox-frontend/domains/leases/types";
+import { registerApiSingletonReset } from "@amzn/innovation-sandbox-frontend/helpers/apiSingletons";
+
 import {
-  ApiProxy,
-  IApiProxy,
-} from "@amzn/innovation-sandbox-frontend/helpers/ApiProxy";
-import { ApiPaginatedResult } from "@amzn/innovation-sandbox-frontend/types";
+  createLeaseClient,
+  SharedLeaseQueryAccessType,
+  SmithyLeaseApi,
+  SmithyLeaseClient,
+} from "./smithy-client";
 
 export class LeaseService {
-  private api: IApiProxy;
+  constructor(private readonly api: SmithyLeaseApi) {}
 
-  constructor(apiProxy?: IApiProxy) {
-    this.api = apiProxy ?? new ApiProxy();
-  }
-
-  async getLeases(userEmail?: string): Promise<LeaseWithLeaseId[]> {
-    let allLeases: LeaseWithLeaseId[] = [];
+  async getLeases(userEmail?: string): Promise<LeaseView[]> {
+    let allLeases: LeaseView[] = [];
     let nextPageIdentifier: string | null = null;
 
     // keep calling the API until all leases are collected
     do {
-      let url: string = nextPageIdentifier
-        ? `/leases?pageIdentifier=${nextPageIdentifier}`
-        : "/leases";
-
-      if (userEmail) {
-        url +=
-          (url.includes("?") ? "&" : "?") +
-          `userEmail=${encodeURIComponent(userEmail)}`;
-      }
-
-      const response =
-        await this.api.get<ApiPaginatedResult<LeaseWithLeaseId>>(url);
-
+      const response = await this.api.listLeases(
+        nextPageIdentifier ?? undefined,
+        userEmail,
+      );
       allLeases = [...allLeases, ...response.result];
       nextPageIdentifier = response.nextPageIdentifier;
     } while (nextPageIdentifier !== null);
@@ -53,81 +41,48 @@ export class LeaseService {
     return allLeases;
   }
 
-  async getLeaseById(
-    id: string,
-  ): Promise<MonitoredLeaseWithLeaseId | undefined> {
-    const lease = await this.api.get<MonitoredLeaseWithLeaseId | undefined>(
-      `/leases/${id}`,
-    );
-    return lease;
+  async getLeaseById(id: string): Promise<LeaseView | undefined> {
+    return this.api.getLease(id);
   }
 
   async requestNewLease(request: NewLeaseRequest): Promise<void> {
-    await this.api.post("/leases", request);
+    await this.api.requestLease(request);
   }
 
   async updateLease(request: LeasePatchRequest): Promise<void> {
-    const { leaseId, ...rest } = request;
-    await this.api.patch(`/leases/${leaseId}`, rest);
+    await this.api.updateLease(request);
   }
 
   async reviewLease(leaseId: string, approve: boolean): Promise<void> {
-    await this.api.post(`/leases/${leaseId}/review`, {
-      action: approve ? "Approve" : "Deny",
-    });
+    await this.api.reviewLease(leaseId, approve);
   }
 
   async terminateLease(leaseId: string): Promise<void> {
-    await this.api.post(`/leases/${leaseId}/terminate`);
+    await this.api.terminateLease(leaseId);
   }
 
   async freezeLease(leaseId: string): Promise<void> {
-    await this.api.post(`/leases/${leaseId}/freeze`);
+    await this.api.freezeLease(leaseId);
   }
 
   async unfreezeLease(leaseId: string): Promise<void> {
-    await this.api.post(`/leases/${leaseId}/unfreeze`);
-  }
-
-  async getPrincipals(
-    type: PrincipalSearchType,
-    query: string = "",
-    limit: number = 20,
-    exact: boolean = false,
-  ): Promise<PrincipalSearchResponse> {
-    const params = new URLSearchParams({
-      type,
-      limit: String(limit),
-      exact: String(exact),
-    });
-    if (query.length > 0) {
-      params.set("q", query);
-    }
-
-    return await this.api.get<PrincipalSearchResponse>(
-      `/principals/search?${params.toString()}`,
-    );
+    await this.api.unfreezeLease(leaseId);
   }
 
   async getAssignments(leaseId: string): Promise<GetLeaseAssignmentsResponse> {
-    return await this.api.get<GetLeaseAssignmentsResponse>(
-      `/leases/${leaseId}/assignments`,
-    );
+    return this.api.getAssignments(leaseId);
   }
 
   async updateAssignments(
     leaseId: string,
     assignments: AssignmentPrincipalRef[],
   ): Promise<UpdateLeaseAssignmentsResponse> {
-    return await this.api.put<UpdateLeaseAssignmentsResponse>(
-      `/leases/${leaseId}/assignments`,
-      { assignments },
-    );
+    return this.api.updateAssignments(leaseId, assignments);
   }
 
   async getSharedLeases(
     userId: string,
-    accessType: SharedLeaseAccessType,
+    accessType: SharedLeaseQueryAccessType,
   ): Promise<SharedLeasesResponse> {
     const allResults: SharedLeasesResponse["result"] = [];
     let nextPageIdentifier: string | undefined;
@@ -136,16 +91,11 @@ export class LeaseService {
     let pageCount = 0;
 
     do {
-      const params = new URLSearchParams({
+      const response = await this.api.listSharedLeases(
         userId,
         accessType,
-        maxResults: String(maxResults),
-      });
-      if (nextPageIdentifier) {
-        params.set("pageIdentifier", nextPageIdentifier);
-      }
-      const response = await this.api.get<SharedLeasesResponse>(
-        `/leases/shared?${params.toString()}`,
+        maxResults,
+        nextPageIdentifier,
       );
       allResults.push(...response.result);
       nextPageIdentifier = response.nextPageIdentifier ?? undefined;
@@ -164,3 +114,15 @@ export class LeaseService {
     };
   }
 }
+
+let leaseService: LeaseService | undefined;
+
+// Lazily-initialized singleton.
+export function getLeaseService(): LeaseService {
+  leaseService ??= new LeaseService(new SmithyLeaseClient(createLeaseClient()));
+  return leaseService;
+}
+
+registerApiSingletonReset(() => {
+  leaseService = undefined;
+});

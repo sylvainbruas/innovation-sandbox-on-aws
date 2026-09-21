@@ -10,6 +10,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { FullPageLoader } from "@amzn/innovation-sandbox-frontend/components/FullPageLoader";
+import { resetApiSingletons } from "@amzn/innovation-sandbox-frontend/helpers/apiSingletons";
 
 /**
  * Handles the OAuth /callback route. Listens for Amplify Hub events
@@ -24,14 +25,16 @@ export const OAuthCallback = () => {
       if (payload.event === "signInWithRedirect") {
         unsubscribe();
         clearTimeout(timeout);
+        // A new session just began — drop any singletons a prior session left in
+        // this SPA so the incoming user never reuses the previous user's client.
+        resetApiSingletons();
         navigate("/", { replace: true });
       }
       if (payload.event === "signInWithRedirect_failure") {
         unsubscribe();
         clearTimeout(timeout);
         const errorData = payload.data as
-          | { error?: Error | string }
-          | undefined;
+          { error?: Error | string } | undefined;
         const errorMessage =
           errorData?.error instanceof Error
             ? errorData.error.message

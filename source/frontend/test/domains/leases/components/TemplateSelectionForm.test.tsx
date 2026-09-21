@@ -6,10 +6,11 @@ import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { FormProvider, useForm } from "react-hook-form";
+import { BrowserRouter as Router } from "react-router-dom";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-import { LeaseTemplate } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
 import { TemplateSelectionForm } from "@amzn/innovation-sandbox-frontend/domains/leases/components/TemplateSelectionForm";
+import { LeaseTemplateView } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/model";
 import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import {
   mockAdvancedLeaseTemplate,
@@ -22,7 +23,9 @@ import {
   ApiPaginatedResult,
   ApiResponse,
 } from "@amzn/innovation-sandbox-frontend/types";
-import { BrowserRouter as Router } from "react-router-dom";
+
+const templateUuid = (index: number) =>
+  `00000000-0000-4000-8000-${String(index).padStart(12, "0")}`;
 
 describe("TemplateSelectionForm", () => {
   beforeEach(() => {
@@ -98,7 +101,7 @@ describe("TemplateSelectionForm", () => {
         return HttpResponse.json({
           status: "success",
           data: { result: mockLeaseTemplates, nextPageIdentifier: null },
-        } as ApiResponse<ApiPaginatedResult<LeaseTemplate>>);
+        } as ApiResponse<ApiPaginatedResult<LeaseTemplateView>>);
       }),
     );
 
@@ -139,7 +142,7 @@ describe("TemplateSelectionForm", () => {
         return HttpResponse.json({
           status: "success",
           data: { result: [], nextPageIdentifier: null },
-        } as ApiResponse<ApiPaginatedResult<LeaseTemplate>>);
+        } as ApiResponse<ApiPaginatedResult<LeaseTemplateView>>);
       }),
     );
 
@@ -224,7 +227,7 @@ describe("TemplateSelectionForm", () => {
         return HttpResponse.json({
           status: "success",
           data: { result: searchableTemplates, nextPageIdentifier: null },
-        } as ApiResponse<ApiPaginatedResult<LeaseTemplate>>);
+        } as ApiResponse<ApiPaginatedResult<LeaseTemplateView>>);
       }),
     );
 
@@ -281,7 +284,7 @@ describe("TemplateSelectionForm", () => {
     // Create enough templates to trigger pagination
     const manyTemplates = Array.from({ length: 15 }, (_, i) => ({
       ...mockBasicLeaseTemplate,
-      uuid: `template-${i}`,
+      uuid: templateUuid(i),
       name: `Template ${i + 1}`,
     }));
 
@@ -290,7 +293,7 @@ describe("TemplateSelectionForm", () => {
         return HttpResponse.json({
           status: "success",
           data: { result: manyTemplates, nextPageIdentifier: null },
-        } as ApiResponse<ApiPaginatedResult<LeaseTemplate>>);
+        } as ApiResponse<ApiPaginatedResult<LeaseTemplateView>>);
       }),
     );
 
@@ -336,7 +339,7 @@ describe("TemplateSelectionForm", () => {
     // Create enough templates to trigger pagination
     const manyTemplates = Array.from({ length: 15 }, (_, i) => ({
       ...mockBasicLeaseTemplate,
-      uuid: `template-${i}`,
+      uuid: templateUuid(i),
       name: `Template ${i + 1}`,
     }));
 
@@ -345,7 +348,7 @@ describe("TemplateSelectionForm", () => {
         return HttpResponse.json({
           status: "success",
           data: { result: manyTemplates, nextPageIdentifier: null },
-        } as ApiResponse<ApiPaginatedResult<LeaseTemplate>>);
+        } as ApiResponse<ApiPaginatedResult<LeaseTemplateView>>);
       }),
     );
 

@@ -11,8 +11,8 @@ import {
   showErrorToast,
   showSuccessToast,
 } from "@amzn/innovation-sandbox-frontend/components/Toast";
+import { MonitoredLeaseView } from "@amzn/innovation-sandbox-frontend/domains/leases/model";
 import { EditCostReportSettings } from "@amzn/innovation-sandbox-frontend/domains/leases/pages/EditCostReportSettings";
-import { MonitoredLeaseWithLeaseId } from "@amzn/innovation-sandbox-frontend/domains/leases/types";
 import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import { createConfiguration } from "@amzn/innovation-sandbox-frontend/mocks/factories/configurationFactory";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
@@ -39,8 +39,8 @@ vi.mock("@amzn/innovation-sandbox-frontend/components/Toast", () => ({
   showErrorToast: vi.fn(),
 }));
 
-const mockLease: MonitoredLeaseWithLeaseId = {
-  uuid: "lease-123",
+const mockLease: MonitoredLeaseView = {
+  uuid: "11111111-1111-4111-8111-111111111111",
   leaseId: "lease-123",
   userEmail: "user@example.com",
   costReportGroup: "engineering-team",
@@ -78,7 +78,7 @@ describe("EditCostReportSettings", () => {
     // Setup default MSW handlers
     server.use(
       http.get(`${getConfig().ApiUrl}/leases/lease-123`, () => {
-        const response: ApiResponse<MonitoredLeaseWithLeaseId> = {
+        const response: ApiResponse<MonitoredLeaseView> = {
           status: "success",
           data: mockLease,
         };
@@ -145,7 +145,7 @@ describe("EditCostReportSettings", () => {
     // Test retry functionality
     server.use(
       http.get(`${getConfig().ApiUrl}/leases/lease-123`, () => {
-        const response: ApiResponse<MonitoredLeaseWithLeaseId> = {
+        const response: ApiResponse<MonitoredLeaseView> = {
           status: "success",
           data: mockLease,
         };
@@ -393,7 +393,7 @@ describe("EditCostReportSettings", () => {
     expect(saveButton).toBeDisabled();
   });
 
-  it("displays available cost report groups from config", async () => {
+  it("displays available cost report groups with filtering", async () => {
     renderComponent();
 
     await waitFor(() => {
@@ -418,6 +418,10 @@ describe("EditCostReportSettings", () => {
       expect(screen.getByText("data-science-team")).toBeInTheDocument();
       expect(screen.getByText("ml-team")).toBeInTheDocument();
     });
+
+    expect(
+      await screen.findByPlaceholderText("Find a cost report group"),
+    ).toBeInTheDocument();
   });
 
   it("handles lease with no cost report group", async () => {
@@ -428,9 +432,9 @@ describe("EditCostReportSettings", () => {
 
     server.use(
       http.get(`${getConfig().ApiUrl}/leases/lease-123`, () => {
-        const response: ApiResponse<MonitoredLeaseWithLeaseId> = {
+        const response: ApiResponse<MonitoredLeaseView> = {
           status: "success",
-          data: leaseWithNoCostReport as MonitoredLeaseWithLeaseId,
+          data: leaseWithNoCostReport as MonitoredLeaseView,
         };
         return HttpResponse.json(response);
       }),
@@ -494,9 +498,9 @@ describe("EditCostReportSettings", () => {
         return HttpResponse.json(response);
       }),
       http.get(`${getConfig().ApiUrl}/leases/lease-123`, () => {
-        const response: ApiResponse<MonitoredLeaseWithLeaseId> = {
+        const response: ApiResponse<MonitoredLeaseView> = {
           status: "success",
-          data: leaseWithNoCostReport as MonitoredLeaseWithLeaseId,
+          data: leaseWithNoCostReport as MonitoredLeaseView,
         };
         return HttpResponse.json(response);
       }),
@@ -539,7 +543,7 @@ describe("EditCostReportSettings", () => {
       http.get(`${getConfig().ApiUrl}/leases/lease-123`, () =>
         HttpResponse.json({
           status: "success",
-          data: leaseWithNoCostReport as MonitoredLeaseWithLeaseId,
+          data: leaseWithNoCostReport as MonitoredLeaseView,
         }),
       ),
       http.patch(

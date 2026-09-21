@@ -25,9 +25,9 @@ import {
 } from "@amzn/innovation-sandbox-commons/data/errors.js";
 import { LeaseTemplateStore } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template-store.js";
 import {
-  LeaseTemplate,
-  LeaseTemplateSchema,
   LeaseTemplateSchemaVersion,
+  PersistedLeaseTemplate,
+  PersistedLeaseTemplateSchema,
 } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
 import {
   parseResults,
@@ -51,9 +51,11 @@ export class DynamoLeaseTemplateStore extends LeaseTemplateStore {
     this.ddbClient = props.client;
   }
 
-  @validateItem(LeaseTemplateSchema)
+  @validateItem(PersistedLeaseTemplateSchema)
   @withMetadata(LeaseTemplateSchemaVersion)
-  public async create(leaseTemplate: LeaseTemplate): Promise<LeaseTemplate> {
+  public async create(
+    leaseTemplate: PersistedLeaseTemplate,
+  ): Promise<PersistedLeaseTemplate> {
     try {
       await this.ddbClient.send(
         new PutCommand({
@@ -75,12 +77,12 @@ export class DynamoLeaseTemplateStore extends LeaseTemplateStore {
     }
   }
 
-  @validateItem(LeaseTemplateSchema)
+  @validateItem(PersistedLeaseTemplateSchema)
   @withMetadata(LeaseTemplateSchemaVersion)
   public async update(
-    leaseTemplate: LeaseTemplate,
-    expected?: LeaseTemplate,
-  ): Promise<PutResult<LeaseTemplate>> {
+    leaseTemplate: PersistedLeaseTemplate,
+    expected?: PersistedLeaseTemplate,
+  ): Promise<PutResult<PersistedLeaseTemplate>> {
     // createdBy and createdTime are server-owned: preserve them from the
     // persisted record so a caller cannot forge them on update. (@withMetadata
     // only carries forward whatever meta was passed in, which may be forged.)
@@ -92,7 +94,10 @@ export class DynamoLeaseTemplateStore extends LeaseTemplateStore {
       ...leaseTemplate,
       createdBy: persisted.result.createdBy,
       meta: leaseTemplate.meta
-        ? { ...leaseTemplate.meta, createdTime: persisted.result.meta?.createdTime }
+        ? {
+            ...leaseTemplate.meta,
+            createdTime: persisted.result.meta?.createdTime,
+          }
         : leaseTemplate.meta,
     };
 
@@ -167,7 +172,7 @@ export class DynamoLeaseTemplateStore extends LeaseTemplateStore {
   public async findAll(props?: {
     pageIdentifier?: string;
     pageSize?: number;
-  }): Promise<PaginatedQueryResult<LeaseTemplate>> {
+  }): Promise<PaginatedQueryResult<PersistedLeaseTemplate>> {
     const { pageSize, pageIdentifier } = props ?? {};
 
     const result = await this.ddbClient.send(
@@ -178,7 +183,7 @@ export class DynamoLeaseTemplateStore extends LeaseTemplateStore {
       }),
     );
     return {
-      ...parseResults(result.Items, LeaseTemplateSchema),
+      ...parseResults(result.Items, PersistedLeaseTemplateSchema),
       nextPageIdentifier: base64EncodeCompositeKey(result.LastEvaluatedKey),
     };
   }
@@ -187,7 +192,7 @@ export class DynamoLeaseTemplateStore extends LeaseTemplateStore {
     pageIdentifier?: string;
     pageSize?: number;
     includePrivate: boolean;
-  }): Promise<PaginatedQueryResult<LeaseTemplate>> {
+  }): Promise<PaginatedQueryResult<PersistedLeaseTemplate>> {
     const { pageSize, pageIdentifier, includePrivate } = props;
 
     // Elevated callers see everything; the plain scan is sufficient.
@@ -201,7 +206,7 @@ export class DynamoLeaseTemplateStore extends LeaseTemplateStore {
     // item that was filtered out — using it directly would leak that item's
     // UUID. Instead we scan until we have enough PUBLIC items (or the table is
     // exhausted) and encode the last returned item's key as the token.
-    const collected: LeaseTemplate[] = [];
+    const collected: PersistedLeaseTemplate[] = [];
     let exclusiveStartKey = base64DecodeCompositeKey(pageIdentifier);
     let errorMessage: string | undefined;
 
@@ -226,7 +231,7 @@ export class DynamoLeaseTemplateStore extends LeaseTemplateStore {
         }),
       );
 
-      const parsed = parseResults(result.Items, LeaseTemplateSchema);
+      const parsed = parseResults(result.Items, PersistedLeaseTemplateSchema);
       if (parsed.error) {
         errorMessage = errorMessage
           ? `${errorMessage}${parsed.error}`
@@ -249,8 +254,7 @@ export class DynamoLeaseTemplateStore extends LeaseTemplateStore {
     // token in both cases, anchored to the last RETURNED item so the next page
     // resumes exactly after it — this encodes a PUBLIC item's key, never a
     // PRIVATE one, and never strands the overflow.
-    const hasOverflow =
-      pageSize !== undefined && collected.length > pageSize;
+    const hasOverflow = pageSize !== undefined && collected.length > pageSize;
     const nextPageIdentifier =
       (exclusiveStartKey !== undefined || hasOverflow) &&
       lastReturned !== undefined
@@ -268,7 +272,7 @@ export class DynamoLeaseTemplateStore extends LeaseTemplateStore {
     manager: string;
     pageIdentifier?: string;
     pageSize?: number;
-  }): Promise<PaginatedQueryResult<LeaseTemplate>> {
+  }): Promise<PaginatedQueryResult<PersistedLeaseTemplate>> {
     const result = await this.ddbClient.send(
       new ScanCommand({
         TableName: this.tableName,
@@ -284,12 +288,14 @@ export class DynamoLeaseTemplateStore extends LeaseTemplateStore {
       }),
     );
     return {
-      ...parseResults(result.Items, LeaseTemplateSchema),
+      ...parseResults(result.Items, PersistedLeaseTemplateSchema),
       nextPageIdentifier: base64EncodeCompositeKey(result.LastEvaluatedKey),
     };
   }
 
-  public async get(uuid: string): Promise<SingleItemResult<LeaseTemplate>> {
+  public async get(
+    uuid: string,
+  ): Promise<SingleItemResult<PersistedLeaseTemplate>> {
     const result = await this.ddbClient.send(
       new GetCommand({
         TableName: this.tableName,
@@ -297,7 +303,7 @@ export class DynamoLeaseTemplateStore extends LeaseTemplateStore {
       }),
     );
 
-    return parseSingleItemResult(result.Item, LeaseTemplateSchema);
+    return parseSingleItemResult(result.Item, PersistedLeaseTemplateSchema);
   }
 
   /**
@@ -305,7 +311,7 @@ export class DynamoLeaseTemplateStore extends LeaseTemplateStore {
    *
    * Returns only key fields (uuid, blueprintId) because the blueprintId-index GSI
    * is configured with KEYS_ONLY projection. No schema validation is performed
-   * since partial items would fail validation against LeaseTemplateSchema.
+   * since partial items would fail validation against PersistedLeaseTemplateSchema.
    */
   public async findByBlueprintId(
     blueprintId: string,

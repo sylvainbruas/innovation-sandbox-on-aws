@@ -8,7 +8,7 @@ import { http, HttpResponse } from "msw";
 import { describe, expect, it, vi } from "vitest";
 
 import { PrincipalTypeahead } from "@amzn/innovation-sandbox-frontend/domains/leases/components/PrincipalTypeahead";
-import { IdcPrincipal } from "@amzn/innovation-sandbox-frontend/domains/leases/types";
+import type { IdcPrincipalView } from "@amzn/innovation-sandbox-frontend/domains/principals/model";
 import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
 import { createQueryClientWrapper } from "@amzn/innovation-sandbox-frontend/setupTests";
@@ -29,20 +29,20 @@ vi.mock(
   },
 );
 
-const alice: IdcPrincipal = {
+const alice: IdcPrincipalView = {
   principalId: "user-1",
   principalType: "USER",
   displayName: "Alice Smith",
   email: "alice@example.com",
 };
 
-const engineering: IdcPrincipal = {
+const engineering: IdcPrincipalView = {
   principalId: "group-1",
   principalType: "GROUP",
   displayName: "Engineering",
 };
 
-const bob: IdcPrincipal = {
+const bob: IdcPrincipalView = {
   principalId: "user-2",
   principalType: "USER",
   displayName: "Bob Jones",
@@ -50,7 +50,7 @@ const bob: IdcPrincipal = {
 };
 
 function stubPrincipalsEndpoint(
-  responder: (url: URL) => IdcPrincipal[],
+  responder: (url: URL) => IdcPrincipalView[],
   recorder?: { calls: URL[] },
 ) {
   server.use(

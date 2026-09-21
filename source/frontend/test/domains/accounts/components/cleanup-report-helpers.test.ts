@@ -8,7 +8,7 @@ import {
   formatDuration,
   formatReason,
 } from "@amzn/innovation-sandbox-frontend/domains/accounts/components/cleanup-report-helpers";
-import { CleanupReport } from "@amzn/innovation-sandbox-frontend/domains/accounts/types";
+import { CleanupReportView } from "@amzn/innovation-sandbox-frontend/domains/accounts/types";
 
 describe("cleanup-report-helpers", () => {
   describe("formatDuration", () => {
@@ -22,7 +22,7 @@ describe("cleanup-report-helpers", () => {
     });
 
     test("returns formatted duration for a completed report with hours and minutes", () => {
-      const report: CleanupReport = createMockCleanupReport({
+      const report: CleanupReportView = createMockCleanupReport({
         startedAt: "2024-06-15T10:00:00.000Z",
         completedAt: "2024-06-15T11:30:00.000Z",
       });
@@ -34,7 +34,7 @@ describe("cleanup-report-helpers", () => {
     });
 
     test("returns formatted duration for a completed report with only minutes", () => {
-      const report: CleanupReport = createMockCleanupReport({
+      const report: CleanupReportView = createMockCleanupReport({
         startedAt: "2024-06-15T11:15:00.000Z",
         completedAt: "2024-06-15T11:45:00.000Z",
       });
@@ -45,7 +45,7 @@ describe("cleanup-report-helpers", () => {
     });
 
     test("returns formatted duration for a completed report with sub-minute duration", () => {
-      const report: CleanupReport = createMockCleanupReport({
+      const report: CleanupReportView = createMockCleanupReport({
         startedAt: "2024-06-15T11:59:00.000Z",
         completedAt: "2024-06-15T11:59:30.000Z",
       });
@@ -57,7 +57,7 @@ describe("cleanup-report-helpers", () => {
     });
 
     test("returns elapsed duration for an in-progress report using DateTime.now()", () => {
-      const report: CleanupReport = createMockCleanupReport({
+      const report: CleanupReportView = createMockCleanupReport({
         startedAt: "2024-06-15T10:30:00.000Z",
         completedAt: undefined,
       });
@@ -69,7 +69,7 @@ describe("cleanup-report-helpers", () => {
     });
 
     test("returns only hours when duration is exact hours", () => {
-      const report: CleanupReport = createMockCleanupReport({
+      const report: CleanupReportView = createMockCleanupReport({
         startedAt: "2024-06-15T09:00:00.000Z",
         completedAt: "2024-06-15T12:00:00.000Z",
       });

@@ -141,6 +141,13 @@ export function getInnovationSandboxWriteProtectionScp(
     props.isbManagedRegions,
     props.scpDirectoryPath,
   );
+
+  injectPrincipalExceptions(
+    writeProtectionPolicy,
+    props.additionalPrincipalExceptions,
+    props.hasAdditionalPrincipalExceptionsConditionId,
+  );
+
   return convertToPolicyDocument(writeProtectionPolicy);
 }
 

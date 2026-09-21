@@ -8,7 +8,7 @@ import {
   isSyntheticM2mEmail,
   parseRolesClaim,
   resolveEmailFromClaims,
-} from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
+} from "../utils/auth-utils.js";
 
 describe("resolveEmailFromClaims", () => {
   it("returns email claim when present", () => {

@@ -14,7 +14,6 @@ import {
 import { DateTime, Duration } from "luxon";
 import { useEffect, useState } from "react";
 
-import { LeaseTemplate } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template";
 import { BlueprintName } from "@amzn/innovation-sandbox-frontend/components/BlueprintName";
 import { ErrorPanel } from "@amzn/innovation-sandbox-frontend/components/ErrorPanel";
 import { TextLink } from "@amzn/innovation-sandbox-frontend/components/TextLink";
@@ -24,10 +23,11 @@ import {
   useDeleteLeaseTemplates,
   useGetLeaseTemplates,
 } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/hooks";
+import { LeaseTemplateView } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/model";
 import { createDateSortingComparator } from "@amzn/innovation-sandbox-frontend/helpers/date-sorting-comparator";
 import { formatCurrency } from "@amzn/innovation-sandbox-frontend/helpers/util";
 
-const NameCell = ({ item }: { item: LeaseTemplate }) => (
+const NameCell = ({ item }: { item: LeaseTemplateView }) => (
   <>
     <Box>
       <TextLink to={`/lease_templates/${item.uuid}`}>{item.name}</TextLink>
@@ -38,7 +38,7 @@ const NameCell = ({ item }: { item: LeaseTemplate }) => (
   </>
 );
 
-const MaxSpendCell = ({ item }: { item: LeaseTemplate }) => (
+const MaxSpendCell = ({ item }: { item: LeaseTemplateView }) => (
   <>
     {item.maxSpend ? (
       formatCurrency(item.maxSpend)
@@ -48,7 +48,7 @@ const MaxSpendCell = ({ item }: { item: LeaseTemplate }) => (
   </>
 );
 
-const ExpiryCell = ({ item }: { item: LeaseTemplate }) => (
+const ExpiryCell = ({ item }: { item: LeaseTemplateView }) => (
   <>
     {item.leaseDurationInHours ? (
       `after ${Duration.fromObject({ hours: item.leaseDurationInHours }).toHuman()}`
@@ -58,13 +58,82 @@ const ExpiryCell = ({ item }: { item: LeaseTemplate }) => (
   </>
 );
 
-const CostReportCell = ({ item }: { item: LeaseTemplate }) => {
+const CostReportCell = ({ item }: { item: LeaseTemplateView }) => {
   return item.costReportGroup ? (
     <span>{item.costReportGroup}</span>
   ) : (
     <StatusIndicator type="info">Not assigned</StatusIndicator>
   );
 };
+
+const columnDefinitions = [
+  {
+    id: "name",
+    header: "Name",
+    sortingField: "name",
+    cell: (item: LeaseTemplateView) => <NameCell item={item} />,
+  },
+  {
+    id: "createdBy",
+    header: "Created by",
+    sortingField: "createdBy",
+    cell: (item: LeaseTemplateView) => item.createdBy,
+  },
+  {
+    id: "blueprint",
+    header: "Blueprint",
+    sortingField: "blueprintName",
+    cell: (item: LeaseTemplateView) => (
+      <BlueprintName blueprintName={item.blueprintName} />
+    ),
+  },
+  {
+    id: "costReportGroup",
+    header: "Cost Report Group",
+    sortingField: "costReportGroup",
+    cell: (item: LeaseTemplateView) => <CostReportCell item={item} />,
+  },
+  {
+    id: "visibility",
+    header: "Visibility",
+    sortingField: "visibility",
+    cell: (item: LeaseTemplateView) => <VisibilityIndicator item={item} />,
+  },
+  {
+    id: "allowOwnerToShareLease",
+    header: "Sharing",
+    sortingField: "allowOwnerToShareLease",
+    cell: (item: LeaseTemplateView) =>
+      item.allowOwnerToShareLease ? (
+        <StatusIndicator type="success">Enabled</StatusIndicator>
+      ) : (
+        <StatusIndicator type="stopped">Disabled</StatusIndicator>
+      ),
+  },
+  {
+    id: "maxSpend",
+    header: "Max Budget",
+    sortingField: "maxSpend",
+    cell: (item: LeaseTemplateView) => <MaxSpendCell item={item} />,
+  },
+  {
+    id: "leaseDurationInHours",
+    header: "Expiry",
+    sortingField: "leaseDurationInHours",
+    cell: (item: LeaseTemplateView) => <ExpiryCell item={item} />,
+  },
+  {
+    id: "meta.lastEditTime",
+    header: "Last Updated",
+    sortingComparator: createDateSortingComparator<LeaseTemplateView>(
+      (a) => a.meta?.lastEditTime,
+    ),
+    cell: (item: LeaseTemplateView) =>
+      item.meta?.lastEditTime
+        ? DateTime.fromISO(item.meta.lastEditTime).toRelative()
+        : "",
+  },
+];
 
 export const LeaseTemplatesTable = () => {
   // get lease templates using react query hook
@@ -77,7 +146,7 @@ export const LeaseTemplatesTable = () => {
   } = useGetLeaseTemplates();
 
   // selected items state
-  const [selectedItems, setSelectedItems] = useState<LeaseTemplate[]>([]);
+  const [selectedItems, setSelectedItems] = useState<LeaseTemplateView[]>([]);
 
   // state to show/hide delete modal dialog
   const [isDeleteModalVisible, setDeleteModalVisible] = useState(false);
@@ -134,73 +203,7 @@ export const LeaseTemplatesTable = () => {
         onSelectionChange={({ detail }) =>
           setSelectedItems(detail.selectedItems)
         }
-        columnDefinitions={[
-          {
-            id: "name",
-            header: "Name",
-            sortingField: "name",
-            cell: (item: LeaseTemplate) => <NameCell item={item} />, // NOSONAR typescript:S6478 - the way the table component works requires defining component during render
-          },
-          {
-            id: "createdBy",
-            header: "Created by",
-            sortingField: "createdBy",
-            cell: (item: LeaseTemplate) => item.createdBy,
-          },
-          {
-            id: "blueprint",
-            header: "Blueprint",
-            sortingField: "blueprintName",
-            // prettier-ignore
-            cell: (item: LeaseTemplate) => <BlueprintName blueprintName={item.blueprintName} />, // NOSONAR typescript:S6478 - Table API requires cell render functions
-          },
-          {
-            id: "costReportGroup",
-            header: "Cost Report Group",
-            sortingField: "costReportGroup",
-            cell: (item: LeaseTemplate) => <CostReportCell item={item} />, // NOSONAR typescript:S6478 - the way the table component works requires defining component during render
-          },
-          {
-            id: "visibility",
-            header: "Visibility",
-            sortingField: "visibility",
-            cell: (item: LeaseTemplate) => <VisibilityIndicator item={item} />, // NOSONAR typescript:S6478 - the way the table component works requires defining component during render
-          },
-          {
-            id: "allowOwnerToShareLease",
-            header: "Sharing",
-            sortingField: "allowOwnerToShareLease",
-            cell: (item: LeaseTemplate) =>
-              item.allowOwnerToShareLease ? (
-                <StatusIndicator type="success">Enabled</StatusIndicator>
-              ) : (
-                <StatusIndicator type="stopped">Disabled</StatusIndicator>
-              ),
-          },
-          {
-            id: "maxSpend",
-            header: "Max Budget",
-            sortingField: "maxSpend",
-            cell: (item: LeaseTemplate) => <MaxSpendCell item={item} />, // NOSONAR typescript:S6478 - the way the table component works requires defining component during render
-          },
-          {
-            id: "leaseDurationInHours",
-            header: "Expiry",
-            sortingField: "leaseDurationInHours",
-            cell: (item: LeaseTemplate) => <ExpiryCell item={item} />, // NOSONAR typescript:S6478 - the way the table component works requires defining component during render
-          },
-          {
-            id: "meta.lastEditTime",
-            header: "Last Updated",
-            sortingComparator: createDateSortingComparator<LeaseTemplate>(
-              (a) => a.meta?.lastEditTime,
-            ),
-            cell: (item: LeaseTemplate) =>
-              item.meta?.lastEditTime
-                ? DateTime.fromISO(item.meta.lastEditTime).toRelative()
-                : "",
-          },
-        ]}
+        columnDefinitions={columnDefinitions}
         actions={
           <SpaceBetween direction="horizontal" size="s">
             <Button

@@ -15,11 +15,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AccountPoolStackConfigStore } from "@amzn/innovation-sandbox-commons/data/account-pool-stack-config/ssm-account-pool-stack-config-store.js";
 import { SandboxAccountStore } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account-store.js";
-import {
-  IsbOu,
-  SandboxAccount,
-} from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
+import { PersistedSandboxAccount } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
 import { SandboxOuService } from "@amzn/innovation-sandbox-commons/isb-services/sandbox-ou-service.js";
+import { IsbOu } from "@amzn/innovation-sandbox-shared/types/sandbox-account.js";
 
 // Mock AWS SDK clients
 const mockOrganizationsClient = mockClient(OrganizationsClient);
@@ -200,7 +198,7 @@ describe("SandboxOuService", () => {
   });
 
   describe("moveAccount()", () => {
-    const mockAccount: SandboxAccount = {
+    const mockAccount: PersistedSandboxAccount = {
       awsAccountId: "123456789012",
       email: "test@example.com",
       name: "Test Account",
@@ -376,7 +374,7 @@ describe("SandboxOuService", () => {
   });
 
   describe("transactionalMoveAccount()", () => {
-    const mockAccount: SandboxAccount = {
+    const mockAccount: PersistedSandboxAccount = {
       awsAccountId: "123456789012",
       email: "test@example.com",
       name: "Test Account",

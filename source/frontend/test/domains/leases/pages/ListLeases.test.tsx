@@ -10,13 +10,17 @@ import { http, HttpResponse } from "msw";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
+import {
+  LeaseView,
+  MonitoredLeaseView,
+} from "@amzn/innovation-sandbox-frontend/domains/leases/model";
 import { ListLeases } from "@amzn/innovation-sandbox-frontend/domains/leases/pages/ListLeases";
-import { MonitoredLeaseWithLeaseId } from "@amzn/innovation-sandbox-frontend/domains/leases/types";
 import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import { ModalProvider } from "@amzn/innovation-sandbox-frontend/hooks/useModal";
 import { createConfiguration } from "@amzn/innovation-sandbox-frontend/mocks/factories/configurationFactory";
 import {
   createActiveLease,
+  createApprovalDeniedLease,
   createExpiredLease,
   createPendingLease,
 } from "@amzn/innovation-sandbox-frontend/mocks/factories/leaseFactory";
@@ -36,12 +40,17 @@ class ResizeObserver {
 
 window.ResizeObserver = ResizeObserver;
 
+const mockCurrentUserRoles = vi.hoisted(() => ({
+  current: ["Admin"] as Array<"Admin" | "Manager" | "User">,
+}));
+
 // Mock the useBreadcrumb hook
 vi.mock("@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb", () => ({
   useBreadcrumb: () => vi.fn(),
 }));
 
-// Mock CognitoAuthService with Admin role so all tabs and bulk actions are visible
+// Default to Admin so all tabs and bulk actions are visible. Individual tests
+// can replace the roles before rendering to exercise role-specific behavior.
 vi.mock(
   "@amzn/innovation-sandbox-frontend/helpers/CognitoAuthService",
   async () => {
@@ -54,11 +63,14 @@ vi.mock(
     ]);
     return {
       CognitoAuthService: buildCognitoAuthServiceMock({
-        getCurrentUser: vi
-          .fn()
-          .mockResolvedValue(
-            authenticated({ ...mockAuthenticatedUser, roles: ["Admin"] }),
+        getCurrentUser: vi.fn().mockImplementation(() =>
+          Promise.resolve(
+            authenticated({
+              ...mockAuthenticatedUser,
+              roles: mockCurrentUserRoles.current,
+            }),
           ),
+        ),
       }),
     };
   },
@@ -112,7 +124,7 @@ describe("ListLeases", () => {
     }),
   );
 
-  const mockActiveLease: MonitoredLeaseWithLeaseId = {
+  const mockActiveLease: MonitoredLeaseView = {
     ...createActiveLease({
       userEmail: testUserEmail,
       uuid: testUuid,
@@ -125,7 +137,7 @@ describe("ListLeases", () => {
     leaseId: testLeaseId,
   };
 
-  const mockFrozenLease: MonitoredLeaseWithLeaseId = {
+  const mockFrozenLease: MonitoredLeaseView = {
     ...createActiveLease({
       userEmail: testUserEmail,
       uuid: testUuid,
@@ -152,6 +164,7 @@ describe("ListLeases", () => {
   });
 
   beforeEach(() => {
+    mockCurrentUserRoles.current = ["Admin"];
     const mockConfig = createConfiguration({});
     mockConfigurationApi.returns(mockConfig);
     server.use(mockConfigurationApi.getHandler());
@@ -273,20 +286,47 @@ describe("ListLeases", () => {
   test("shows leases with default status filter (PendingApproval, Active, Frozen, Provisioning visible; all others hidden)", async () => {
     // Create one lease per status to verify the default filter behavior
     const makeLease = (
-      status: string,
+      status: LeaseView["status"],
       email: string,
-    ): MonitoredLeaseWithLeaseId => ({
-      ...createActiveLease({
+    ): LeaseView => {
+      const common = {
         userEmail: email,
         uuid: testUuid,
         originalLeaseTemplateName: `${status} Template`,
-        status: status as "Active" | "Frozen" | "Provisioning",
-        awsAccountId: "123456789012",
-        totalCostAccrued: 0,
-        maxSpend: 1000,
-      }),
-      leaseId: btoa(JSON.stringify({ userEmail: email, uuid: testUuid })),
-    });
+      };
+      let lease: LeaseView;
+      switch (status) {
+        case "PendingApproval":
+          lease = createPendingLease(common);
+          break;
+        case "ApprovalDenied":
+          lease = createApprovalDeniedLease(common);
+          break;
+        case "Active":
+        case "Frozen":
+        case "Provisioning":
+          lease = createActiveLease({
+            ...common,
+            status,
+            awsAccountId: "123456789012",
+            totalCostAccrued: 0,
+            maxSpend: 1000,
+          });
+          break;
+        default:
+          lease = createExpiredLease({
+            ...common,
+            status,
+            awsAccountId: "123456789012",
+            totalCostAccrued: 0,
+            maxSpend: 1000,
+          });
+      }
+      return {
+        ...lease,
+        leaseId: btoa(JSON.stringify({ userEmail: email, uuid: testUuid })),
+      };
+    };
 
     // Statuses that should be VISIBLE by default
     const visibleLeases = [
@@ -350,6 +390,43 @@ describe("ListLeases", () => {
       { timeout: 5000 },
     );
   });
+
+  test.each([
+    ["Admin", "Provisioning", true],
+    ["Manager", "Provisioning", false],
+    ["Manager", "Frozen", true],
+    ["User", "Frozen", false],
+    ["User", "Active", true],
+  ] as const)(
+    "renders Login for %s on %s leases: %s",
+    async (role, status, expected) => {
+      mockCurrentUserRoles.current = [role];
+      const lease: MonitoredLeaseView = {
+        ...createActiveLease({
+          userEmail: testUserEmail,
+          uuid: testUuid,
+          status,
+          awsAccountId: "123456789012",
+        }),
+        leaseId: testLeaseId,
+      };
+      mockLeaseApi.returns([lease]);
+      server.use(mockLeaseApi.getHandler());
+
+      renderComponent();
+
+      await waitFor(() => {
+        expect(screen.getByText(testUserEmail)).toBeInTheDocument();
+      });
+
+      const login = screen.queryByRole("button", { name: /^Login$/ });
+      if (expected) {
+        expect(login).toBeInTheDocument();
+      } else {
+        expect(login).not.toBeInTheDocument();
+      }
+    },
+  );
 
   test("renders budget progress bar for monitored leases", async () => {
     mockLeaseApi.returns([mockActiveLease]);
@@ -788,11 +865,13 @@ describe("ListLeases", () => {
       ...mockActiveLease,
       userEmail: "test@example.com",
       leaseId: "owned-lease-1",
+      accessType: "direct",
     };
     const sharedLease = {
       ...mockActiveLease,
       userEmail: "sharer@example.com",
       leaseId: "shared-lease-1",
+      accessType: "direct",
     };
 
     server.use(
@@ -881,7 +960,7 @@ describe("ListLeases", () => {
       }),
       leaseId: "shared-direct-lease-1",
       accessType: "direct",
-    } as MonitoredLeaseWithLeaseId & { accessType: string };
+    } as MonitoredLeaseView & { accessType: string };
 
     mockLeaseApi.returns([sharedLease]);
     server.use(

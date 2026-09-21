@@ -125,12 +125,10 @@ export const BatchActionReview = <T extends Record<string, any>>({
 
   const itemsWithRequests = useMemo(
     () =>
-      items.map(
-        (item): ItemWithRequest<T> => ({
-          ...item,
-          request: requests[item[identifierKey]],
-        }),
-      ),
+      items.map((item): ItemWithRequest<T> => ({
+        ...item,
+        request: requests[item[identifierKey]],
+      })),
     [items, requests, identifierKey],
   );
 

@@ -13,13 +13,8 @@ import {
   SpaceBetween,
   StatusIndicator,
 } from "@cloudscape-design/components";
+import { DateTime } from "luxon";
 
-import {
-  isExpiredLease,
-  isMonitoredLease,
-  isPendingLease,
-  Lease,
-} from "@amzn/innovation-sandbox-commons/data/lease/lease";
 import { AccountId } from "@amzn/innovation-sandbox-frontend/components/AccountId";
 import { BlueprintName } from "@amzn/innovation-sandbox-frontend/components/BlueprintName";
 import { BudgetProgressBar } from "@amzn/innovation-sandbox-frontend/components/BudgetProgressBar";
@@ -30,11 +25,16 @@ import { LeaseTemplateName } from "@amzn/innovation-sandbox-frontend/components/
 import { SharingStatusIndicator } from "@amzn/innovation-sandbox-frontend/components/SharingStatusIndicator";
 import { ThresholdDetails } from "@amzn/innovation-sandbox-frontend/components/ThresholdDetails";
 import { LeaseStatusBadge } from "@amzn/innovation-sandbox-frontend/domains/leases/components/LeaseStatusBadge";
+import { LeaseView } from "@amzn/innovation-sandbox-frontend/domains/leases/model";
 import { getLeaseExpiryInfo } from "@amzn/innovation-sandbox-frontend/helpers/LeaseExpiryInfo";
-import { DateTime } from "luxon";
+import {
+  isExpiredLease,
+  isMonitoredLease,
+  isPendingLease,
+} from "@amzn/innovation-sandbox-shared/types/lease.js";
 
 interface LeaseSummaryProps {
-  lease: Lease;
+  lease: LeaseView;
   showEditButtons?: boolean;
   showAdminFields?: boolean;
   leaseSharingEnabled?: boolean;
@@ -57,7 +57,7 @@ const renderTimePopover = (date: string) => (
 );
 
 // Helper function to render approved by
-const renderApprovedBy = (lease: Lease) => {
+const renderApprovedBy = (lease: LeaseView) => {
   const isMonitoredOrExpired = isMonitoredLease(lease) || isExpiredLease(lease);
 
   if (!isMonitoredOrExpired) {
@@ -72,7 +72,7 @@ const renderApprovedBy = (lease: Lease) => {
 };
 
 // Helper function to render lease started
-const renderLeaseStarted = (lease: Lease) => {
+const renderLeaseStarted = (lease: LeaseView) => {
   const isMonitoredOrExpired = isMonitoredLease(lease) || isExpiredLease(lease);
 
   if (!isMonitoredOrExpired) {
@@ -83,7 +83,7 @@ const renderLeaseStarted = (lease: Lease) => {
 };
 
 // Helper function to render last monitored
-const renderLastMonitored = (lease: Lease) => {
+const renderLastMonitored = (lease: LeaseView) => {
   const isMonitoredOrExpired = isMonitoredLease(lease) || isExpiredLease(lease);
 
   if (!isMonitoredOrExpired) {
@@ -103,7 +103,7 @@ const renderComments = (comments?: string) => {
 };
 
 // Helper function to render budget status
-const renderBudgetStatus = (lease: Lease) => {
+const renderBudgetStatus = (lease: LeaseView) => {
   const isPending = isPendingLease(lease);
   const isMonitoredOrExpired = isMonitoredLease(lease) || isExpiredLease(lease);
 

@@ -4,15 +4,15 @@
 import { renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data";
-import { IdcIdentitySchema } from "@amzn/innovation-sandbox-commons/utils/auth-utils";
-import { CognitoAuthService } from "@amzn/innovation-sandbox-frontend/helpers/CognitoAuthService";
-import { useUser } from "@amzn/innovation-sandbox-frontend/hooks/useUser";
-import { createQueryClientWrapper } from "@amzn/innovation-sandbox-frontend/setupTests";
 import {
   authenticated,
   incompleteClaims,
 } from "@amzn/innovation-sandbox-frontend-test/utils/cognitoFixtures";
+import { CognitoAuthService } from "@amzn/innovation-sandbox-frontend/helpers/CognitoAuthService";
+import { useUser } from "@amzn/innovation-sandbox-frontend/hooks/useUser";
+import { createQueryClientWrapper } from "@amzn/innovation-sandbox-frontend/setupTests";
+import { generateSchemaData } from "@amzn/innovation-sandbox-shared/test/generate-schema-data";
+import { IdcIdentitySchema } from "@amzn/innovation-sandbox-shared/utils/auth-utils";
 
 // vi.mock is hoisted above every import, so the factory body cannot close
 // over `buildCognitoAuthServiceMock` directly. The dynamic import runs
@@ -21,9 +21,8 @@ import {
 vi.mock(
   "@amzn/innovation-sandbox-frontend/helpers/CognitoAuthService",
   async () => {
-    const { buildCognitoAuthServiceMock } = await import(
-      "@amzn/innovation-sandbox-frontend-test/utils/cognitoServiceMock"
-    );
+    const { buildCognitoAuthServiceMock } =
+      await import("@amzn/innovation-sandbox-frontend-test/utils/cognitoServiceMock");
     return { CognitoAuthService: buildCognitoAuthServiceMock() };
   },
 );
@@ -39,7 +38,9 @@ describe("useUser", () => {
       roles: ["Admin"],
     });
 
-    vi.mocked(CognitoAuthService.getCurrentUser).mockResolvedValue(authenticated(mockUser));
+    vi.mocked(CognitoAuthService.getCurrentUser).mockResolvedValue(
+      authenticated(mockUser),
+    );
 
     const { result } = renderHook(() => useUser(), {
       wrapper: createQueryClientWrapper(),
@@ -60,7 +61,9 @@ describe("useUser", () => {
       roles: ["Manager"],
     });
 
-    vi.mocked(CognitoAuthService.getCurrentUser).mockResolvedValue(authenticated(mockUser));
+    vi.mocked(CognitoAuthService.getCurrentUser).mockResolvedValue(
+      authenticated(mockUser),
+    );
 
     const { result } = renderHook(() => useUser(), {
       wrapper: createQueryClientWrapper(),
@@ -81,7 +84,9 @@ describe("useUser", () => {
       roles: ["User"],
     });
 
-    vi.mocked(CognitoAuthService.getCurrentUser).mockResolvedValue(authenticated(mockUser));
+    vi.mocked(CognitoAuthService.getCurrentUser).mockResolvedValue(
+      authenticated(mockUser),
+    );
 
     const { result } = renderHook(() => useUser(), {
       wrapper: createQueryClientWrapper(),
@@ -102,7 +107,9 @@ describe("useUser", () => {
       roles: [],
     });
 
-    vi.mocked(CognitoAuthService.getCurrentUser).mockResolvedValue(authenticated(mockUser));
+    vi.mocked(CognitoAuthService.getCurrentUser).mockResolvedValue(
+      authenticated(mockUser),
+    );
 
     const { result } = renderHook(() => useUser(), {
       wrapper: createQueryClientWrapper(),
@@ -118,7 +125,9 @@ describe("useUser", () => {
   });
 
   it("returns authError for incomplete claims", async () => {
-    vi.mocked(CognitoAuthService.getCurrentUser).mockResolvedValue(incompleteClaims("Missing required claims"));
+    vi.mocked(CognitoAuthService.getCurrentUser).mockResolvedValue(
+      incompleteClaims("Missing required claims"),
+    );
 
     const { result } = renderHook(() => useUser(), {
       wrapper: createQueryClientWrapper(),

@@ -7,6 +7,7 @@ import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { OAuthCallback } from "@amzn/innovation-sandbox-frontend/components/OAuthCallback";
+import { resetApiSingletons } from "@amzn/innovation-sandbox-frontend/helpers/apiSingletons";
 
 const mockNavigate = vi.fn();
 
@@ -21,8 +22,8 @@ vi.mock("react-router-dom", async () => {
 // Hub.listen mock — capture the listener so tests can fire events.
 // Amplify's HubCallback type is not re-exported from aws-amplify/utils.
 let hubListener:
-  | ((data: { payload: { event: string; data?: unknown } }) => void)
-  | null = null;
+  ((data: { payload: { event: string; data?: unknown } }) => void) | null =
+  null;
 
 vi.mock("aws-amplify/utils", () => ({
   Hub: {
@@ -31,6 +32,11 @@ vi.mock("aws-amplify/utils", () => ({
       return vi.fn(); // unsubscribe
     }),
   },
+}));
+
+vi.mock("@amzn/innovation-sandbox-frontend/helpers/apiSingletons", () => ({
+  resetApiSingletons: vi.fn(),
+  registerApiSingletonReset: vi.fn(),
 }));
 
 describe("OAuthCallback", () => {
@@ -52,7 +58,7 @@ describe("OAuthCallback", () => {
     expect(screen.getByText("Completing sign-in...")).toBeInTheDocument();
   });
 
-  it("navigates to / on successful signInWithRedirect event", () => {
+  it("resets API singletons before navigating on successful signInWithRedirect", () => {
     renderComponent();
     expect(hubListener).not.toBeNull();
 
@@ -60,7 +66,13 @@ describe("OAuthCallback", () => {
       hubListener!({ payload: { event: "signInWithRedirect" } });
     });
 
+    expect(resetApiSingletons).toHaveBeenCalledTimes(1);
     expect(mockNavigate).toHaveBeenCalledWith("/", { replace: true });
+    // The reset must run before navigation so the incoming user never reuses
+    // the previous session's client.
+    expect(
+      vi.mocked(resetApiSingletons).mock.invocationCallOrder[0],
+    ).toBeLessThan(mockNavigate.mock.invocationCallOrder[0]);
   });
 
   it("shows error alert on signInWithRedirect_failure event", () => {

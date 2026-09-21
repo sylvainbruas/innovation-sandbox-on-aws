@@ -30,7 +30,7 @@ import type {
   IdcIdentity,
   IsbRole,
   IsbUser,
-} from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
+} from "@amzn/innovation-sandbox-shared/utils/auth-utils.js";
 
 const test_env = {
   IDC_CONFIG_PARAM_ARN:

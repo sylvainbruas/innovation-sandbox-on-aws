@@ -1,15 +1,16 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import {
-  ActiveCleanup,
-  SandboxAccountStatus,
-} from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account";
-import { getColor } from "@amzn/innovation-sandbox-frontend/components/AccountsSummary/helpers";
-import { getCleanupStatusConfig } from "@amzn/innovation-sandbox-frontend/domains/accounts/helpers";
 import { Box, Icon, Popover } from "@cloudscape-design/components";
 import { colorChartsStatusHigh } from "@cloudscape-design/design-tokens";
 import { DateTime } from "luxon";
+
+import { getColor } from "@amzn/innovation-sandbox-frontend/components/AccountsSummary/helpers";
+import { getCleanupStatusConfig } from "@amzn/innovation-sandbox-frontend/domains/accounts/helpers";
+import {
+  ActiveCleanup,
+  SandboxAccountStatus,
+} from "@amzn/innovation-sandbox-shared/types/sandbox-account";
 
 interface AccountStatusIndicatorProps {
   status: SandboxAccountStatus;

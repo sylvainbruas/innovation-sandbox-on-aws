@@ -1,13 +1,13 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { Lease } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
+import { PersistedLease } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import { diffString } from "@amzn/innovation-sandbox-commons/observability/logging.js";
 import { describe, expect, test } from "vitest";
 
 describe("logging diffs", () => {
   test("log diff produces expected output", () => {
-    const oldLease: Lease = {
+    const oldLease: PersistedLease = {
       status: "Active",
       uuid: "leaseId",
       userEmail: "user@email.com",
@@ -34,7 +34,7 @@ describe("logging diffs", () => {
       totalCostAccrued: 5,
     };
 
-    const newLease: Lease = {
+    const newLease: PersistedLease = {
       status: "Active",
       uuid: "leaseId",
       userEmail: "user@email.com",

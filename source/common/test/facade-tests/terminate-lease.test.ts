@@ -1,10 +1,10 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { MonitoredLeaseSchema } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
+import { PersistedMonitoredLeaseSchema } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import {
-  SandboxAccount,
-  SandboxAccountSchema,
+  PersistedSandboxAccount,
+  PersistedSandboxAccountSchema,
 } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
 import { CleanAccountRequest } from "@amzn/innovation-sandbox-commons/events/clean-account-request.js";
 import {
@@ -29,11 +29,11 @@ import {
   mockedOrgsService,
 } from "@amzn/innovation-sandbox-commons/test/mocking/common-mocks.js";
 import { createMockOf } from "@amzn/innovation-sandbox-commons/test/mocking/mock-utils.js";
+import { datetimeAsString } from "@amzn/innovation-sandbox-commons/utils/time-utils.js";
 import {
   type IdcIdentity,
   IdcIdentitySchema,
-} from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
-import { datetimeAsString } from "@amzn/innovation-sandbox-commons/utils/time-utils.js";
+} from "@amzn/innovation-sandbox-shared/utils/auth-utils.js";
 import { Logger } from "@aws-lambda-powertools/logger";
 import { Tracer } from "@aws-lambda-powertools/tracer";
 import { DateTime } from "luxon";
@@ -62,12 +62,12 @@ const currentDateTime = DateTime.fromISO("2024-12-20T08:45:00.000Z", {
 describe("InnovationSandbox.terminateLease()", () => {
   let mockContext: ReturnType<typeof createMockContext>;
   let mockUser: IdcIdentity;
-  let mockLeaseAccount: SandboxAccount;
+  let mockLeaseAccount: PersistedSandboxAccount;
 
   beforeEach(() => {
     mockContext = createMockContext();
     mockUser = generateSchemaData(IdcIdentitySchema);
-    mockLeaseAccount = generateSchemaData(SandboxAccountSchema, {
+    mockLeaseAccount = generateSchemaData(PersistedSandboxAccountSchema, {
       awsAccountId: "000000000000",
     });
 
@@ -103,7 +103,7 @@ describe("InnovationSandbox.terminateLease()", () => {
   });
 
   test("HappyPath - terminate active lease acquires lock and triggers Step Function", async () => {
-    const lease = generateSchemaData(MonitoredLeaseSchema, {
+    const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
       status: "Active",
       awsAccountId: mockLeaseAccount.awsAccountId,
       userEmail: mockUser.email,
@@ -174,7 +174,7 @@ describe("InnovationSandbox.terminateLease()", () => {
   });
 
   test("HappyPath - terminate frozen lease", async () => {
-    const lease = generateSchemaData(MonitoredLeaseSchema, {
+    const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
       status: "Frozen",
       awsAccountId: mockLeaseAccount.awsAccountId,
       userEmail: mockUser.email,
@@ -224,7 +224,7 @@ describe("InnovationSandbox.terminateLease()", () => {
   });
 
   test("reports LeaseTermination metric correctly", async () => {
-    const lease = generateSchemaData(MonitoredLeaseSchema, {
+    const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
       status: "Active",
       startDate: currentDateTime.minus({ days: 2 }).toISO(),
       awsAccountId: mockLeaseAccount.awsAccountId,
@@ -257,7 +257,7 @@ describe("InnovationSandbox.terminateLease()", () => {
   });
 
   test("writes the Status tag as CleanUp after the OU move when autoCleanup is true", async () => {
-    const lease = generateSchemaData(MonitoredLeaseSchema, {
+    const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
       status: "Active",
       awsAccountId: mockLeaseAccount.awsAccountId,
       userEmail: mockUser.email,
@@ -277,7 +277,7 @@ describe("InnovationSandbox.terminateLease()", () => {
   });
 
   test("does NOT write the Status tag when autoCleanup is false", async () => {
-    const lease = generateSchemaData(MonitoredLeaseSchema, {
+    const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
       status: "Active",
       awsAccountId: mockLeaseAccount.awsAccountId,
       userEmail: mockUser.email,
@@ -298,7 +298,7 @@ describe("InnovationSandbox.terminateLease()", () => {
   });
 
   test("status-tag failure does not block the lifecycle", async () => {
-    const lease = generateSchemaData(MonitoredLeaseSchema, {
+    const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
       status: "Active",
       awsAccountId: mockLeaseAccount.awsAccountId,
       userEmail: mockUser.email,
@@ -317,10 +317,9 @@ describe("InnovationSandbox.terminateLease()", () => {
   });
 
   test("propagates error when acquireLock fails with ResourceLockConflictError", async () => {
-    const { ResourceLockConflictError } = await import(
-      "@amzn/innovation-sandbox-commons/data/errors.js"
-    );
-    const lease = generateSchemaData(MonitoredLeaseSchema, {
+    const { ResourceLockConflictError } =
+      await import("@amzn/innovation-sandbox-commons/data/errors.js");
+    const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
       status: "Active",
       awsAccountId: mockLeaseAccount.awsAccountId,
       userEmail: mockUser.email,
@@ -347,7 +346,7 @@ describe("InnovationSandbox.terminateLease()", () => {
   });
 
   test("holds lock when sendIsbEvent fails for TERMINATE (critical intent)", async () => {
-    const lease = generateSchemaData(MonitoredLeaseSchema, {
+    const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
       status: "Active",
       awsAccountId: mockLeaseAccount.awsAccountId,
       userEmail: mockUser.email,

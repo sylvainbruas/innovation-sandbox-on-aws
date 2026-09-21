@@ -1,15 +1,16 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { LeaseTemplate } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template";
 import { Box, Icon, SpaceBetween } from "@cloudscape-design/components";
+
+import { LeaseTemplateView } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/model";
 
 /**
  * Reusable visibility cell component for displaying lease template visibility
  * @param item - The lease template item
  * @returns JSX element with visibility indicator
  */
-export const VisibilityIndicator = ({ item }: { item: LeaseTemplate }) => {
+export const VisibilityIndicator = ({ item }: { item: LeaseTemplateView }) => {
   const isPublic = item.visibility === "PUBLIC";
 
   return (

@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
-  CleanupReport,
   CleanupReportStep,
+  PersistedCleanupReport,
 } from "@amzn/innovation-sandbox-commons/data/cleanup-report/cleanup-report.js";
 import { DateTime } from "luxon";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -18,8 +18,8 @@ import {
 function reportWithSteps(
   steps: CleanupReportStep[],
   extra?: { cooldownSkippedBy?: string },
-): Partial<CleanupReport> {
-  return { steps, ...extra } as Partial<CleanupReport>;
+): Partial<PersistedCleanupReport> {
+  return { steps, ...extra } as Partial<PersistedCleanupReport>;
 }
 
 describe("computeStepDurations", () => {
@@ -29,7 +29,9 @@ describe("computeStepDurations", () => {
   });
 
   it("should return empty array for empty steps", () => {
-    const result = computeStepDurations(reportWithSteps([]) as CleanupReport);
+    const result = computeStepDurations(
+      reportWithSteps([]) as PersistedCleanupReport,
+    );
     expect(result).toEqual([]);
   });
 
@@ -56,7 +58,7 @@ describe("computeStepDurations", () => {
     ];
 
     const result = computeStepDurations(
-      reportWithSteps(steps) as CleanupReport,
+      reportWithSteps(steps) as PersistedCleanupReport,
     );
 
     expect(result).toHaveLength(4);
@@ -90,7 +92,7 @@ describe("computeStepDurations", () => {
     const result = computeStepDurations(
       reportWithSteps(steps, {
         cooldownSkippedBy: "admin@example.com",
-      }) as CleanupReport,
+      }) as PersistedCleanupReport,
     );
 
     expect(result[1]).toEqual({
@@ -120,7 +122,7 @@ describe("computeStepDurations", () => {
     ];
 
     const result = computeStepDurations(
-      reportWithSteps(steps) as CleanupReport,
+      reportWithSteps(steps) as PersistedCleanupReport,
     );
 
     expect(result[1]).toEqual({
@@ -142,7 +144,7 @@ describe("computeStepDurations", () => {
     ];
 
     const result = computeStepDurations(
-      reportWithSteps(steps) as CleanupReport,
+      reportWithSteps(steps) as PersistedCleanupReport,
     );
 
     expect(result[0]).toEqual({
@@ -159,7 +161,7 @@ describe("computeStepDurations", () => {
     ];
 
     const result = computeStepDurations(
-      reportWithSteps(steps) as CleanupReport,
+      reportWithSteps(steps) as PersistedCleanupReport,
     );
 
     expect(result).toHaveLength(1);

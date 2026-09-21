@@ -43,8 +43,8 @@ import {
 } from "@amzn/innovation-sandbox-frontend/domains/accounts/components/CleanupDetails.helpers";
 import { getStepDisplayName } from "@amzn/innovation-sandbox-frontend/domains/accounts/helpers";
 import {
-  CleanupRemainingResource,
-  CleanupReport,
+  CleanupRemainingResourceView,
+  CleanupReportView,
 } from "@amzn/innovation-sandbox-frontend/domains/accounts/types";
 
 // =============================================================================
@@ -58,7 +58,7 @@ function parseResourceName(arn: string): string {
   return lastSlash >= 0 ? resource.substring(lastSlash + 1) : resource;
 }
 
-function buildSummaryItems(report: CleanupReport) {
+function buildSummaryItems(report: CleanupReportView) {
   const items: Array<{ label: string; value: string | React.ReactNode }> = [];
 
   items.push({
@@ -121,7 +121,7 @@ const PAGE_SIZE_OPTIONS = [
 // =============================================================================
 
 interface CleanupDetailsProps {
-  report: CleanupReport;
+  report: CleanupReportView;
   onSkipCooldown?: () => void;
   isSkipping?: boolean;
 }
@@ -159,7 +159,7 @@ export const CleanupDetails = ({
 // Widget: Top-Level Details
 // =============================================================================
 
-const TopLevelDetails = ({ report }: { report: CleanupReport }) => {
+const TopLevelDetails = ({ report }: { report: CleanupReportView }) => {
   const validationWarning =
     report.status === "COMPLETED" && hasValidationWarning(report);
 
@@ -216,9 +216,7 @@ const SilentModeOutcome = ({
 }) => {
   if (isInProgress) {
     return (
-      <StatusIndicator type="in-progress">
-        Cleanup in progress
-      </StatusIndicator>
+      <StatusIndicator type="in-progress">Cleanup in progress</StatusIndicator>
     );
   }
   if (isFailed) {
@@ -241,7 +239,7 @@ const SilentModeOutcome = ({
   );
 };
 
-const CleanupStepsWidget = ({ report }: { report: CleanupReport }) => {
+const CleanupStepsWidget = ({ report }: { report: CleanupReportView }) => {
   const visibleSteps = isSilentMode(report)
     ? report.steps.filter((step) => !HIDDEN_SILENT_STEPS.has(step.name))
     : report.steps;
@@ -376,7 +374,7 @@ const ResourceSummaryWidget = ({
   onSkipCooldown,
   isSkipping,
 }: {
-  report: CleanupReport;
+  report: CleanupReportView;
   onSkipCooldown?: () => void;
   isSkipping?: boolean;
 }) => {
@@ -386,8 +384,7 @@ const ResourceSummaryWidget = ({
     ? report.steps.find((s) => s.name === "account-cooldown")
     : undefined;
   const cooldownHours = cooldownStep?.meta?.cooldownDurationHours as
-    | number
-    | undefined;
+    number | undefined;
 
   const cooldownBanner = isCoolingDown ? (
     <Box textAlign="center" padding={{ vertical: "s" }}>
@@ -530,7 +527,7 @@ const ResourceSummaryWidget = ({
 // Widget: Post-Cleanup Validation
 // =============================================================================
 
-const PostCleanupValidation = ({ report }: { report: CleanupReport }) => {
+const PostCleanupValidation = ({ report }: { report: CleanupReportView }) => {
   const resourceSummary = report.resourceSummary!;
   const afterCooldown = resourceSummary.afterCooldown!;
   const remainingResources = resourceSummary.remainingResources ?? [];
@@ -719,7 +716,7 @@ const ResourceTypeTable = ({
 const PaginatedResourceTable = ({
   items: allItems,
 }: {
-  items: CleanupRemainingResource[];
+  items: CleanupRemainingResourceView[];
 }) => {
   const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
   const [filterText, setFilterText] = useState("");
@@ -759,30 +756,22 @@ const PaginatedResourceTable = ({
         {
           id: "type",
           header: "Type",
-          cell: (r: CleanupRemainingResource) => r.resourceType,
+          cell: (r: CleanupRemainingResourceView) => r.resourceType,
         },
         {
           id: "name",
           header: "Name",
-          cell: (r: CleanupRemainingResource) => parseResourceName(r.arn),
+          cell: (r: CleanupRemainingResourceView) => parseResourceName(r.arn),
         },
         {
           id: "region",
           header: "Region",
-          cell: (r: CleanupRemainingResource) => r.region,
+          cell: (r: CleanupRemainingResourceView) => r.region,
         },
         {
           id: "copy",
           header: "",
-          cell: (r: CleanupRemainingResource) => (
-            <CopyToClipboard
-              variant="icon"
-              textToCopy={r.arn}
-              copyButtonAriaLabel={`Copy ARN for ${parseResourceName(r.arn)}`}
-              copySuccessText="ARN copied"
-              copyErrorText="Failed to copy"
-            />
-          ),
+          cell: renderResourceArnCopyCell,
           width: 50,
         },
       ]}
@@ -837,6 +826,16 @@ const PaginatedResourceTable = ({
     />
   );
 };
+
+const renderResourceArnCopyCell = (resource: CleanupRemainingResourceView) => (
+  <CopyToClipboard
+    variant="icon"
+    textToCopy={resource.arn}
+    copyButtonAriaLabel={`Copy ARN for ${parseResourceName(resource.arn)}`}
+    copySuccessText="ARN copied"
+    copyErrorText="Failed to copy"
+  />
+);
 
 // =============================================================================
 // Badge Component

@@ -1,11 +1,11 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { ConfigSchemas } from "@amzn/innovation-sandbox-commons/data/config/config.js";
 import { GlobalConfig } from "@amzn/innovation-sandbox-commons/data/global-config/global-config.js";
 import { IsbServices } from "@amzn/innovation-sandbox-commons/isb-services/index.js";
 import { searchableAccountProperties } from "@amzn/innovation-sandbox-commons/observability/logging.js";
 import { fromTemporaryIsbSandboxAccountCredentials } from "@amzn/innovation-sandbox-commons/utils/cross-account-roles.js";
+import { ConfigSchemas } from "@amzn/innovation-sandbox-shared/types/configuration.js";
 import { GetCallerIdentityCommand, STSClient } from "@aws-sdk/client-sts";
 
 import type { CleanupContext } from "./types.js";

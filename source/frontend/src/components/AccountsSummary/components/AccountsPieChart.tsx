@@ -1,17 +1,15 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
+import { PieChart } from "@cloudscape-design/components";
 import { useMemo } from "react";
 
-import {
-  SandboxAccount,
-  SandboxAccountStatus,
-} from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account";
 import { convertAccountsToSummary } from "@amzn/innovation-sandbox-frontend/components/AccountsSummary/helpers";
-import { PieChart } from "@cloudscape-design/components";
+import { SandboxAccountView } from "@amzn/innovation-sandbox-frontend/domains/accounts/model";
+import { SandboxAccountStatus } from "@amzn/innovation-sandbox-shared/types/sandbox-account";
 
 interface AccountsPieChartProps {
-  accounts: SandboxAccount[];
+  accounts: SandboxAccountView[];
   filter?: SandboxAccountStatus;
   onClick?: (status?: SandboxAccountStatus) => void;
 }

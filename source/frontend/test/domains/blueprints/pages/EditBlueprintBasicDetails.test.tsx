@@ -9,7 +9,12 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 
 import { showSuccessToast } from "@amzn/innovation-sandbox-frontend/components/Toast";
 import { EditBlueprintBasicDetails } from "@amzn/innovation-sandbox-frontend/domains/blueprints/pages/EditBlueprintBasicDetails";
+import type { UpdateBlueprintRequest } from "@amzn/innovation-sandbox-frontend/domains/blueprints/types";
 import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
+import {
+  createBlueprint,
+  createBlueprintWithStackSets,
+} from "@amzn/innovation-sandbox-frontend/mocks/factories/blueprintFactory";
 import { mockBlueprint } from "@amzn/innovation-sandbox-frontend/mocks/handlers/blueprintHandlers";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
 import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
@@ -77,9 +82,17 @@ describe("EditBlueprintBasicDetails", () => {
       http.put(
         `${getConfig().ApiUrl}/blueprints/${mockBlueprintId}`,
         async ({ request }) => {
-          const data = await request.json();
+          const data = (await request.json()) as UpdateBlueprintRequest;
           submitSpy(data);
-          return HttpResponse.json({ status: "success", data });
+          return HttpResponse.json({
+            status: "success",
+            data: createBlueprintWithStackSets({
+              blueprint: createBlueprint({
+                ...mockBlueprint.blueprint,
+                ...data,
+              }),
+            }),
+          });
         },
       ),
     );

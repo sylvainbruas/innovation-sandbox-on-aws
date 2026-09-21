@@ -4,7 +4,7 @@ import { Logger } from "@aws-lambda-powertools/logger";
 import { Tracer } from "@aws-lambda-powertools/tracer";
 import type { Context } from "aws-lambda";
 
-import { LeaseTemplate } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
+import { PersistedLeaseTemplate } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
 import {
   collect,
   stream,
@@ -216,7 +216,7 @@ function collectScpMetrics(env: DeploymentSummaryLambdaEnvironment) {
 
 function collectMultiUserLeases(
   env: DeploymentSummaryLambdaEnvironment,
-  leaseTemplates: LeaseTemplate[],
+  leaseTemplates: PersistedLeaseTemplate[],
 ) {
   return collectMetric(
     logger,

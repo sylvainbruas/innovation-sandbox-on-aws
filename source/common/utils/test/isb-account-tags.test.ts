@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { MonitoredLeaseSchema } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
+import { PersistedMonitoredLeaseSchema } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
 import {
   buildLeaseTagSet,
@@ -30,13 +30,13 @@ describe("IsbStatusTagValueSchema", () => {
 });
 
 describe("buildLeaseTagSet", () => {
-  const leaseWithGroup = generateSchemaData(MonitoredLeaseSchema, {
+  const leaseWithGroup = generateSchemaData(PersistedMonitoredLeaseSchema, {
     uuid: "00000000-0000-4000-8000-000000000001",
     userEmail: "user@example.com",
     originalLeaseTemplateUuid: "00000000-0000-4000-8000-000000000002",
     costReportGroup: "team-alpha",
   });
-  const leaseWithoutGroup = generateSchemaData(MonitoredLeaseSchema, {
+  const leaseWithoutGroup = generateSchemaData(PersistedMonitoredLeaseSchema, {
     uuid: "00000000-0000-4000-8000-000000000001",
     userEmail: "user@example.com",
     originalLeaseTemplateUuid: "00000000-0000-4000-8000-000000000002",

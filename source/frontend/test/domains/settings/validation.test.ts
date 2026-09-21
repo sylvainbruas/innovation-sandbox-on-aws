@@ -8,10 +8,11 @@ import {
   ConfigSchemas,
   ConfigWriteSchemas,
 } from "@amzn/innovation-sandbox-frontend/domains/settings/validation";
+import type { LeasesConfigInput } from "@amzn/innovation-sandbox-shared/types/configuration.js";
 
 // A complete, valid leases write payload reused across tests. Individual tests
 // override single fields to exercise specific rules.
-const validLeases = {
+const validLeases: LeasesConfigInput = {
   requireMaxBudget: true,
   maxBudget: 50,
   requireMaxDuration: true,
@@ -23,6 +24,7 @@ const validLeases = {
   maxLeaseRequestsPerWindow: 10,
   leaseSharingEnabled: false,
   enablePrincipalSearch: true,
+  groupAssignmentMode: "ALL",
 };
 
 const validWritePayloads = {
@@ -69,6 +71,7 @@ describe("read schemas (defaults-first)", () => {
       maxLeasesPerUser: 3,
       enablePrincipalSearch: true,
       leaseSharingEnabled: false,
+      groupAssignmentMode: "NONE",
     });
   });
 

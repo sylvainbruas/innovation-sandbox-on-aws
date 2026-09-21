@@ -1,11 +1,11 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { MonitoredLease } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
+import { PersistedMonitoredLease } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import {
   SandboxAccountStatus,
   SandboxAccountStatusSchema,
-} from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
+} from "@amzn/innovation-sandbox-shared/types/sandbox-account.js";
 
 /**
  * Semantic suffixes for the ISB account tags. The tag key written to an account
@@ -62,7 +62,7 @@ export const ISB_LEASE_TAG_SUFFIXES: IsbLeaseTagSuffix[] =
 export type IsbLeaseTagSet = { readonly [K in IsbLeaseTagSuffix]: string };
 
 export function buildLeaseTagSet(
-  lease: MonitoredLease,
+  lease: PersistedMonitoredLease,
   userId: string,
 ): IsbLeaseTagSet {
   return {

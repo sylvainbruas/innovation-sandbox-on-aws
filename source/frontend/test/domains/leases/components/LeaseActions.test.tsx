@@ -4,11 +4,8 @@
 import { fireEvent, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-import {
-  Lease,
-  LeaseWithLeaseId,
-} from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import { LeaseActions } from "@amzn/innovation-sandbox-frontend/domains/leases/components/LeaseActions";
+import { LeaseView } from "@amzn/innovation-sandbox-frontend/domains/leases/model";
 import { ModalProvider } from "@amzn/innovation-sandbox-frontend/hooks/useModal";
 import { createConfiguration } from "@amzn/innovation-sandbox-frontend/mocks/factories/configurationFactory";
 import {
@@ -95,7 +92,7 @@ const defaultLeasesConfig = {
   enablePrincipalSearch: true,
 };
 
-const withLeaseId = (lease: Lease): LeaseWithLeaseId => ({
+const withLeaseId = (lease: LeaseView): LeaseView => ({
   ...lease,
   leaseId: "encoded-lease-id",
 });
@@ -103,7 +100,7 @@ const withLeaseId = (lease: Lease): LeaseWithLeaseId => ({
 const adminUser = { ...ownerUser, roles: ["Admin" as const] };
 
 const renderActions = (
-  lease: LeaseWithLeaseId,
+  lease: LeaseView,
   { includeElevatedActions = false } = {},
 ) =>
   renderWithQueryClient(
@@ -194,6 +191,53 @@ describe("LeaseActions", () => {
   describe("freeze / unfreeze", () => {
     beforeEach(() => {
       mockUseUser.mockReturnValue({ user: adminUser, isAdmin: true });
+    });
+
+    test("renders Login for a manager on a frozen lease", () => {
+      mockUseUser.mockReturnValue({
+        user: { ...ownerUser, roles: ["Manager" as const] },
+        isManager: true,
+      });
+
+      renderActions(withLeaseId(createActiveLease({ status: "Frozen" })));
+
+      expect(screen.getByText(/Login to account/i)).toBeInTheDocument();
+    });
+
+    test("does not render Login for a manager on a provisioning lease", () => {
+      mockUseUser.mockReturnValue({
+        user: { ...ownerUser, roles: ["Manager" as const] },
+        isManager: true,
+      });
+
+      renderActions(withLeaseId(createActiveLease({ status: "Provisioning" })));
+
+      expect(screen.queryByText(/Login to account/i)).not.toBeInTheDocument();
+    });
+
+    test("renders Login for an admin on a provisioning lease", () => {
+      mockUseUser.mockReturnValue({ user: adminUser, isAdmin: true });
+
+      renderActions(
+        withLeaseId(
+          createActiveLease({
+            awsAccountId: "111122223333",
+            status: "Provisioning",
+          }),
+        ),
+      );
+
+      expect(
+        screen.getByText("Login to account 111122223333"),
+      ).toBeInTheDocument();
+    });
+
+    test("does not render Login for an admin on an expired lease", () => {
+      mockUseUser.mockReturnValue({ user: adminUser, isAdmin: true });
+
+      renderActions(withLeaseId(createExpiredLease()));
+
+      expect(screen.queryByText(/Login to account/i)).not.toBeInTheDocument();
     });
 
     test("renders the freeze button for an admin on an active lease", () => {

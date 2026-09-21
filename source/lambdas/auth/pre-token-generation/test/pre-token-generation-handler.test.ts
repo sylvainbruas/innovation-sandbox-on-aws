@@ -6,12 +6,12 @@ import { PreTokenGenerationEnvironmentSchema } from "@amzn/innovation-sandbox-co
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
 import { mockContext } from "@amzn/innovation-sandbox-commons/test/lambdas/fixtures.js";
 import { bulkStubEnv } from "@amzn/innovation-sandbox-commons/test/lambdas/utils.js";
+import type { PreTokenGenerationV2Event } from "@amzn/innovation-sandbox-pre-token-generation/types.js";
 import {
   COGNITO_IDC_USER_ID_CLAIM,
   COGNITO_ISB_ROLES_CLAIM,
   IdcIdentitySchema,
-} from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
-import type { PreTokenGenerationV2Event } from "@amzn/innovation-sandbox-pre-token-generation/types.js";
+} from "@amzn/innovation-sandbox-shared/utils/auth-utils.js";
 
 // Mock IsbServices before importing handler
 const mockGetUserFromEmail = vi.fn();

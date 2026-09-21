@@ -2,11 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 import { z } from "zod";
 
-import { ThresholdActionSchema } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
-import { LeaseKeySchema } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import { EventDetailTypes } from "@amzn/innovation-sandbox-commons/events/index.js";
 import { IsbEvent } from "@amzn/innovation-sandbox-commons/sdk-clients/event-bridge-client.js";
 import { AwsAccountIdSchema } from "@amzn/innovation-sandbox-commons/utils/zod.js";
+import { ThresholdActionSchema } from "@amzn/innovation-sandbox-shared/types/lease-template.js";
+import { LeaseKeySchema } from "@amzn/innovation-sandbox-shared/types/lease.js";
 
 export const LeaseExpirationAlertEventSchema = z.object({
   leaseId: LeaseKeySchema,

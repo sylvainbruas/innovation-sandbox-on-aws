@@ -11,7 +11,7 @@ import {
   Stack,
   Token,
 } from "aws-cdk-lib";
-import { RestApi as ApiGatewayRestApi } from "aws-cdk-lib/aws-apigateway";
+import { RestApiBase as ApiGatewayRestApi } from "aws-cdk-lib/aws-apigateway";
 import {
   AllowedMethods,
   CachePolicy,

@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 import { describe, expect, test } from "vitest";
 
-import { SandboxAccountSchema } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
+import { PersistedSandboxAccountSchema } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
 
-describe("SandboxAccount schema migration", () => {
+describe("PersistedSandboxAccount schema migration", () => {
   test("V1 records without new fields parse successfully", () => {
     const v1Account = {
       awsAccountId: "123456789012",
@@ -21,7 +21,7 @@ describe("SandboxAccount schema migration", () => {
       },
     };
 
-    const result = SandboxAccountSchema.safeParse(v1Account);
+    const result = PersistedSandboxAccountSchema.safeParse(v1Account);
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.cleanupExecutionContext).toEqual(
@@ -48,7 +48,7 @@ describe("SandboxAccount schema migration", () => {
       },
     };
 
-    const result = SandboxAccountSchema.safeParse(v2Account);
+    const result = PersistedSandboxAccountSchema.safeParse(v2Account);
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.activeCleanup?.status).toBe("NUKE_PHASE_1");
@@ -84,7 +84,7 @@ describe("SandboxAccount schema migration", () => {
       },
     };
 
-    const result = SandboxAccountSchema.safeParse(v2AccountBothFields);
+    const result = PersistedSandboxAccountSchema.safeParse(v2AccountBothFields);
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.cleanupExecutionContext).toEqual(
@@ -120,7 +120,7 @@ describe("SandboxAccount schema migration", () => {
         },
       };
 
-      const result = SandboxAccountSchema.safeParse(account);
+      const result = PersistedSandboxAccountSchema.safeParse(account);
       expect(result.success).toBe(true);
     }
   });
@@ -145,7 +145,7 @@ describe("SandboxAccount schema migration", () => {
         },
       };
 
-      const result = SandboxAccountSchema.safeParse(account);
+      const result = PersistedSandboxAccountSchema.safeParse(account);
       expect(result.success).toBe(true);
     }
   });
@@ -175,7 +175,7 @@ describe("SandboxAccount schema migration", () => {
         },
       };
 
-      const result = SandboxAccountSchema.safeParse(account);
+      const result = PersistedSandboxAccountSchema.safeParse(account);
       expect(result.success).toBe(false);
     }
   });
@@ -191,7 +191,7 @@ describe("SandboxAccount schema migration", () => {
       },
     };
 
-    const result = SandboxAccountSchema.safeParse(v1AccountNoContext);
+    const result = PersistedSandboxAccountSchema.safeParse(v1AccountNoContext);
     expect(result.success).toBe(true);
   });
 
@@ -212,7 +212,7 @@ describe("SandboxAccount schema migration", () => {
       },
     };
 
-    const result = SandboxAccountSchema.safeParse(v2AccountNoLock);
+    const result = PersistedSandboxAccountSchema.safeParse(v2AccountNoLock);
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.resourceLock).toBeUndefined();
@@ -243,7 +243,7 @@ describe("SandboxAccount schema migration", () => {
       },
     };
 
-    const result = SandboxAccountSchema.safeParse(v2AccountWithLock);
+    const result = PersistedSandboxAccountSchema.safeParse(v2AccountWithLock);
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.resourceLock).toBeDefined();

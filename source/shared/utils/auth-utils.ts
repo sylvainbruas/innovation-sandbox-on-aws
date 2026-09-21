@@ -1,8 +1,8 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { enumErrorMap } from "@amzn/innovation-sandbox-commons/utils/zod.js";
 import { z } from "zod";
+import { enumErrorMap } from "./zod.js";
 
 export const IsbRoleSchema = z.enum(["Admin", "Manager", "User"], {
   error: enumErrorMap,

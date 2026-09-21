@@ -5,7 +5,7 @@ import { randomUUID } from "crypto";
 import { DateTime } from "luxon";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { GroupMembershipCache } from "@amzn/innovation-sandbox-commons/data/principal/principal.js";
+import { PersistedGroupMembershipCache } from "@amzn/innovation-sandbox-commons/data/principal/principal.js";
 import {
   GROUP_MEMBERSHIP_CACHE_TTL_DAYS,
   getGroupMemberships,
@@ -40,12 +40,12 @@ describe("getGroupMemberships", () => {
     logger: mockLogger,
   };
 
-  function getFirstCacheWritten(): GroupMembershipCache {
+  function getFirstCacheWritten(): PersistedGroupMembershipCache {
     const calls = mockPrincipalStore.putGroupMembershipCache.mock.calls;
     if (calls.length === 0 || !calls[0]) {
       throw new Error("putGroupMembershipCache was not called");
     }
-    return calls[0][0] as GroupMembershipCache;
+    return calls[0][0] as PersistedGroupMembershipCache;
   }
 
   beforeEach(() => {
@@ -60,7 +60,7 @@ describe("getGroupMemberships", () => {
   describe("cache hit", () => {
     it("returns cached groupIds without calling IDC when ttl is in the future", async () => {
       const futureTtl = Math.floor(now().valueOf() / 1000) + 60 * 60 * 23; // 23h from now
-      const cached: GroupMembershipCache = {
+      const cached: PersistedGroupMembershipCache = {
         pk: `user#${testUserId}`,
         sk: "groupMembership",
         groupIds: [testGroupId1, testGroupId2],

@@ -28,10 +28,10 @@ import {
   WAF_HUMAN_CALLS_METRIC_NAME,
   WAF_M2M_CALLS_METRIC_NAME,
 } from "@amzn/innovation-sandbox-commons/observability/waf-auth-metrics";
-import { IDENTITY_HEADER } from "@amzn/innovation-sandbox-commons/utils/auth-utils";
 import { getContextFromMapping } from "@amzn/innovation-sandbox-infrastructure/helpers/cdk-context";
 import { addCfnGuardSuppression } from "@amzn/innovation-sandbox-infrastructure/helpers/cfn-guard";
 import { isDevMode } from "@amzn/innovation-sandbox-infrastructure/helpers/deployment-mode";
+import { IDENTITY_HEADER } from "@amzn/innovation-sandbox-shared/utils/auth-utils";
 import { ServicePrincipal } from "aws-cdk-lib/aws-iam";
 
 export interface WafProps {

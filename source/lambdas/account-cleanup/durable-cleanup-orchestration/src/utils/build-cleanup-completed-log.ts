@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
-  CleanupReport,
   CleanupReportStep,
+  PersistedCleanupReport,
 } from "@amzn/innovation-sandbox-commons/data/cleanup-report/cleanup-report.js";
 import { SubscribableLog } from "@amzn/innovation-sandbox-commons/observability/log-types.js";
 import { DateTime } from "luxon";
@@ -94,7 +94,7 @@ function summarizeCooldown(steps: AccountCleanupCompletedStep[]): {
  * the RE index cleared during cooldown. {} when either snapshot is missing.
  */
 function computeClearedDuringCooldown(
-  resourceSummary: CleanupReport["resourceSummary"],
+  resourceSummary: PersistedCleanupReport["resourceSummary"],
 ): Record<string, number> {
   const afterCleanup = resourceSummary?.afterCleanup?.byType;
   const afterCooldown = resourceSummary?.afterCooldown?.byType;
@@ -128,7 +128,7 @@ function computeClearedDuringCooldown(
  * the skip-cooldown API when an admin skips the cooldown).
  */
 export function computeStepDurations(
-  report: CleanupReport | undefined,
+  report: PersistedCleanupReport | undefined,
 ): AccountCleanupCompletedStep[] {
   const rawSteps: CleanupReportStep[] = report?.steps ?? [];
   if (rawSteps.length === 0) return [];

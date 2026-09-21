@@ -6,11 +6,12 @@ import { z } from "zod";
 import {
   MAX_ASSIGNMENTS,
   MAX_USER_MANAGED_ASSIGNMENTS,
-} from "@amzn/innovation-sandbox-commons/data/lease/lease";
+} from "@amzn/innovation-sandbox-shared/types/lease.js";
+import { PrincipalTypeSchema } from "@amzn/innovation-sandbox-shared/types/principal.js";
 
 const AssignmentPrincipalRefSchema = z.object({
   principalId: z.string().min(1),
-  principalType: z.enum(["USER", "GROUP"]),
+  principalType: PrincipalTypeSchema,
   // Display fields kept alongside the wire-required fields so the wizard
   // step can render the staged-rows table without re-fetching. Stripped
   // from the POST body before submit.

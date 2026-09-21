@@ -6,7 +6,7 @@ import {
   stream,
 } from "@amzn/innovation-sandbox-commons/data/utils.js";
 import { IdcService } from "@amzn/innovation-sandbox-commons/isb-services/idc-service.js";
-import { getUserEmail } from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
+import { getUserEmail } from "@amzn/innovation-sandbox-shared/utils/auth-utils.js";
 
 export async function allManagers(idcService: IdcService) {
   const managers = await collect(

@@ -1,16 +1,15 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import {
-  CleanupStatus,
-  SandboxAccount,
-} from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account";
 import { StatusIndicatorProps } from "@cloudscape-design/components/status-indicator";
+
+import { SandboxAccountView } from "@amzn/innovation-sandbox-frontend/domains/accounts/model";
+import { CleanupStatus } from "@amzn/innovation-sandbox-shared/types/sandbox-account";
 
 type GenerateAccountBreadcrumbArgs = {
   isLoading?: boolean;
   isError?: boolean;
-  account?: SandboxAccount;
+  account?: SandboxAccountView;
 };
 
 export const generateAccountBreadcrumb = ({
@@ -50,13 +49,13 @@ export const generateAccountBreadcrumb = ({
  * EXPIRED lock is deliberately not "active" — that is the stuck-execution
  * case the retry exists to recover, so it must not block the action.
  */
-export const isCleanupLockActive = (account: SandboxAccount): boolean =>
+export const isCleanupLockActive = (account: SandboxAccountView): boolean =>
   !!account.resourceLock &&
   new Date(account.resourceLock.expiresAt).getTime() > Date.now();
 
 export const accountStatusSortingComparator = (
-  a: SandboxAccount,
-  b: SandboxAccount,
+  a: SandboxAccountView,
+  b: SandboxAccountView,
 ): number => {
   const statusOrder = {
     Quarantine: 1,

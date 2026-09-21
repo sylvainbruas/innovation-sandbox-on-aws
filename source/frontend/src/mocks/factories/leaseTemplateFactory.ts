@@ -2,15 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
-  LeaseTemplate,
-  LeaseTemplateSchema,
-} from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
-import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
+  LeaseTemplateViewSchema,
+  type LeaseTemplateView,
+} from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/model";
+import { generateSchemaData } from "@amzn/innovation-sandbox-shared/test/generate-schema-data.js";
 
-export function createLeaseTemplate(
-  overrides?: Partial<LeaseTemplate>,
-): LeaseTemplate {
-  return generateSchemaData(LeaseTemplateSchema, {
+function defaultLeaseTemplate(
+  overrides?: Partial<LeaseTemplateView>,
+): LeaseTemplateView {
+  return generateSchemaData(LeaseTemplateViewSchema, {
     requiresApproval: false,
     maxSpend: 100,
     leaseDurationInHours: 48,
@@ -19,14 +19,19 @@ export function createLeaseTemplate(
   });
 }
 
+export function createLeaseTemplate(
+  overrides?: Partial<LeaseTemplateView>,
+): LeaseTemplateView {
+  return defaultLeaseTemplate(overrides);
+}
+
 export function createAdvancedLeaseTemplate(
-  overrides?: Partial<LeaseTemplate>,
-): LeaseTemplate {
-  return generateSchemaData(LeaseTemplateSchema, {
+  overrides?: Partial<LeaseTemplateView>,
+): LeaseTemplateView {
+  return defaultLeaseTemplate({
     requiresApproval: true,
     maxSpend: 500,
     leaseDurationInHours: 72,
-    costReportGroup: "default-group",
     budgetThresholds: [{ dollarsSpent: 250, action: "ALERT" }],
     durationThresholds: [{ hoursRemaining: 24, action: "ALERT" }],
     ...overrides,

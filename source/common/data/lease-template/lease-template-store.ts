@@ -6,27 +6,29 @@ import {
   PutResult,
   SingleItemResult,
 } from "@amzn/innovation-sandbox-commons/data/common-types.js";
-import { LeaseTemplate } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
+import { PersistedLeaseTemplate } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
 import { Transaction } from "@amzn/innovation-sandbox-commons/utils/transactions.js";
 
 export abstract class LeaseTemplateStore {
-  abstract create(leaseTemplate: LeaseTemplate): Promise<LeaseTemplate>;
+  abstract create(
+    leaseTemplate: PersistedLeaseTemplate,
+  ): Promise<PersistedLeaseTemplate>;
 
   abstract update(
-    leaseTemplate: LeaseTemplate,
-    expected?: LeaseTemplate,
-  ): Promise<PutResult<LeaseTemplate>>;
+    leaseTemplate: PersistedLeaseTemplate,
+    expected?: PersistedLeaseTemplate,
+  ): Promise<PutResult<PersistedLeaseTemplate>>;
 
   transactionalUpdate(
-    leaseTemplate: LeaseTemplate,
-  ): Transaction<PutResult<LeaseTemplate>> {
+    leaseTemplate: PersistedLeaseTemplate,
+  ): Transaction<PutResult<PersistedLeaseTemplate>> {
     return new Transaction({
       beginTransaction: async () => {
         return this.update(leaseTemplate);
       },
       rollbackTransaction: async (putResult) => {
         await this.update(
-          putResult.oldItem as LeaseTemplate,
+          putResult.oldItem as PersistedLeaseTemplate,
           putResult.newItem,
         );
       },
@@ -44,7 +46,7 @@ export abstract class LeaseTemplateStore {
   abstract findAll(props?: {
     pageIdentifier?: string;
     pageSize?: number;
-  }): Promise<PaginatedQueryResult<LeaseTemplate>>;
+  }): Promise<PaginatedQueryResult<PersistedLeaseTemplate>>;
 
   /**
    * Like findAll, but never discloses PRIVATE templates to non-elevated callers
@@ -57,14 +59,14 @@ export abstract class LeaseTemplateStore {
     pageIdentifier?: string;
     pageSize?: number;
     includePrivate: boolean;
-  }): Promise<PaginatedQueryResult<LeaseTemplate>>;
+  }): Promise<PaginatedQueryResult<PersistedLeaseTemplate>>;
 
-  abstract get(uuid: string): Promise<SingleItemResult<LeaseTemplate>>;
+  abstract get(uuid: string): Promise<SingleItemResult<PersistedLeaseTemplate>>;
 
   abstract findByManager(props: {
     manager: string;
     pageIdentifier?: string;
-  }): Promise<PaginatedQueryResult<LeaseTemplate>>;
+  }): Promise<PaginatedQueryResult<PersistedLeaseTemplate>>;
 
   /**
    * Finds lease templates that reference a specific blueprint.

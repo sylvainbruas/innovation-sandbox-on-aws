@@ -11,7 +11,7 @@ import { IsbIdcStack } from "@amzn/innovation-sandbox-infrastructure/isb-idc-sta
 import { IsbM2mClientStack } from "@amzn/innovation-sandbox-infrastructure/isb-m2m-client-stack";
 import { SolutionsEngineeringSynthesizer } from "@amzn/innovation-sandbox-infrastructure/stack-synthesizers/solutions-engineering-synthesizer";
 
-const app = new cdk.App();
+const app = new cdk.App({ autoSynth: false });
 
 const context = getSolutionContext(app.node);
 
@@ -49,3 +49,5 @@ new IsbM2mClientStack(app, `${context.stackPrefix}-M2mClient`, {
   description: `(${context.solutionId}-M2mClientStack) ${context.solutionName} ${context.version}`,
   synthesizer: synthesizer,
 });
+
+app.synth();

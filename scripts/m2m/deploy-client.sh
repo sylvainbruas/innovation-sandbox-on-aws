@@ -206,14 +206,12 @@ fi
 
 STACK_NAME="${STACK_PREFIX}-M2mClient-${ROLE}-${CLIENT_NAME}"
 SYNTH_STACK="${STACK_PREFIX}-M2mClient"
-REST_API_ID_SSM_PATH="InnovationSandbox_${NAMESPACE}_Compute_RestApiId"
 
 # When synthesizing in-tree, the synth output lands at this path.
 TEMPLATE_PATH=""
 [[ -z "$TEMPLATE" ]] && TEMPLATE_PATH="${PROJECT_ROOT}/source/infrastructure/cdk.out/${SYNTH_STACK}.template.json"
 
 debug "Stack name:        ${STACK_NAME}"
-debug "SSM lookup path:   ${REST_API_ID_SSM_PATH}"
 debug "Region:            ${REGION}"
 debug "Profile:           ${PROFILE:-<default chain>}"
 if [[ -n "$TEMPLATE" ]]; then
@@ -255,26 +253,8 @@ if ! confirm "Deploy stack ${STACK_NAME}?"; then
   exit 0
 fi
 
-# Resolve API Gateway REST API ID from the Compute stack's SSM parameter
-log_info "Looking up API Gateway REST API ID at SSM ${REST_API_ID_SSM_PATH}..."
 AWS_BASE_ARGS=(--region "$REGION")
 [[ -n "$PROFILE" ]] && AWS_BASE_ARGS+=(--profile "$PROFILE")
-
-set +e
-REST_API_ID=$(aws ssm get-parameter \
-  --name "$REST_API_ID_SSM_PATH" \
-  --query "Parameter.Value" \
-  --output text \
-  ${AWS_BASE_ARGS[@]+"${AWS_BASE_ARGS[@]}"} 2>&1)
-SSM_RC=$?
-set -e
-if [[ $SSM_RC -ne 0 ]]; then
-  log_err "Failed to read SSM parameter ${REST_API_ID_SSM_PATH}:"
-  log_err "  ${REST_API_ID}"
-  log_err "Verify the Compute stack is deployed in this region/account and the namespace is correct."
-  exit 1
-fi
-log_ok "Resolved REST API ID: ${REST_API_ID}"
 
 # Resolve the template source: in-tree CDK synth or supplied --template.
 if [[ -z "$TEMPLATE" ]]; then
@@ -293,13 +273,15 @@ if [[ -z "$TEMPLATE" ]]; then
   log_ok "Synthesis complete"
 fi
 
-# Build CFN parameter overrides
+# Build CFN parameter overrides. RestApiIdSsmParam is the NAME of the Compute
+# stack's SSM parameter; the template reads it as AWS::SSM::Parameter::Value<String>,
+# so CloudFormation re-resolves the current API ID on every deploy.
 PARAM_OVERRIDES=(
   "Namespace=${NAMESPACE}"
   "ClientName=${CLIENT_NAME}"
   "Role=${ROLE}"
   "TrustedPrincipal=${TRUSTED_PRINCIPAL}"
-  "RestApiId=${REST_API_ID}"
+  "RestApiIdSsmParam=InnovationSandbox_${NAMESPACE}_Compute_RestApiId"
 )
 [[ -n "$MAX_SESSION_DURATION" ]] && PARAM_OVERRIDES+=("MaxSessionDuration=${MAX_SESSION_DURATION}")
 

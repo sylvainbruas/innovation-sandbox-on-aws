@@ -2,18 +2,23 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { UseQueryResult } from "@tanstack/react-query";
+import { DateTime } from "luxon";
 
+import type {
+  LeaseView,
+  MonitoredLeaseView,
+} from "@amzn/innovation-sandbox-frontend/domains/leases/model";
+import { getLeaseExpiryInfo } from "@amzn/innovation-sandbox-frontend/helpers/LeaseExpiryInfo";
 import {
   CriticalLockIntents,
+  isMonitoredLease,
   Lease,
   LeaseStatus,
-} from "@amzn/innovation-sandbox-commons/data/lease/lease";
+} from "@amzn/innovation-sandbox-shared/types/lease.js";
 import {
-  type IsbUser,
   getUserEmail,
-} from "@amzn/innovation-sandbox-commons/utils/auth-utils";
-import { getLeaseExpiryInfo } from "@amzn/innovation-sandbox-frontend/helpers/LeaseExpiryInfo";
-import { DateTime } from "luxon";
+  type IsbUser,
+} from "@amzn/innovation-sandbox-shared/utils/auth-utils";
 
 /** Formats a lease into a descriptive display name: `<templateName> (<first8 of uuid>)`. */
 export const getLeaseDisplayName = (lease: {
@@ -83,6 +88,36 @@ export const isLeaseOwner = (
 ): boolean => {
   if (!user) return false;
   return lease.userEmail === getUserEmail(user);
+};
+
+export interface LeaseLoginPermissions {
+  readonly isAdmin: boolean;
+  readonly isManager: boolean;
+}
+
+/**
+ * Determines whether the viewer can open the AWS console for a current lease.
+ * Expired leases are always excluded because their accounts may have been
+ * reassigned to a different lease.
+ */
+export const canLoginToLease = (
+  lease: LeaseView,
+  { isAdmin, isManager }: LeaseLoginPermissions,
+): lease is MonitoredLeaseView => {
+  if (!isMonitoredLease(lease)) {
+    return false;
+  }
+
+  switch (lease.status) {
+    case "Active":
+      return true;
+    case "Frozen":
+      return isAdmin || isManager;
+    case "Provisioning":
+      return isAdmin;
+    default:
+      return false;
+  }
 };
 
 // helper function to turn labels like "PendingApproval" into "Pending Approval"

@@ -17,14 +17,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { DateTime } from "luxon";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import {
-  isExpiredLease,
-  isFrozenLease,
-  Lease,
-  type LeaseLockIntent,
-  MAX_ASSIGNMENTS,
-  MAX_USER_MANAGED_ASSIGNMENTS,
-} from "@amzn/innovation-sandbox-commons/data/lease/lease";
 import { ErrorPanel } from "@amzn/innovation-sandbox-frontend/components/ErrorPanel";
 import { Loader } from "@amzn/innovation-sandbox-frontend/components/Loader";
 import {
@@ -37,12 +29,25 @@ import {
   useUpdateAssignments,
 } from "@amzn/innovation-sandbox-frontend/domains/leases/hooks";
 import {
-  AssignmentPrincipalRef,
   type AssignmentSyncStatus,
-  IdcPrincipal,
-  LeaseAssignment,
-  PrincipalType,
-} from "@amzn/innovation-sandbox-frontend/domains/leases/types";
+  LeaseAssignmentView,
+  LeaseView,
+} from "@amzn/innovation-sandbox-frontend/domains/leases/model";
+import { AssignmentPrincipalRef } from "@amzn/innovation-sandbox-frontend/domains/leases/types";
+import type { IdcPrincipalView } from "@amzn/innovation-sandbox-frontend/domains/principals/model";
+import {
+  DEFAULT_GROUP_ASSIGNMENT_MODE,
+  type GroupAssignmentMode,
+} from "@amzn/innovation-sandbox-shared/types/configuration.js";
+import {
+  isExpiredLease,
+  isFrozenLease,
+  type LeaseLockIntent,
+  MAX_ASSIGNMENTS,
+  MAX_USER_MANAGED_ASSIGNMENTS,
+} from "@amzn/innovation-sandbox-shared/types/lease.js";
+import type { PrincipalType } from "@amzn/innovation-sandbox-shared/types/principal.js";
+import { groupAssignmentsEnabled } from "@amzn/innovation-sandbox-shared/utils/group-assignment-policy.js";
 
 // "restored" re-desires a principal the server no longer wants but still has an
 // assignment for (a pending revoke). Distinct from "added" because the
@@ -77,17 +82,18 @@ const IN_FLIGHT_MESSAGE: Record<LeaseLockIntent, string> = {
 };
 
 type AssignmentsTabProps = {
-  lease: Lease;
+  lease: LeaseView;
   leaseRouteId: string;
   leaseSharingEnabled: boolean;
   enablePrincipalSearch: boolean;
+  groupAssignmentMode?: GroupAssignmentMode;
   isElevated: boolean;
   isOwner: boolean;
 };
 
 // addedBy/addedDate are server-stamped; the typeahead never surfaces the
 // owner (already excluded), so isOwner is always false here.
-function rowFromTypeaheadPick(p: IdcPrincipal): AssignmentRow {
+function rowFromTypeaheadPick(p: IdcPrincipalView): AssignmentRow {
   return {
     principalId: p.principalId,
     principalType: p.principalType,
@@ -100,7 +106,7 @@ function rowFromTypeaheadPick(p: IdcPrincipal): AssignmentRow {
   };
 }
 
-function rowFromApi(assignment: LeaseAssignment): AssignmentRow {
+function rowFromApi(assignment: LeaseAssignmentView): AssignmentRow {
   return {
     principalId: assignment.principalId,
     principalType: assignment.principalType,
@@ -121,6 +127,7 @@ export const AssignmentsTab = ({
   leaseRouteId,
   leaseSharingEnabled,
   enablePrincipalSearch,
+  groupAssignmentMode = DEFAULT_GROUP_ASSIGNMENT_MODE,
   isElevated,
   isOwner,
 }: AssignmentsTabProps) => {
@@ -225,7 +232,7 @@ export const AssignmentsTab = ({
   );
 
   const shouldExclude = useCallback(
-    (p: IdcPrincipal) =>
+    (p: IdcPrincipalView) =>
       excludePrincipalIds.has(p.principalId) ||
       (p.principalType === "USER" && p.email === lease.userEmail),
     [excludePrincipalIds, lease.userEmail],
@@ -233,7 +240,7 @@ export const AssignmentsTab = ({
 
   const isAtCapacity = desiredRefs.length >= MAX_USER_MANAGED_ASSIGNMENTS;
 
-  const handleAdd = (p: IdcPrincipal) => {
+  const handleAdd = (p: IdcPrincipalView) => {
     if (isAtCapacity) return;
     const key = p.principalId;
     setRowsById((prev) => {
@@ -345,6 +352,12 @@ export const AssignmentsTab = ({
     }
     return a.displayName.localeCompare(b.displayName);
   });
+  const assignmentTarget = groupAssignmentsEnabled(groupAssignmentMode)
+    ? "user or group"
+    : "user";
+  const headerDescription = canManage
+    ? `Pick a ${assignmentTarget} to add to this lease.`
+    : undefined;
 
   return (
     <SpaceBetween size="m">
@@ -360,11 +373,7 @@ export const AssignmentsTab = ({
           <Header
             variant="h3"
             counter={`(${desiredRefs.length + 1}/${MAX_ASSIGNMENTS})`}
-            description={
-              canManage
-                ? "Pick a user or group to add to this lease."
-                : undefined
-            }
+            description={headerDescription}
           >
             {canManage ? "Share access" : "Assignments"}
           </Header>
@@ -384,6 +393,9 @@ export const AssignmentsTab = ({
                 onSelect={handleAdd}
                 shouldExclude={shouldExclude}
                 enablePrincipalSearch={enablePrincipalSearch}
+                type={
+                  groupAssignmentsEnabled(groupAssignmentMode) ? "all" : "users"
+                }
                 disabled={isAtCapacity}
               />
             </ColumnLayout>
@@ -513,6 +525,7 @@ export const AssignmentsTab = ({
                     return (
                       <Button
                         variant="inline-link"
+                        wrapText={false}
                         onClick={() => handleUndoStagedChange(row)}
                         disabled={update.isPending || isAwaitingBackend}
                       >
@@ -526,6 +539,7 @@ export const AssignmentsTab = ({
                     return (
                       <Button
                         variant="inline-link"
+                        wrapText={false}
                         onClick={() => handleRestore(row)}
                         disabled={
                           update.isPending || isAwaitingBackend || isAtCapacity
@@ -539,6 +553,7 @@ export const AssignmentsTab = ({
                     return (
                       <Button
                         variant="inline-link"
+                        wrapText={false}
                         onClick={() => handleUndoStagedChange(row)}
                         disabled={
                           update.isPending || isAwaitingBackend || isAtCapacity
@@ -551,6 +566,7 @@ export const AssignmentsTab = ({
                   return (
                     <Button
                       variant="inline-link"
+                      wrapText={false}
                       onClick={() => handleRemove(row)}
                       disabled={update.isPending || isAwaitingBackend}
                     >

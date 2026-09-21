@@ -12,21 +12,22 @@ import {
   getStepStatus,
   ResourceTypeRow,
 } from "@amzn/innovation-sandbox-frontend/domains/accounts/components/CleanupDetails.helpers";
-import { CleanupReport } from "@amzn/innovation-sandbox-frontend/domains/accounts/types";
-
-type Step = CleanupReport["steps"][number];
+import {
+  CleanupReportStepView,
+  CleanupReportView,
+} from "@amzn/innovation-sandbox-frontend/domains/accounts/types";
 
 // Minimal report builder — helpers only read status/error, so we cast the
 // rest away rather than populate every envelope field.
-function report(overrides: Partial<CleanupReport>): CleanupReport {
+function report(overrides: Partial<CleanupReportView>): CleanupReportView {
   return {
     status: "IN_PROGRESS",
     steps: [],
     ...overrides,
-  } as CleanupReport;
+  } as CleanupReportView;
 }
 
-function step(name: string, startedAt: string): Step {
+function step(name: string, startedAt: string): CleanupReportStepView {
   return { name, startedAt };
 }
 
@@ -234,7 +235,7 @@ describe("getStepDetails", () => {
   });
 
   test("renders the build-logs link for a nuke step with a CodeBuild ARN", () => {
-    const nukeStep: Step = {
+    const nukeStep: CleanupReportStepView = {
       name: "nuke-phase-1",
       startedAt: "2024-06-15T12:00:00.000Z",
       meta: {
@@ -265,7 +266,7 @@ describe("getStepDetails", () => {
   // contrived account-cooldown step carrying a CodeBuild ARN still takes the
   // cooldown branch, never the nuke branch.
   test("account-cooldown never takes the nuke branch even with a CodeBuild ARN", () => {
-    const hybridStep: Step = {
+    const hybridStep: CleanupReportStepView = {
       name: "account-cooldown",
       startedAt: "2024-06-15T12:00:00.000Z",
       meta: {

@@ -1,6 +1,6 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
-import { Aws, ArnFormat, Duration, Stack } from "aws-cdk-lib";
+import { ArnFormat, Aws, Duration, Stack } from "aws-cdk-lib";
 import {
   Effect,
   PolicyStatement,

@@ -3,7 +3,7 @@
 
 import { Badge } from "@cloudscape-design/components";
 
-import { SharedLeaseAccessType } from "@amzn/innovation-sandbox-frontend/domains/leases/types";
+import { SharedLeaseAccessType } from "@amzn/innovation-sandbox-frontend/domains/leases/model";
 
 interface AccessTypeBadgeProps {
   accessType: SharedLeaseAccessType;

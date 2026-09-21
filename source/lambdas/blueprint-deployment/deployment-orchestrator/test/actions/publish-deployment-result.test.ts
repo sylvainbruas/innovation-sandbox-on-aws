@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import { handlePublishResult } from "@amzn/innovation-sandbox-blueprint-deployment-orchestrator/actions/publish-deployment-result.js";
-import { BlueprintItemSchema } from "@amzn/innovation-sandbox-commons/data/blueprint/blueprint.js";
+import { PersistedBlueprintItemSchema } from "@amzn/innovation-sandbox-commons/data/blueprint/blueprint.js";
 import { DynamoBlueprintStore } from "@amzn/innovation-sandbox-commons/data/blueprint/dynamo-blueprint-store.js";
 import { DynamoLeaseStore } from "@amzn/innovation-sandbox-commons/data/lease/dynamo-lease-store.js";
-import { MonitoredLeaseSchema } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
+import { PersistedMonitoredLeaseSchema } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import { IsbEventBridgeClient } from "@amzn/innovation-sandbox-commons/sdk-clients/event-bridge-client.js";
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
 import { Logger } from "@aws-lambda-powertools/logger";
@@ -37,10 +37,10 @@ afterEach(() => {
 describe("publish-deployment-result action", () => {
   describe("Success path", () => {
     it("should publish BlueprintDeploymentSucceededEvent", async () => {
-      const lease = generateSchemaData(MonitoredLeaseSchema, {
+      const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
         status: "Provisioning",
       });
-      const blueprint = generateSchemaData(BlueprintItemSchema, {
+      const blueprint = generateSchemaData(PersistedBlueprintItemSchema, {
         tags: {}, // Override to prevent random long tag keys
       });
 
@@ -90,10 +90,10 @@ describe("publish-deployment-result action", () => {
 
   describe("Failure path", () => {
     it("should publish BlueprintDeploymentFailedEvent", async () => {
-      const lease = generateSchemaData(MonitoredLeaseSchema, {
+      const lease = generateSchemaData(PersistedMonitoredLeaseSchema, {
         status: "Provisioning",
       });
-      const blueprint = generateSchemaData(BlueprintItemSchema, {
+      const blueprint = generateSchemaData(PersistedBlueprintItemSchema, {
         tags: {}, // Override to prevent random long tag keys
       });
 
@@ -170,7 +170,7 @@ describe("publish-deployment-result action", () => {
     });
 
     it("should publish event even when blueprint not found (no validation)", async () => {
-      const lease = generateSchemaData(MonitoredLeaseSchema);
+      const lease = generateSchemaData(PersistedMonitoredLeaseSchema);
 
       vi.spyOn(DynamoLeaseStore.prototype, "get").mockResolvedValue({
         result: lease,

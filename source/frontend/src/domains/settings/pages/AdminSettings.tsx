@@ -34,24 +34,27 @@ import {
   useDirtySections,
 } from "@amzn/innovation-sandbox-frontend/domains/settings/components/UnsavedChangesGuard";
 import { useGetConfigurations } from "@amzn/innovation-sandbox-frontend/domains/settings/hooks";
-import {
-  AdminConfig,
-  ConfigMetadata,
-  ConfigSection,
-} from "@amzn/innovation-sandbox-frontend/domains/settings/service";
+import { AdminConfigurationView } from "@amzn/innovation-sandbox-frontend/domains/settings/model";
 import { useBreadcrumb } from "@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb";
+import {
+  ConfigSection,
+  ConfigurationResponseMetadata,
+} from "@amzn/innovation-sandbox-shared/types/configuration.js";
 
 /**
  * The audit envelope every section response carries. A section that has never
  * been saved to DynamoDB has `lastSavedBy: null` and no `meta`.
  */
-type SectionEnvelope = { lastSavedBy: string | null; meta?: ConfigMetadata };
+type SectionEnvelope = {
+  lastSavedBy: string | null;
+  meta?: ConfigurationResponseMetadata;
+};
 
 /**
  * Deploy-time fields resolved from environment variables (not stored in the
  * config table and not writable via PUT), shown read-only for all roles.
  */
-function ReadOnlySettings({ config }: { config: AdminConfig }) {
+function ReadOnlySettings({ config }: { config: AdminConfigurationView }) {
   return (
     <Container
       header={
@@ -104,7 +107,7 @@ function ReadOnlySettings({ config }: { config: AdminConfig }) {
  * a partial state), so it does not duplicate the per-section finish-setup alerts
  * once the admin has started saving sections.
  */
-function allSectionsUnsaved(config: AdminConfig): boolean {
+function allSectionsUnsaved(config: AdminConfigurationView): boolean {
   const sections: SectionEnvelope[] = [
     config.leases,
     config.cleanup,
@@ -260,7 +263,7 @@ function TabLabel({
   sectionKeys,
 }: {
   label: string;
-  config: AdminConfig;
+  config: AdminConfigurationView;
   sectionKeys: ConfigSection[];
 }) {
   const dirtySections = useDirtySections();

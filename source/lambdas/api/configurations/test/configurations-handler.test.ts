@@ -1,10 +1,6 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 import { ConflictError } from "@amzn/innovation-sandbox-commons/data/config/config-store.js";
-import {
-  ConfigSchemas,
-  ConfigSection,
-} from "@amzn/innovation-sandbox-commons/data/config/config.js";
 import { ConfigurationLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/config-lambda-environment.js";
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
 import {
@@ -14,12 +10,18 @@ import {
   mockAuthorizedContext,
   mockGlobalConfig,
   responseHeaders,
+  responseHeadersWithErrorType,
+  serializedBodyLike,
 } from "@amzn/innovation-sandbox-commons/test/lambdas/fixtures.js";
 import {
   bulkStubEnv,
   mockAppConfigMiddleware,
 } from "@amzn/innovation-sandbox-commons/test/lambdas/utils.js";
-import { IsbUser } from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
+import {
+  ConfigSchemas,
+  ConfigSection,
+} from "@amzn/innovation-sandbox-shared/types/configuration.js";
+import { IsbUser } from "@amzn/innovation-sandbox-shared/utils/auth-utils.js";
 import {
   afterEach,
   beforeAll,
@@ -74,6 +76,13 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
+// The domain is now served by the generated Smithy `ConfigurationsApi` handler,
+// so success responses go through the `restJson1` serializer: it adds a
+// `content-length` header (headers are asserted by containment), drops `null`
+// members (a never-saved section's `lastSavedBy: null` is absent), drops the
+// unmodeled `meta.schemaVersion`, and normalizes `date-time` strings — all
+// accepted deviations, matched with `serializedBodyLike`. Business/framework
+// errors still render through the Middy `httpErrorHandler` (exact bytes).
 describe("Configurations Handler", async () => {
   it("should return 500 response when environment variables are misconfigured", async () => {
     vi.unstubAllEnvs();
@@ -86,7 +95,7 @@ describe("Configurations Handler", async () => {
     expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
       statusCode: 500,
       body: createErrorResponseBody("An unexpected error occurred."),
-      headers: responseHeaders,
+      headers: responseHeadersWithErrorType("InternalServerError"),
     });
   });
 
@@ -101,7 +110,7 @@ describe("Configurations Handler", async () => {
     expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
       statusCode: 500,
       body: createErrorResponseBody("An unexpected error occurred."),
-      headers: responseHeaders,
+      headers: responseHeadersWithErrorType("InternalServerError"),
     });
   });
 
@@ -116,7 +125,7 @@ describe("Configurations Handler", async () => {
     expect(await handler(event, mockAuthorizedContext(testEnv))).toEqual({
       statusCode: 500,
       body: createErrorResponseBody("An unexpected error occurred."),
-      headers: responseHeaders,
+      headers: responseHeadersWithErrorType("InternalServerError"),
     });
   });
 
@@ -155,18 +164,20 @@ describe("Configurations Handler", async () => {
       const response = await handler(event, context);
 
       expect(response.statusCode).toBe(200);
-      expect(response.headers).toEqual(responseHeaders);
+      expect(response.headers).toEqual(
+        expect.objectContaining(responseHeaders),
+      );
 
       const body = JSON.parse(response.body);
       expect(body.status).toBe("success");
       for (const section of Object.keys(ConfigSchemas) as ConfigSection[]) {
+        // `lastSavedBy: null` and `meta.schemaVersion` are dropped by the
+        // serializer / output mapper (accepted deviations).
         expect(body.data[section]).toEqual({
           ...mockedGlobalConfig[section],
-          lastSavedBy: null,
           meta: {
             createdTime: expect.any(String),
             lastEditTime: expect.any(String),
-            schemaVersion: 1,
           },
         });
       }
@@ -201,10 +212,8 @@ describe("Configurations Handler", async () => {
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.body);
       for (const section of Object.keys(ConfigSchemas) as ConfigSection[]) {
-        expect(body.data[section]).toEqual({
-          ...ConfigSchemas[section].parse({}),
-          lastSavedBy: null,
-        });
+        // A never-saved section: `lastSavedBy: null` is dropped and there is no meta.
+        expect(body.data[section]).toEqual(ConfigSchemas[section].parse({}));
       }
     });
   });
@@ -236,9 +245,13 @@ describe("Configurations Handler", async () => {
       const response = await handler(event, mockAuthorizedContext(testEnv));
 
       expect(response.statusCode).toBe(200);
+      // `meta.schemaVersion` is dropped; the ISO strings pass through verbatim
+      // (opaque `String` meta), so compare exactly rather than via the
+      // timestamp-normalizing `serializedBodyLike`.
       const body = JSON.parse(response.body);
       expect(body.status).toBe("success");
-      expect(body.data).toEqual(storedSection);
+      const { schemaVersion: _v, ...meta } = storedSection.meta;
+      expect(body.data).toEqual({ ...storedSection, meta });
     });
 
     it("returns 200 with code defaults and lastSavedBy null when section absent", async () => {
@@ -258,12 +271,94 @@ describe("Configurations Handler", async () => {
       const response = await handler(event, mockAuthorizedContext(testEnv));
 
       expect(response.statusCode).toBe(200);
+      // A never-saved section: `lastSavedBy: null` is dropped, no meta.
+      expect(response.body).toEqual(
+        serializedBodyLike({
+          status: "success",
+          data: ConfigSchemas.maintenance.parse({}),
+        }),
+      );
+    });
+
+    it("passes meta timestamps through as opaque strings (byte-exact concurrency token)", async () => {
+      const { DynamoConfigStore } =
+        await import("@amzn/innovation-sandbox-commons/data/config/dynamo-config-store.js");
+      vi.spyOn(DynamoConfigStore.prototype, "getSection").mockResolvedValue({
+        ...mockedGlobalConfig.maintenance,
+        lastSavedBy: "admin@example.com",
+        meta: {
+          createdTime: "2024-01-01T00:00:00.000Z",
+          lastEditTime: "2024-01-02T00:00:00.000Z",
+          schemaVersion: 1,
+        },
+      } as any);
+
+      const response = await handler(
+        createAPIGatewayProxyEvent({
+          httpMethod: "GET",
+          path: "/configurations/maintenance",
+          pathParameters: { section: "maintenance" },
+          isbUser: isbAuthorizedUser.user,
+        }),
+        mockAuthorizedContext(testEnv),
+      );
+
+      // meta is modeled as opaque String, so the stored ISO strings are returned
+      // verbatim (millisecond fraction preserved) — the `lastEditTime` etag must
+      // survive byte-for-byte — and `schemaVersion` is dropped.
+      expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.body);
-      expect(body.data).toEqual({
-        ...ConfigSchemas.maintenance.parse({}),
-        lastSavedBy: null,
+      expect(body.data.meta).toEqual({
+        createdTime: "2024-01-01T00:00:00.000Z",
+        lastEditTime: "2024-01-02T00:00:00.000Z",
       });
     });
+
+    it("returns 500 (not a silent success) when a read-path store call fails", async () => {
+      const { DynamoConfigStore } =
+        await import("@amzn/innovation-sandbox-commons/data/config/dynamo-config-store.js");
+      vi.spyOn(DynamoConfigStore.prototype, "getAllSections").mockRejectedValue(
+        new Error("DynamoDB throttled"),
+      );
+
+      const response = await handler(
+        createAPIGatewayProxyEvent({
+          httpMethod: "GET",
+          path: "/configurations",
+          isbUser: isbAuthorizedUser.user,
+        }),
+        mockAuthorizedContext(testEnv),
+      );
+
+      expect(response.statusCode).toBe(500);
+      expect(response.body).not.toContain("DynamoDB throttled");
+    });
+
+    // Guards the per-section service bindings (assembled through an `as any`
+    // cast): a swap (e.g. GetCleanupConfiguration wired to the leases factory)
+    // would compile, so assert the mux → operation → store routing per section.
+    it.each(Object.keys(ConfigSchemas) as ConfigSection[])(
+      "GET /configurations/%s dispatches to getSection('%s')",
+      async (section) => {
+        const { DynamoConfigStore } =
+          await import("@amzn/innovation-sandbox-commons/data/config/dynamo-config-store.js");
+        const spy = vi
+          .spyOn(DynamoConfigStore.prototype, "getSection")
+          .mockResolvedValue(null);
+
+        await handler(
+          createAPIGatewayProxyEvent({
+            httpMethod: "GET",
+            path: `/configurations/${section}`,
+            pathParameters: { section },
+            isbUser: isbAuthorizedUser.user,
+          }),
+          mockAuthorizedContext(testEnv),
+        );
+
+        expect(spy).toHaveBeenCalledWith(section);
+      },
+    );
 
     it("returns 404 for an unknown section", async () => {
       const event = createAPIGatewayProxyEvent({
@@ -331,7 +426,8 @@ describe("Configurations Handler", async () => {
 
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.body);
-      expect(body.data).toEqual(savedSection);
+      const { schemaVersion: _v, ...meta } = savedSection.meta;
+      expect(body.data).toEqual({ ...savedSection, meta });
       expect(putSpy).toHaveBeenCalledWith(
         "maintenance",
         { enabled: false },
@@ -482,13 +578,53 @@ describe("Configurations Handler", async () => {
 
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(response.body);
-      expect(body.data).toEqual(savedSection);
+      const { schemaVersion: _v, ...meta } = savedSection.meta;
+      expect(body.data).toEqual({ ...savedSection, meta });
       expect(putSpy).toHaveBeenCalledWith(
         "leases",
         { ...mockedGlobalConfig.leases },
         "test@example.com",
         undefined,
       );
+    });
+
+    it("rejects a leases update that omits group assignment mode", async () => {
+      const {
+        groupAssignmentMode: _groupAssignmentMode,
+        ...leasesWithoutMode
+      } = mockedGlobalConfig.leases;
+
+      const response = await handler(
+        createPutEvent("leases", leasesWithoutMode),
+        mockAuthorizedContext(testEnv),
+      );
+
+      expect(response.statusCode).toBe(400);
+    });
+
+    it("rejects a model-range violation via generated validation + the JSend customizer", async () => {
+      // Canary that the validation customizer is wired (disableDefaultValidation
+      // spans two domains): `maxBudget` beyond the model `@range` max is rejected
+      // by generated deserialization/validation BEFORE the operation's Zod, and
+      // the customizer must render it as a JSend 400 rather than a raw framework
+      // `SerializationException`.
+      const response = await handler(
+        createPutEvent("leases", {
+          ...mockedGlobalConfig.leases,
+          maxBudget: 2_000_000_000,
+        }),
+        mockAuthorizedContext(testEnv),
+      );
+
+      expect(response.statusCode).toBe(400);
+      const body = JSON.parse(response.body);
+      expect(body.status).toBe("fail");
+      expect(body.data.errors.length).toBeGreaterThan(0);
+      // The customizer must fully replace the framework exception, not sit
+      // alongside it: no raw `__type` / `SerializationException` may leak.
+      expect(body.__type).toBeUndefined();
+      expect(response.body).not.toContain("SerializationException");
+      expect(response.body).not.toContain("ValidationException");
     });
 
     it("returns 400 when the leases cross-field refinement is violated", async () => {
@@ -526,6 +662,49 @@ describe("Configurations Handler", async () => {
       expect(response.statusCode).toBe(404);
     });
 
+    // Guards the write bindings (assembled through `as any`): a swapped binding
+    // would write one section's payload into another's record and still compile.
+    it.each(Object.keys(ConfigSchemas) as ConfigSection[])(
+      "PUT /configurations/%s dispatches to putSection('%s')",
+      async (section) => {
+        const { DynamoConfigStore } =
+          await import("@amzn/innovation-sandbox-commons/data/config/dynamo-config-store.js");
+        const putSpy = vi
+          .spyOn(DynamoConfigStore.prototype, "putSection")
+          .mockResolvedValue({
+            ...mockedGlobalConfig[section],
+            lastSavedBy: "test@example.com",
+            meta: {
+              createdTime: "2024-01-01T00:00:00.000Z",
+              lastEditTime: "2024-01-01T00:00:00.000Z",
+              schemaVersion: 1,
+            },
+          } as any);
+
+        // `notification` would trigger the SES check; an empty `emailFrom`
+        // (notifications disabled) is a valid body that skips it.
+        const body =
+          section === "notification"
+            ? { ...mockedGlobalConfig.notification, emailFrom: "" }
+            : { ...mockedGlobalConfig[section] };
+
+        const response = await handler(
+          createPutEvent(section, body),
+          mockAuthorizedContext(testEnv),
+        );
+
+        expect(response.statusCode).toBe(200);
+        expect(putSpy).toHaveBeenCalledTimes(1);
+        // First arg is the store section — a mis-wired binding writes elsewhere.
+        expect(putSpy).toHaveBeenCalledWith(
+          section,
+          expect.any(Object),
+          "test@example.com",
+          undefined,
+        );
+      },
+    );
+
     it("returns 403 for an M2M caller", async () => {
       const m2mUser: IsbUser = {
         type: "m2m",
@@ -539,6 +718,58 @@ describe("Configurations Handler", async () => {
       );
 
       expect(response.statusCode).toBe(403);
+    });
+
+    it("rejects an M2M write BEFORE model validation (middleware-order regression guard)", async () => {
+      // A model-invalid body from an M2M caller: only the pre-pipeline middleware
+      // yields 403 here; a removed middleware would let validation run first and
+      // return 400. So 403 proves authorization precedes validation.
+      const m2mUser: IsbUser = {
+        type: "m2m",
+        clientId: "automation-client",
+        roles: ["Admin"],
+      };
+
+      const response = await handler(
+        createPutEvent(
+          "leases",
+          { ...mockedGlobalConfig.leases, maxBudget: 2_000_000_000 },
+          m2mUser,
+        ),
+        mockAuthorizedContext(testEnv),
+      );
+
+      // 403 (not 400) is the load-bearing assertion; the message is the authz copy
+      // and no validation field detail leaked.
+      expect(response.statusCode).toBe(403);
+      const body = JSON.parse(response.body);
+      expect(body.data.errors[0].message).toContain("not authorized");
+      expect(response.body).not.toContain("maxBudget");
+    });
+
+    it("allows an M2M GET (the write block is scoped to non-GET methods)", async () => {
+      const { DynamoConfigStore } =
+        await import("@amzn/innovation-sandbox-commons/data/config/dynamo-config-store.js");
+      vi.spyOn(DynamoConfigStore.prototype, "getSection").mockResolvedValue(
+        null,
+      );
+      const m2mUser: IsbUser = {
+        type: "m2m",
+        clientId: "automation-client",
+        roles: ["Admin"],
+      };
+
+      const response = await handler(
+        createAPIGatewayProxyEvent({
+          httpMethod: "GET",
+          path: "/configurations/maintenance",
+          pathParameters: { section: "maintenance" },
+          isbUser: m2mUser,
+        }),
+        mockAuthorizedContext(testEnv),
+      );
+
+      expect(response.statusCode).toBe(200);
     });
 
     describe("SES email-from validation", () => {
@@ -572,7 +803,11 @@ describe("Configurations Handler", async () => {
         vi.spyOn(DynamoConfigStore.prototype, "putSection").mockResolvedValue({
           emailFrom: "verified@example.com",
           lastSavedBy: "test@example.com",
-          meta: { createdTime: "t", lastEditTime: "t", schemaVersion: 1 },
+          meta: {
+            createdTime: "2024-01-01T00:00:00.000Z",
+            lastEditTime: "2024-01-01T00:00:00.000Z",
+            schemaVersion: 1,
+          },
         } as any);
 
         mockSesSend.mockResolvedValue({
@@ -596,7 +831,11 @@ describe("Configurations Handler", async () => {
         vi.spyOn(DynamoConfigStore.prototype, "putSection").mockResolvedValue({
           emailFrom: "anyone@verified-domain.com",
           lastSavedBy: "test@example.com",
-          meta: { createdTime: "t", lastEditTime: "t", schemaVersion: 1 },
+          meta: {
+            createdTime: "2024-01-01T00:00:00.000Z",
+            lastEditTime: "2024-01-01T00:00:00.000Z",
+            schemaVersion: 1,
+          },
         } as any);
 
         mockSesSend.mockResolvedValue({
@@ -622,7 +861,11 @@ describe("Configurations Handler", async () => {
         vi.spyOn(DynamoConfigStore.prototype, "putSection").mockResolvedValue({
           emailFrom: "user@mail.corp.example.com",
           lastSavedBy: "test@example.com",
-          meta: { createdTime: "t", lastEditTime: "t", schemaVersion: 1 },
+          meta: {
+            createdTime: "2024-01-01T00:00:00.000Z",
+            lastEditTime: "2024-01-01T00:00:00.000Z",
+            schemaVersion: 1,
+          },
         } as any);
 
         mockSesSend.mockResolvedValue({
@@ -678,7 +921,11 @@ describe("Configurations Handler", async () => {
         vi.spyOn(DynamoConfigStore.prototype, "putSection").mockResolvedValue({
           emailFrom: "",
           lastSavedBy: "test@example.com",
-          meta: { createdTime: "t", lastEditTime: "t", schemaVersion: 1 },
+          meta: {
+            createdTime: "2024-01-01T00:00:00.000Z",
+            lastEditTime: "2024-01-01T00:00:00.000Z",
+            schemaVersion: 1,
+          },
         } as any);
 
         const response = await handler(

@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 import { z } from "zod";
 
-import { IsbOuSchema } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
 import { EventDetailTypes } from "@amzn/innovation-sandbox-commons/events/index.js";
 import { IsbEvent } from "@amzn/innovation-sandbox-commons/sdk-clients/event-bridge-client.js";
 import { AwsAccountIdSchema } from "@amzn/innovation-sandbox-commons/utils/zod.js";
+import { IsbOuSchema } from "@amzn/innovation-sandbox-shared/types/sandbox-account.js";
 
 export const AccountDriftEventSchema = z.object({
   accountId: AwsAccountIdSchema,

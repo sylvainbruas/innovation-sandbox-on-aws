@@ -5,8 +5,8 @@ import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
-import type { IsbRole } from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
 import { ProtectedRoute } from "@amzn/innovation-sandbox-frontend/components/ProtectedRoute";
+import type { IsbRole } from "@amzn/innovation-sandbox-shared/utils/auth-utils.js";
 
 const mockUseUser = vi.fn();
 vi.mock("@amzn/innovation-sandbox-frontend/hooks/useUser", () => ({

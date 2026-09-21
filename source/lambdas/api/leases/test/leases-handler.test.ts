@@ -21,32 +21,25 @@ import { base64EncodeCompositeKey } from "@amzn/innovation-sandbox-commons/data/
 import { ResourceLockConflictError } from "@amzn/innovation-sandbox-commons/data/errors.js";
 import { GlobalConfig } from "@amzn/innovation-sandbox-commons/data/global-config/global-config.js";
 import { DynamoLeaseTemplateStore } from "@amzn/innovation-sandbox-commons/data/lease-template/dynamo-lease-template-store.js";
-import {
-  BudgetConfigSchema,
-  DurationConfigSchema,
-  LeaseTemplateSchema,
-} from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
+import { PersistedLeaseTemplateSchema } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
 import { DynamoLeaseStore } from "@amzn/innovation-sandbox-commons/data/lease/dynamo-lease-store.js";
 import {
-  ApprovalDeniedLeaseSchema,
-  DesiredAssignmentSchema,
-  ExpiredLeaseSchema,
-  Lease,
-  LEASE_NOT_PENDING_REVIEW_ERROR,
-  LeaseKeySchema,
-  LeaseSchema,
-  MonitoredLeaseSchema,
-  PendingLeaseSchema,
+  PersistedApprovalDeniedLeaseSchema,
+  PersistedExpiredLeaseSchema,
+  PersistedLease,
+  PersistedLeaseSchema,
+  PersistedMonitoredLeaseSchema,
+  PersistedPendingLeaseSchema,
 } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import { DynamoPrincipalStore } from "@amzn/innovation-sandbox-commons/data/principal/dynamo-principal-store.js";
 import {
-  GroupAssignmentSchema,
-  PrincipalCacheItemSchema,
-  UserAssignmentSchema,
+  PersistedGroupAssignmentSchema,
+  PersistedPrincipalCacheItemSchema,
+  PersistedUserAssignmentSchema,
 } from "@amzn/innovation-sandbox-commons/data/principal/principal.js";
 import { ReportingConfig } from "@amzn/innovation-sandbox-commons/data/reporting-config/reporting-config.js";
 import { DynamoSandboxAccountStore } from "@amzn/innovation-sandbox-commons/data/sandbox-account/dynamo-sandbox-account-store.js";
-import { SandboxAccountSchema } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
+import { PersistedSandboxAccountSchema } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
 import { LeaseTerminatedEvent } from "@amzn/innovation-sandbox-commons/events/lease-terminated-event.js";
 import {
   AccountNotInActiveError,
@@ -58,6 +51,7 @@ import {
 } from "@amzn/innovation-sandbox-commons/innovation-sandbox.js";
 import { IdcService } from "@amzn/innovation-sandbox-commons/isb-services/idc-service.js";
 import { IsbServices } from "@amzn/innovation-sandbox-commons/isb-services/index.js";
+import * as leaseAssignment from "@amzn/innovation-sandbox-commons/isb-services/lease-assignment/index.js";
 import { MaxAssignmentsExceededError } from "@amzn/innovation-sandbox-commons/isb-services/lease-assignment/index.js";
 import { OrganizationsTaggingService } from "@amzn/innovation-sandbox-commons/isb-services/organizations-tagging-service.js";
 import { SandboxOuService } from "@amzn/innovation-sandbox-commons/isb-services/sandbox-ou-service.js";
@@ -71,30 +65,71 @@ import {
   createFailureResponseBody,
   isbAuthorizedUser,
   isbAuthorizedUserUserRoleOnly,
+  jsendFailBodyLike,
   m2mAdminUser,
   m2mUserRoleOnlyUser,
   mockAuthorizedContext,
   mockGlobalConfig,
+  rawBodyLike,
   responseHeaders,
+  responseHeadersWithErrorType,
 } from "@amzn/innovation-sandbox-commons/test/lambdas/fixtures.js";
 import {
   bulkStubEnv,
   mockAppConfigMiddleware,
 } from "@amzn/innovation-sandbox-commons/test/lambdas/utils.js";
 import {
-  buildM2mSyntheticEmail,
-  IdcIdentitySchema,
-  IsbUser,
-} from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
-import {
   datetimeAsString,
   now,
 } from "@amzn/innovation-sandbox-commons/utils/time-utils.js";
+import {
+  BudgetConfigSchema,
+  DurationConfigSchema,
+} from "@amzn/innovation-sandbox-shared/types/lease-template.js";
+import {
+  DesiredAssignmentSchema,
+  LEASE_NOT_PENDING_REVIEW_ERROR,
+  LeaseKeySchema,
+} from "@amzn/innovation-sandbox-shared/types/lease.js";
+import {
+  buildM2mSyntheticEmail,
+  IdcIdentitySchema,
+  IsbUser,
+} from "@amzn/innovation-sandbox-shared/utils/auth-utils.js";
 import { randomUUID } from "crypto";
 import { DateTime } from "luxon";
 
 // acquireLock returns the persisted lock so callers can carry it onto a
 // full-item put; mocks must resolve a lock rather than undefined.
+
+// The generated restJson1 serializer projects each lease to its modeled shape:
+// `meta.schemaVersion` is dropped (deviation #2), and members that are `null`
+// (deviation #7 — e.g. blueprintId/blueprintName/approvedBy/awsAccountId) or
+// `undefined` (unset optionals) are omitted from the body. All lease timestamps
+// are raw `String` (deviation #3), emitted byte-faithfully. Expected success
+// bodies are matched with `rawBodyLike` (order-insensitive, null/undefined
+// dropped, timestamps NOT canonicalized) against this projection — note the
+// matcher also drops null/undefined from the EXPECTED side, so it *tolerates*
+// (does not pin) the deviation-#7 omission; the dedicated test below asserts it.
+function projectLease(lease: Record<string, any>): Record<string, any> {
+  // Drop `leaseTemplateUuid`: it is a request-only input field (the persisted
+  // Lease exposes `originalLeaseTemplateUuid`), but the request-lease tests build
+  // their stored-lease fixture from `PendingLeaseSchema.extend({ leaseTemplateUuid })`,
+  // so it must be stripped here — the serializer only emits modeled members.
+  const { meta, leaseTemplateUuid: _leaseTemplateUuid, ...rest } = lease;
+  return {
+    ...rest,
+    ...(meta
+      ? {
+          meta: {
+            createdTime: meta.createdTime,
+            lastEditTime: meta.lastEditTime,
+          },
+        }
+      : {}),
+  };
+}
+
 const MOCK_ACQUIRED_LOCK = {
   ownerId: "mock-lock-owner",
   acquiredAt: "2024-06-01T12:00:00.000Z",
@@ -128,6 +163,7 @@ beforeEach(() => {
   mockedGlobalConfig.leases.requireMaxBudget = true;
   mockedGlobalConfig.leases.requireMaxDuration = false;
   mockedGlobalConfig.leases.leaseSharingEnabled = true;
+  mockedGlobalConfig.leases.groupAssignmentMode = "ALL";
   mockedGlobalConfig.leases.allowUserLeaseTermination = true;
   mockedGlobalConfig.leases.leaseRequestWindowHours = 168;
   mockedGlobalConfig.leases.maxLeaseRequestsPerWindow = 10;
@@ -149,7 +185,7 @@ beforeEach(() => {
     "batchGetCacheItems",
   ).mockImplementation(async (principalIds) =>
     principalIds.map((p) =>
-      generateSchemaData(PrincipalCacheItemSchema, {
+      generateSchemaData(PersistedPrincipalCacheItemSchema, {
         principalId: p.principalId,
         principalType: p.principalType,
         email:
@@ -162,6 +198,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  mockedGlobalConfig.leases.groupAssignmentMode = "ALL";
   vi.clearAllMocks();
   vi.unstubAllEnvs();
 });
@@ -179,18 +216,18 @@ describe("Leases Handler", async () => {
     ).toEqual({
       statusCode: 500,
       body: createErrorResponseBody("An unexpected error occurred."),
-      headers: responseHeaders,
+      headers: responseHeadersWithErrorType("InternalServerError"),
     });
   });
 
   describe("GET /leases", () => {
-    const allLeases: Lease[] = [
-      generateSchemaData(LeaseSchema),
-      generateSchemaData(LeaseSchema),
+    const allLeases: PersistedLease[] = [
+      generateSchemaData(PersistedLeaseSchema),
+      generateSchemaData(PersistedLeaseSchema),
     ];
     const allLeasesWithRefId = allLeases.map((lease) => {
       return {
-        ...lease,
+        ...projectLease(lease),
         leaseId: base64EncodeCompositeKey({
           userEmail: lease.userEmail,
           uuid: lease.uuid,
@@ -217,15 +254,55 @@ describe("Leases Handler", async () => {
         ),
       ).toEqual({
         statusCode: 200,
-        body: JSON.stringify({
+        body: rawBodyLike({
           status: "success",
           data: {
             result: allLeasesWithRefId,
             nextPageIdentifier: null,
           },
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
+    });
+
+    it("drops null read-path members from the wire (deviation #7)", async () => {
+      // `rawBodyLike` drops null/undefined on both sides, so it cannot pin the
+      // deviation-#7 omission. Assert the raw body directly: a lease persisted with
+      // null `blueprintId`/`blueprintName`/`approvedBy`/`awsAccountId` comes back
+      // with those members ABSENT, not emitted as `null`.
+      const leaseWithNulls = {
+        ...generateSchemaData(PersistedLeaseSchema),
+        blueprintId: null,
+        blueprintName: null,
+        approvedBy: null,
+        awsAccountId: null,
+      };
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "GET",
+        path: "/leases",
+        isbUser: isbAuthorizedUser.user,
+      });
+      vi.spyOn(DynamoLeaseStore.prototype, "findAll").mockReturnValue(
+        Promise.resolve({
+          result: [leaseWithNulls as any],
+          nextPageIdentifier: null,
+        }),
+      );
+
+      const response = await handler(
+        event,
+        mockAuthorizedContext(testEnv, mockedGlobalConfig),
+      );
+      expect(response.statusCode).toBe(200);
+      const wireLease = JSON.parse(response.body).data.result[0];
+      for (const dropped of [
+        "blueprintId",
+        "blueprintName",
+        "approvedBy",
+        "awsAccountId",
+      ]) {
+        expect(wireLease).not.toHaveProperty(dropped);
+      }
     });
 
     it("should return 200 with all leases even when error is set", async () => {
@@ -248,7 +325,7 @@ describe("Leases Handler", async () => {
         ),
       ).toEqual({
         statusCode: 200,
-        body: JSON.stringify({
+        body: rawBodyLike({
           status: "success",
           data: {
             result: allLeasesWithRefId,
@@ -256,7 +333,7 @@ describe("Leases Handler", async () => {
             error: "Zod Validation Error",
           },
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
     });
 
@@ -289,14 +366,14 @@ describe("Leases Handler", async () => {
         ),
       ).toEqual({
         statusCode: 200,
-        body: JSON.stringify({
+        body: rawBodyLike({
           status: "success",
           data: {
             result: allLeasesWithRefId,
             nextPageIdentifier: "BBB",
           },
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
       expect(findAllMethod.mock.calls).toHaveLength(1);
       expect(findAllMethod.mock.calls[0]).toEqual([
@@ -316,8 +393,8 @@ describe("Leases Handler", async () => {
         const urlencodedUserEmail = encodeURIComponent(userEmail);
 
         const leases = [
-          generateSchemaData(LeaseSchema, { userEmail }),
-          generateSchemaData(LeaseSchema, { userEmail }),
+          generateSchemaData(PersistedLeaseSchema, { userEmail }),
+          generateSchemaData(PersistedLeaseSchema, { userEmail }),
         ].map((lease) => ({
           ...lease,
           leaseId: base64EncodeCompositeKey({
@@ -353,14 +430,14 @@ describe("Leases Handler", async () => {
           ),
         ).toEqual({
           statusCode: 200,
-          body: JSON.stringify({
+          body: rawBodyLike({
             status: "success",
             data: {
-              result: leases,
+              result: leases.map(projectLease),
               nextPageIdentifier: null,
             },
           }),
-          headers: responseHeaders,
+          headers: expect.objectContaining(responseHeaders),
         });
         expect(findByUserEmailSpy).toHaveBeenCalledWith({
           userEmail,
@@ -399,11 +476,14 @@ describe("Leases Handler", async () => {
         ),
       ).toEqual({
         statusCode: 400,
+        // Accepted deviation (deviation #4): a malformed integer query param now
+        // surfaces as the framework's SerializationException→400 (a generic
+        // message) instead of the pre-Smithy Zod field error. Still a 400.
         body: createFailureResponseBody({
-          field: "maxResults",
-          message: "Invalid input: expected number, received NaN",
+          message:
+            "Invalid JSON in request body. Please check your JSON syntax.",
         }),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("ValidationError"),
       });
       expect(findAllMethod.mock.calls).toHaveLength(0);
     });
@@ -425,7 +505,7 @@ describe("Leases Handler", async () => {
       ).toEqual({
         statusCode: 500,
         body: createErrorResponseBody("An unexpected error occurred."),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("InternalServerError"),
       });
     });
 
@@ -445,7 +525,7 @@ describe("Leases Handler", async () => {
         body: createFailureResponseBody({
           message: `User is not authorized to get all leases.`,
         }),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("AccessDeniedError"),
       });
     });
 
@@ -471,7 +551,82 @@ describe("Leases Handler", async () => {
         body: createFailureResponseBody({
           message: `User is not authorized to get the requested leases.`,
         }),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("AccessDeniedError"),
+      });
+    });
+
+    it("should return 400 and not touch the store when userEmail is malformed", async () => {
+      // `userEmail` is modeled as an open `OwnerEmail` String (no `@pattern`), so a
+      // malformed address passes model validation and reaches the operation, which
+      // re-validates it with `z.email()` and 400s BEFORE any authorization or store
+      // access — restoring the pre-Smithy `GetLeasesQueryParametersSchema`'s
+      // `z.email().optional()` behavior.
+      const findByUserEmailSpy = vi.spyOn(
+        DynamoLeaseStore.prototype,
+        "findByUserEmail",
+      );
+      const findAllSpy = vi.spyOn(DynamoLeaseStore.prototype, "findAll");
+
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "GET",
+        path: "/leases",
+        queryStringParameters: { userEmail: "not-an-email" },
+        isbUser: isbAuthorizedUser.user,
+      });
+
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(testEnv, mockedGlobalConfig),
+        ),
+      ).toEqual({
+        statusCode: 400,
+        body: jsendFailBodyLike({
+          field: "input",
+          message: "Invalid email address",
+        }),
+        headers: responseHeadersWithErrorType("ValidationError"),
+      });
+      expect(findByUserEmailSpy).not.toHaveBeenCalled();
+      expect(findAllSpy).not.toHaveBeenCalled();
+    });
+
+    it("should default pageSize to 2000 (findAll) when maxResults is omitted", async () => {
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "GET",
+        path: "/leases",
+        isbUser: isbAuthorizedUser.user,
+      });
+      const findAllSpy = vi
+        .spyOn(DynamoLeaseStore.prototype, "findAll")
+        .mockResolvedValue({ result: allLeases, nextPageIdentifier: null });
+
+      await handler(event, mockAuthorizedContext(testEnv, mockedGlobalConfig));
+
+      expect(findAllSpy).toHaveBeenCalledWith({
+        pageIdentifier: undefined,
+        pageSize: 2000,
+      });
+    });
+
+    it("should default pageSize to 2000 (findByUserEmail) when maxResults is omitted", async () => {
+      const userEmail = "test@example.com";
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "GET",
+        path: "/leases",
+        queryStringParameters: { userEmail: encodeURIComponent(userEmail) },
+        isbUser: isbAuthorizedUser.user,
+      });
+      const findByUserEmailSpy = vi
+        .spyOn(DynamoLeaseStore.prototype, "findByUserEmail")
+        .mockResolvedValue({ result: [], nextPageIdentifier: null });
+
+      await handler(event, mockAuthorizedContext(testEnv, mockedGlobalConfig));
+
+      expect(findByUserEmailSpy).toHaveBeenCalledWith({
+        userEmail,
+        pageIdentifier: undefined,
+        pageSize: 2000,
       });
     });
   });
@@ -492,13 +647,20 @@ describe("Leases Handler", async () => {
           mockAuthorizedContext(testEnv, mockedGlobalConfig),
         ),
       ).toEqual({
-        statusCode: 415,
-        body: createFailureResponseBody({ message: "Body not provided." }),
-        headers: responseHeaders,
+        statusCode: 400,
+        // Accepted deviation: with no body the model rejects the required
+        // leaseTemplateUuid (generated ValidationError, alphabetized envelope)
+        // rather than the pre-Smithy "Body not provided." message.
+        body: jsendFailBodyLike({
+          field: "leaseTemplateUuid",
+          message:
+            "Value at '/leaseTemplateUuid' failed to satisfy constraint: Member must not be null",
+        }),
+        headers: responseHeadersWithErrorType("ValidationError"),
       });
     });
 
-    it("should return 415 when the body is malformed json string", async () => {
+    it("should return 400 when the body is malformed json string", async () => {
       const event = createAPIGatewayProxyEvent({
         httpMethod: "POST",
         path: "/leases",
@@ -514,12 +676,12 @@ describe("Leases Handler", async () => {
           mockAuthorizedContext(testEnv, mockedGlobalConfig),
         ),
       ).toEqual({
-        statusCode: 415,
+        statusCode: 400,
         body: createFailureResponseBody({
           message:
             "Invalid JSON in request body. Please check your JSON syntax.",
         }),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("ValidationError"),
       });
     });
 
@@ -542,20 +704,60 @@ describe("Leases Handler", async () => {
         ),
       ).toEqual({
         statusCode: 400,
-        body: createFailureResponseBody(
-          {
-            field: "leaseTemplateUuid",
-            message: "Invalid input: expected string, received undefined",
-          },
-          { field: "input", message: 'Unrecognized key: "abc"' },
-        ),
-        headers: responseHeaders,
+        // Accepted deviation: model validation runs before the operation's strict
+        // Zod re-parse, so the required-field violation (leaseTemplateUuid) is
+        // reported by the generated ValidationError and short-circuits before the
+        // unknown-key ("abc") check runs — a single error now, alphabetized envelope.
+        body: jsendFailBodyLike({
+          field: "leaseTemplateUuid",
+          message:
+            "Value at '/leaseTemplateUuid' failed to satisfy constraint: Member must not be null",
+        }),
+        headers: responseHeadersWithErrorType("ValidationError"),
       });
+    });
+
+    it("should return 400 when the body carries an unknown key (guards InputLeaseSchema.strict())", async () => {
+      // A well-formed request (valid `leaseTemplateUuid`) PLUS an unknown key. The
+      // model passes (required field present; the restJson1 deserializer silently
+      // drops the unknown member), so the 400 can only come from the operation's
+      // `.strict()` Zod re-parse of the raw body. The "not a valid lease object"
+      // test above short-circuits on the missing-required-field MODEL error and
+      // never reaches this check — this is the dedicated unknown-key guard.
+      const findByUserEmailSpy = vi.spyOn(
+        DynamoLeaseStore.prototype,
+        "findByUserEmail",
+      );
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "POST",
+        path: "/leases",
+        body: JSON.stringify({
+          leaseTemplateUuid: "123e4567-e89b-42d3-a456-556642440000",
+          unknownKey: "x",
+        }),
+        headers: { "Content-Type": "application/json" },
+        isbUser: isbAuthorizedUser.user,
+      });
+
+      expect(
+        await handler(
+          event,
+          mockAuthorizedContext(testEnv, mockedGlobalConfig),
+        ),
+      ).toEqual({
+        statusCode: 400,
+        body: jsendFailBodyLike({
+          field: "input",
+          message: 'Unrecognized key: "unknownKey"',
+        }),
+        headers: responseHeadersWithErrorType("ValidationError"),
+      });
+      expect(findByUserEmailSpy).not.toHaveBeenCalled();
     });
 
     it("should return 409 when user has exceeded the max number of active leases allowed", async () => {
       const leaseRequest = generateSchemaData(
-        PendingLeaseSchema.pick({
+        PersistedPendingLeaseSchema.pick({
           comments: true,
         })
           .extend({ leaseTemplateUuid: z.uuid() })
@@ -570,7 +772,7 @@ describe("Leases Handler", async () => {
         },
         isbUser: isbAuthorizedUser.user,
       });
-      const storedLease = generateSchemaData(PendingLeaseSchema, {
+      const storedLease = generateSchemaData(PersistedPendingLeaseSchema, {
         ...leaseRequest,
       });
       vi.spyOn(DynamoLeaseStore.prototype, "update").mockReturnValue(
@@ -581,7 +783,7 @@ describe("Leases Handler", async () => {
       );
       vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockReturnValue(
         Promise.resolve({
-          result: generateSchemaData(LeaseTemplateSchema, {
+          result: generateSchemaData(PersistedLeaseTemplateSchema, {
             requiresApproval: true,
           }),
         }),
@@ -590,16 +792,16 @@ describe("Leases Handler", async () => {
       vi.spyOn(DynamoLeaseStore.prototype, "findByUserEmail").mockReturnValue(
         Promise.resolve({
           result: [
-            generateSchemaData(MonitoredLeaseSchema, {
+            generateSchemaData(PersistedMonitoredLeaseSchema, {
               userEmail: isbAuthorizedUser.user.email,
               status: "Active",
               approvedBy: "AUTO_APPROVED",
             }),
-            generateSchemaData(PendingLeaseSchema, {
+            generateSchemaData(PersistedPendingLeaseSchema, {
               userEmail: isbAuthorizedUser.user.email,
               status: "PendingApproval",
             }),
-            generateSchemaData(MonitoredLeaseSchema, {
+            generateSchemaData(PersistedMonitoredLeaseSchema, {
               userEmail: isbAuthorizedUser.user.email,
               status: "Frozen",
               approvedBy: "AUTO_APPROVED",
@@ -619,13 +821,13 @@ describe("Leases Handler", async () => {
           message:
             "You have reached the maximum number of active/pending leases allowed (3).",
         }),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("ConflictError"),
       });
     });
 
     it("should return 404 when the lease template reference doesn't exist", async () => {
       const leaseRequest = generateSchemaData(
-        PendingLeaseSchema.pick({
+        PersistedPendingLeaseSchema.pick({
           comments: true,
         })
           .extend({ leaseTemplateUuid: z.uuid() })
@@ -661,7 +863,7 @@ describe("Leases Handler", async () => {
 
     it("should return 409 for when no accounts are available to lease", async () => {
       const leaseRequest = generateSchemaData(
-        PendingLeaseSchema.pick({
+        PersistedPendingLeaseSchema.pick({
           comments: true,
         })
           .extend({ leaseTemplateUuid: z.uuid() })
@@ -676,14 +878,14 @@ describe("Leases Handler", async () => {
         },
         isbUser: isbAuthorizedUser.user,
       });
-      const storedLease = generateSchemaData(PendingLeaseSchema, {
+      const storedLease = generateSchemaData(PersistedPendingLeaseSchema, {
         ...leaseRequest,
       });
       // mockedGlobalConfig defines max active leases as 3
       vi.spyOn(DynamoLeaseStore.prototype, "findByUserEmail").mockReturnValue(
         Promise.resolve({
           result: [
-            generateSchemaData(MonitoredLeaseSchema, {
+            generateSchemaData(PersistedMonitoredLeaseSchema, {
               userEmail: isbAuthorizedUser.user.email,
               status: "Active",
               approvedBy: "AUTO_APPROVED",
@@ -694,7 +896,7 @@ describe("Leases Handler", async () => {
       );
       vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockReturnValue(
         Promise.resolve({
-          result: generateSchemaData(LeaseTemplateSchema, {
+          result: generateSchemaData(PersistedLeaseTemplateSchema, {
             requiresApproval: false,
           }),
         }),
@@ -721,13 +923,13 @@ describe("Leases Handler", async () => {
         body: createFailureResponseBody({
           message: "No accounts are available to lease.",
         }),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("ConflictError"),
       });
     });
 
     it("should return 201 for manual approval lease request with valid inputs", async () => {
       const leaseRequest = generateSchemaData(
-        PendingLeaseSchema.pick({
+        PersistedPendingLeaseSchema.pick({
           comments: true,
         })
           .extend({ leaseTemplateUuid: z.uuid() })
@@ -742,7 +944,7 @@ describe("Leases Handler", async () => {
         },
         isbUser: isbAuthorizedUser.user,
       });
-      const storedLease = generateSchemaData(PendingLeaseSchema, {
+      const storedLease = generateSchemaData(PersistedPendingLeaseSchema, {
         ...leaseRequest,
       });
       vi.spyOn(DynamoLeaseStore.prototype, "create").mockResolvedValue(
@@ -750,7 +952,7 @@ describe("Leases Handler", async () => {
       );
       vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockReturnValue(
         Promise.resolve({
-          result: generateSchemaData(LeaseTemplateSchema, {
+          result: generateSchemaData(PersistedLeaseTemplateSchema, {
             requiresApproval: true,
           }),
         }),
@@ -763,7 +965,7 @@ describe("Leases Handler", async () => {
       vi.spyOn(DynamoLeaseStore.prototype, "findByUserEmail").mockReturnValue(
         Promise.resolve({
           result: [
-            generateSchemaData(MonitoredLeaseSchema, {
+            generateSchemaData(PersistedMonitoredLeaseSchema, {
               userEmail: isbAuthorizedUser.user.email,
               status: "Active",
               approvedBy: "AUTO_APPROVED",
@@ -779,17 +981,17 @@ describe("Leases Handler", async () => {
         ),
       ).toEqual({
         statusCode: 201,
-        body: JSON.stringify({
+        body: rawBodyLike({
           status: "success",
-          data: storedLease,
+          data: projectLease(storedLease),
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
     });
 
     it("should return 409 when org api throws AccountNotFoundException", async () => {
       const leaseRequest = generateSchemaData(
-        PendingLeaseSchema.pick({
+        PersistedPendingLeaseSchema.pick({
           comments: true,
         })
           .extend({ leaseTemplateUuid: z.uuid() })
@@ -804,14 +1006,14 @@ describe("Leases Handler", async () => {
         },
         isbUser: isbAuthorizedUser.user,
       });
-      const storedLease = generateSchemaData(PendingLeaseSchema, {
+      const storedLease = generateSchemaData(PersistedPendingLeaseSchema, {
         ...leaseRequest,
       });
       // mockedGlobalConfig defines max active leases as 3
       vi.spyOn(DynamoLeaseStore.prototype, "findByUserEmail").mockReturnValue(
         Promise.resolve({
           result: [
-            generateSchemaData(MonitoredLeaseSchema, {
+            generateSchemaData(PersistedMonitoredLeaseSchema, {
               userEmail: isbAuthorizedUser.user.email,
               status: "Active",
               approvedBy: "AUTO_APPROVED",
@@ -822,7 +1024,7 @@ describe("Leases Handler", async () => {
       );
       vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockReturnValue(
         Promise.resolve({
-          result: generateSchemaData(LeaseTemplateSchema, {
+          result: generateSchemaData(PersistedLeaseTemplateSchema, {
             requiresApproval: false,
           }),
         }),
@@ -851,13 +1053,13 @@ describe("Leases Handler", async () => {
           message:
             "The account could not be found where it was expected to be located. Someone else may have recently moved it.",
         }),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("ConflictError"),
       });
     });
 
     it("should return 409 when org api throws ConcurrentModificationException", async () => {
       const leaseRequest = generateSchemaData(
-        PendingLeaseSchema.pick({
+        PersistedPendingLeaseSchema.pick({
           comments: true,
         })
           .extend({ leaseTemplateUuid: z.uuid() })
@@ -872,14 +1074,14 @@ describe("Leases Handler", async () => {
         },
         isbUser: isbAuthorizedUser.user,
       });
-      const storedLease = generateSchemaData(PendingLeaseSchema, {
+      const storedLease = generateSchemaData(PersistedPendingLeaseSchema, {
         ...leaseRequest,
       });
       // mockedGlobalConfig defines max active leases as 3
       vi.spyOn(DynamoLeaseStore.prototype, "findByUserEmail").mockReturnValue(
         Promise.resolve({
           result: [
-            generateSchemaData(MonitoredLeaseSchema, {
+            generateSchemaData(PersistedMonitoredLeaseSchema, {
               userEmail: isbAuthorizedUser.user.email,
               status: "Active",
               approvedBy: "AUTO_APPROVED",
@@ -890,7 +1092,7 @@ describe("Leases Handler", async () => {
       );
       vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockReturnValue(
         Promise.resolve({
-          result: generateSchemaData(LeaseTemplateSchema, {
+          result: generateSchemaData(PersistedLeaseTemplateSchema, {
             requiresApproval: false,
           }),
         }),
@@ -919,13 +1121,13 @@ describe("Leases Handler", async () => {
           message:
             "Could not move account due to concurrent modification of the organization. Please try again.",
         }),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("ConflictError"),
       });
     });
 
     it("should return 429 when org api throws TooManyRequestsException", async () => {
       const leaseRequest = generateSchemaData(
-        PendingLeaseSchema.pick({
+        PersistedPendingLeaseSchema.pick({
           comments: true,
         })
           .extend({ leaseTemplateUuid: z.uuid() })
@@ -940,14 +1142,14 @@ describe("Leases Handler", async () => {
         },
         isbUser: isbAuthorizedUser.user,
       });
-      const storedLease = generateSchemaData(PendingLeaseSchema, {
+      const storedLease = generateSchemaData(PersistedPendingLeaseSchema, {
         ...leaseRequest,
       });
       // mockedGlobalConfig defines max active leases as 3
       vi.spyOn(DynamoLeaseStore.prototype, "findByUserEmail").mockReturnValue(
         Promise.resolve({
           result: [
-            generateSchemaData(MonitoredLeaseSchema, {
+            generateSchemaData(PersistedMonitoredLeaseSchema, {
               userEmail: isbAuthorizedUser.user.email,
               status: "Active",
               approvedBy: "AUTO_APPROVED",
@@ -958,7 +1160,7 @@ describe("Leases Handler", async () => {
       );
       vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockReturnValue(
         Promise.resolve({
-          result: generateSchemaData(LeaseTemplateSchema, {
+          result: generateSchemaData(PersistedLeaseTemplateSchema, {
             requiresApproval: false,
           }),
         }),
@@ -993,7 +1195,7 @@ describe("Leases Handler", async () => {
 
     it("should return 201 for auto approval lease request with valid inputs", async () => {
       const leaseRequest = generateSchemaData(
-        PendingLeaseSchema.pick({
+        PersistedPendingLeaseSchema.pick({
           comments: true,
         })
           .extend({ leaseTemplateUuid: z.uuid() })
@@ -1008,14 +1210,14 @@ describe("Leases Handler", async () => {
         },
         isbUser: isbAuthorizedUser.user,
       });
-      const storedLease = generateSchemaData(PendingLeaseSchema, {
+      const storedLease = generateSchemaData(PersistedPendingLeaseSchema, {
         ...leaseRequest,
       });
       // mockedGlobalConfig defines max active leases as 3
       vi.spyOn(DynamoLeaseStore.prototype, "findByUserEmail").mockReturnValue(
         Promise.resolve({
           result: [
-            generateSchemaData(MonitoredLeaseSchema, {
+            generateSchemaData(PersistedMonitoredLeaseSchema, {
               userEmail: isbAuthorizedUser.user.email,
               status: "Active",
               approvedBy: "AUTO_APPROVED",
@@ -1026,7 +1228,7 @@ describe("Leases Handler", async () => {
       );
       vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockReturnValue(
         Promise.resolve({
-          result: generateSchemaData(LeaseTemplateSchema, {
+          result: generateSchemaData(PersistedLeaseTemplateSchema, {
             requiresApproval: false,
           }),
         }),
@@ -1034,7 +1236,7 @@ describe("Leases Handler", async () => {
       vi.spyOn(DynamoLeaseStore.prototype, "create").mockReturnValue(
         Promise.resolve(storedLease),
       );
-      const approvedLease: Lease = {
+      const approvedLease: PersistedLease = {
         ...storedLease,
         approvedBy: "AUTO_APPROVED",
         status: "Active",
@@ -1058,11 +1260,11 @@ describe("Leases Handler", async () => {
         ),
       ).toEqual({
         statusCode: 201,
-        body: JSON.stringify({
+        body: rawBodyLike({
           status: "success",
-          data: approvedLease,
+          data: projectLease(approvedLease),
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
     });
 
@@ -1089,13 +1291,13 @@ describe("Leases Handler", async () => {
           isbUser: isbAuthorizedUser.user,
         });
 
-        const leaseTemplate = generateSchemaData(LeaseTemplateSchema, {
+        const leaseTemplate = generateSchemaData(PersistedLeaseTemplateSchema, {
           uuid: leaseRequest.leaseTemplateUuid,
           requiresApproval: true,
           visibility: "PRIVATE",
         });
 
-        const resultLease = generateSchemaData(MonitoredLeaseSchema, {
+        const resultLease = generateSchemaData(PersistedMonitoredLeaseSchema, {
           userEmail: targetUserEmail,
           createdBy: isbAuthorizedUser.user.email,
           comments: leaseRequest.comments,
@@ -1124,11 +1326,11 @@ describe("Leases Handler", async () => {
 
         expect(response).toEqual({
           statusCode: 201,
-          body: JSON.stringify({
+          body: rawBodyLike({
             status: "success",
-            data: resultLease,
+            data: projectLease(resultLease),
           }),
-          headers: responseHeaders,
+          headers: expect.objectContaining(responseHeaders),
         });
 
         expect(requestLeaseSpy).toHaveBeenCalledWith(
@@ -1162,7 +1364,7 @@ describe("Leases Handler", async () => {
         // Mock template retrieval
         vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockReturnValue(
           Promise.resolve({
-            result: generateSchemaData(LeaseTemplateSchema, {
+            result: generateSchemaData(PersistedLeaseTemplateSchema, {
               visibility: "PUBLIC",
             }),
           }),
@@ -1179,7 +1381,7 @@ describe("Leases Handler", async () => {
             message:
               "Access denied. You do not have permission to create leases for other users.",
           }),
-          headers: responseHeaders,
+          headers: responseHeadersWithErrorType("AccessDeniedError"),
         });
 
         expect(requestLeaseSpy).not.toHaveBeenCalled();
@@ -1205,7 +1407,7 @@ describe("Leases Handler", async () => {
         // Mock template retrieval
         vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockReturnValue(
           Promise.resolve({
-            result: generateSchemaData(LeaseTemplateSchema, {
+            result: generateSchemaData(PersistedLeaseTemplateSchema, {
               visibility: "PUBLIC",
             }),
           }),
@@ -1256,7 +1458,7 @@ describe("Leases Handler", async () => {
         // Mock private template retrieval
         vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockReturnValue(
           Promise.resolve({
-            result: generateSchemaData(LeaseTemplateSchema, {
+            result: generateSchemaData(PersistedLeaseTemplateSchema, {
               visibility: "PRIVATE",
             }),
           }),
@@ -1294,12 +1496,12 @@ describe("Leases Handler", async () => {
           isbUser: isbAuthorizedUser.user,
         });
 
-        const leaseTemplate = generateSchemaData(LeaseTemplateSchema, {
+        const leaseTemplate = generateSchemaData(PersistedLeaseTemplateSchema, {
           visibility: "PRIVATE",
           requiresApproval: true,
         });
 
-        const resultLease = generateSchemaData(PendingLeaseSchema, {
+        const resultLease = generateSchemaData(PersistedPendingLeaseSchema, {
           userEmail: isbAuthorizedUser.user.email,
           createdBy: isbAuthorizedUser.user.email,
           comments: leaseRequest.comments,
@@ -1353,13 +1555,13 @@ describe("Leases Handler", async () => {
           isbUser: isbAuthorizedUserUserRoleOnly.user,
         });
 
-        const leaseTemplate = generateSchemaData(LeaseTemplateSchema, {
+        const leaseTemplate = generateSchemaData(PersistedLeaseTemplateSchema, {
           uuid: leaseRequest.leaseTemplateUuid,
           requiresApproval: true,
           visibility: "PUBLIC",
         });
 
-        const resultLease = generateSchemaData(PendingLeaseSchema, {
+        const resultLease = generateSchemaData(PersistedPendingLeaseSchema, {
           userEmail: selfEmail,
           comments: leaseRequest.comments,
         });
@@ -1425,13 +1627,13 @@ describe("Leases Handler", async () => {
           isbUser: isbAuthorizedUser.user,
         });
 
-        const leaseTemplate = generateSchemaData(LeaseTemplateSchema, {
+        const leaseTemplate = generateSchemaData(PersistedLeaseTemplateSchema, {
           uuid: leaseRequest.leaseTemplateUuid,
           requiresApproval: true,
           allowOwnerToShareLease: true,
         });
 
-        const resultLease = generateSchemaData(PendingLeaseSchema, {
+        const resultLease = generateSchemaData(PersistedPendingLeaseSchema, {
           userEmail: isbAuthorizedUser.user.email,
           comments: leaseRequest.comments,
         });
@@ -1479,12 +1681,12 @@ describe("Leases Handler", async () => {
           isbUser: isbAuthorizedUser.user,
         });
 
-        const leaseTemplate = generateSchemaData(LeaseTemplateSchema, {
+        const leaseTemplate = generateSchemaData(PersistedLeaseTemplateSchema, {
           uuid: leaseRequest.leaseTemplateUuid,
           requiresApproval: true,
         });
 
-        const resultLease = generateSchemaData(PendingLeaseSchema, {
+        const resultLease = generateSchemaData(PersistedPendingLeaseSchema, {
           userEmail: isbAuthorizedUser.user.email,
           comments: leaseRequest.comments,
         });
@@ -1565,7 +1767,7 @@ describe("Leases Handler", async () => {
           isbUser: isbAuthorizedUser.user,
         });
 
-        const leaseTemplate = generateSchemaData(LeaseTemplateSchema, {
+        const leaseTemplate = generateSchemaData(PersistedLeaseTemplateSchema, {
           uuid: leaseRequest.leaseTemplateUuid,
           allowOwnerToShareLease: true,
         });
@@ -1575,7 +1777,7 @@ describe("Leases Handler", async () => {
         });
 
         vi.spyOn(InnovationSandbox, "requestLease").mockResolvedValue(
-          generateSchemaData(PendingLeaseSchema),
+          generateSchemaData(PersistedPendingLeaseSchema),
         );
 
         const response = await handler(
@@ -1617,6 +1819,36 @@ describe("Leases Handler", async () => {
         expect(body.data.errors[0].message).toContain("principal");
       });
 
+      it("should reject group assignments for every role when groups are disabled", async () => {
+        mockedGlobalConfig.leases.groupAssignmentMode = "NONE";
+        mockAppConfigMiddleware(mockedGlobalConfig, mockedReportingConfig);
+
+        const groupAssignment = generateSchemaData(DesiredAssignmentSchema, {
+          principalType: "GROUP",
+        });
+        const event = createAPIGatewayProxyEvent({
+          httpMethod: "POST",
+          path: "/leases",
+          body: JSON.stringify({
+            leaseTemplateUuid: randomUUID(),
+            assignments: [groupAssignment],
+          }),
+          headers: { "Content-Type": "application/json" },
+          isbUser: isbAuthorizedUser.user,
+        });
+
+        const response = await handler(
+          event,
+          mockAuthorizedContext(testEnv, mockedGlobalConfig),
+        );
+
+        expect(response.statusCode).toBe(400);
+        const body = JSON.parse(response.body);
+        expect(body.data.errors[0].message).toContain(
+          "New group assignments are not enabled",
+        );
+      });
+
       it("should return 400 when user provides assignments but leaseSharingEnabled is false", async () => {
         const disabledConfig = {
           ...mockedGlobalConfig,
@@ -1624,7 +1856,7 @@ describe("Leases Handler", async () => {
         };
         mockAppConfigMiddleware(disabledConfig, mockedReportingConfig);
 
-        const leaseTemplate = generateSchemaData(LeaseTemplateSchema, {
+        const leaseTemplate = generateSchemaData(PersistedLeaseTemplateSchema, {
           uuid: randomUUID(),
           allowOwnerToShareLease: true,
           visibility: "PUBLIC",
@@ -1670,7 +1902,7 @@ describe("Leases Handler", async () => {
         };
         mockAppConfigMiddleware(disabledConfig, mockedReportingConfig);
 
-        const leaseTemplate = generateSchemaData(LeaseTemplateSchema, {
+        const leaseTemplate = generateSchemaData(PersistedLeaseTemplateSchema, {
           uuid: randomUUID(),
           requiresApproval: true,
         });
@@ -1680,7 +1912,7 @@ describe("Leases Handler", async () => {
         });
 
         vi.spyOn(InnovationSandbox, "requestLease").mockResolvedValue(
-          generateSchemaData(PendingLeaseSchema),
+          generateSchemaData(PersistedPendingLeaseSchema),
         );
 
         const event = createAPIGatewayProxyEvent({
@@ -1724,7 +1956,7 @@ describe("Leases Handler", async () => {
           isbUser: isbAuthorizedUserUserRoleOnly.user,
         });
 
-        const leaseTemplate = generateSchemaData(LeaseTemplateSchema, {
+        const leaseTemplate = generateSchemaData(PersistedLeaseTemplateSchema, {
           visibility: "PUBLIC",
           allowOwnerToShareLease: false,
         });
@@ -1775,7 +2007,7 @@ describe("Leases Handler", async () => {
           isbUser: isbAuthorizedUser.user,
         });
 
-        const leaseTemplate = generateSchemaData(LeaseTemplateSchema, {
+        const leaseTemplate = generateSchemaData(PersistedLeaseTemplateSchema, {
           allowOwnerToShareLease: false,
         });
 
@@ -1785,7 +2017,7 @@ describe("Leases Handler", async () => {
 
         const requestLeaseSpy = vi
           .spyOn(InnovationSandbox, "requestLease")
-          .mockResolvedValue(generateSchemaData(PendingLeaseSchema));
+          .mockResolvedValue(generateSchemaData(PersistedPendingLeaseSchema));
 
         const response = await handler(
           event,
@@ -1815,11 +2047,15 @@ describe("Leases Handler", async () => {
         ),
       ).toEqual({
         statusCode: 400,
-        body: createFailureResponseBody({
+        // Accepted deviation: the leaseId `@pattern` violation is now rendered by
+        // the generated ValidationError (framework message, alphabetized envelope)
+        // rather than the pre-Smithy Zod regex message.
+        body: jsendFailBodyLike({
           field: "leaseId",
-          message: "Invalid string: must match pattern /^[A-Za-z0-9_-]+$/",
+          message:
+            "Value at '/leaseId' failed to satisfy constraint: Member must satisfy regular expression pattern: ^[A-Za-z0-9_-]+$",
         }),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("ValidationError"),
       });
     });
 
@@ -1839,7 +2075,7 @@ describe("Leases Handler", async () => {
         body: createFailureResponseBody({
           message: "LeaseId path parameter provided is invalid.",
         }),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("ValidationError"),
       });
     });
 
@@ -1900,7 +2136,7 @@ describe("Leases Handler", async () => {
 
     it("should return 200 with lease", async () => {
       const leaseKey = generateSchemaData(LeaseKeySchema);
-      const lease = generateSchemaData(LeaseSchema, { ...leaseKey });
+      const lease = generateSchemaData(PersistedLeaseSchema, { ...leaseKey });
       const leaseId = base64EncodeCompositeKey(leaseKey);
       const event = createAPIGatewayProxyEvent({
         httpMethod: "GET",
@@ -1921,12 +2157,50 @@ describe("Leases Handler", async () => {
         ),
       ).toEqual({
         statusCode: 200,
-        body: JSON.stringify({
+        body: rawBodyLike({
           status: "success",
-          data: { ...lease, leaseId: leaseId },
+          data: { ...projectLease(lease), leaseId: leaseId },
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
+    });
+
+    it("round-trips a ttl above the signed 32-bit ceiling on the read path", async () => {
+      // `ttl` is modeled as `Long`, not `Integer` (deviation): a Unix-epoch-second
+      // value crosses 2,147,483,647 (Jan 2038). Prove a value above the 32-bit
+      // ceiling survives the read serialization intact — no overflow/truncation.
+      const largeTtl = 2_200_000_000; // > 2_147_483_647
+      const leaseKey = generateSchemaData(LeaseKeySchema);
+      const lease = generateSchemaData(PersistedExpiredLeaseSchema, {
+        ...leaseKey,
+        ttl: largeTtl,
+      });
+      const leaseId = base64EncodeCompositeKey(leaseKey);
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "GET",
+        path: `/leases/${leaseId}`,
+        isbUser: isbAuthorizedUser.user,
+      });
+
+      vi.spyOn(DynamoLeaseStore.prototype, "get").mockResolvedValue({
+        result: lease,
+      });
+
+      const response = await handler(
+        event,
+        mockAuthorizedContext(testEnv, mockedGlobalConfig),
+      );
+
+      expect(response).toEqual({
+        statusCode: 200,
+        body: rawBodyLike({
+          status: "success",
+          data: { ...projectLease(lease), leaseId: leaseId },
+        }),
+        headers: expect.objectContaining(responseHeaders),
+      });
+      // Belt-and-braces: the exact numeric value survives on the wire.
+      expect(JSON.parse(response.body).data.ttl).toBe(largeTtl);
     });
 
     it("should return 200 when requesting somebody else's lease as 'Admin' or 'Manager'", async () => {
@@ -1934,7 +2208,7 @@ describe("Leases Handler", async () => {
       const leaseKey = generateSchemaData(LeaseKeySchema, {
         userEmail: anotherEmail,
       });
-      const lease = generateSchemaData(LeaseSchema, { ...leaseKey });
+      const lease = generateSchemaData(PersistedLeaseSchema, { ...leaseKey });
       const leaseId = base64EncodeCompositeKey(leaseKey);
       const event = createAPIGatewayProxyEvent({
         httpMethod: "GET",
@@ -1955,11 +2229,11 @@ describe("Leases Handler", async () => {
         ),
       ).toEqual({
         statusCode: 200,
-        body: JSON.stringify({
+        body: rawBodyLike({
           status: "success",
-          data: { ...lease, leaseId: leaseId },
+          data: { ...projectLease(lease), leaseId: leaseId },
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
     });
 
@@ -1968,7 +2242,7 @@ describe("Leases Handler", async () => {
       const leaseKey = generateSchemaData(LeaseKeySchema, {
         userEmail: anotherEmail,
       });
-      const lease = generateSchemaData(LeaseSchema, {
+      const lease = generateSchemaData(PersistedLeaseSchema, {
         ...leaseKey,
         desiredAssignments: undefined,
       });
@@ -1995,7 +2269,7 @@ describe("Leases Handler", async () => {
         body: createFailureResponseBody({
           message: `Active user is not authorized to view leases of requested user.`,
         }),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("AccessDeniedError"),
       });
     });
 
@@ -2004,7 +2278,7 @@ describe("Leases Handler", async () => {
       const leaseKey = generateSchemaData(LeaseKeySchema, {
         userEmail: anotherEmail,
       });
-      const lease = generateSchemaData(LeaseSchema, {
+      const lease = generateSchemaData(PersistedLeaseSchema, {
         ...leaseKey,
         desiredAssignments: [
           {
@@ -2035,11 +2309,11 @@ describe("Leases Handler", async () => {
         ),
       ).toEqual({
         statusCode: 200,
-        body: JSON.stringify({
+        body: rawBodyLike({
           status: "success",
-          data: { ...lease, leaseId: leaseId },
+          data: { ...projectLease(lease), leaseId: leaseId },
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
     });
 
@@ -2048,7 +2322,7 @@ describe("Leases Handler", async () => {
       const leaseKey = generateSchemaData(LeaseKeySchema, {
         userEmail: anotherEmail,
       });
-      const lease = generateSchemaData(LeaseSchema, {
+      const lease = generateSchemaData(PersistedLeaseSchema, {
         ...leaseKey,
         desiredAssignments: [
           {
@@ -2082,7 +2356,7 @@ describe("Leases Handler", async () => {
         body: createFailureResponseBody({
           message: `Active user is not authorized to view leases of requested user.`,
         }),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("AccessDeniedError"),
       });
     });
 
@@ -2092,7 +2366,7 @@ describe("Leases Handler", async () => {
       const leaseKey = generateSchemaData(LeaseKeySchema, {
         userEmail: anotherEmail,
       });
-      const lease = generateSchemaData(LeaseSchema, {
+      const lease = generateSchemaData(PersistedLeaseSchema, {
         ...leaseKey,
         desiredAssignments: [
           {
@@ -2131,11 +2405,11 @@ describe("Leases Handler", async () => {
         ),
       ).toEqual({
         statusCode: 200,
-        body: JSON.stringify({
+        body: rawBodyLike({
           status: "success",
-          data: { ...lease, leaseId: leaseId },
+          data: { ...projectLease(lease), leaseId: leaseId },
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
     });
 
@@ -2144,7 +2418,7 @@ describe("Leases Handler", async () => {
       const leaseKey = generateSchemaData(LeaseKeySchema, {
         userEmail: anotherEmail,
       });
-      const lease = generateSchemaData(LeaseSchema, {
+      const lease = generateSchemaData(PersistedLeaseSchema, {
         ...leaseKey,
         desiredAssignments: [
           {
@@ -2186,7 +2460,7 @@ describe("Leases Handler", async () => {
         body: createFailureResponseBody({
           message: `Active user is not authorized to view leases of requested user.`,
         }),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("AccessDeniedError"),
       });
     });
 
@@ -2210,7 +2484,7 @@ describe("Leases Handler", async () => {
       ).toEqual({
         statusCode: 500,
         body: createErrorResponseBody("An unexpected error occurred."),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("InternalServerError"),
       });
     });
   });
@@ -2231,9 +2505,16 @@ describe("Leases Handler", async () => {
           mockAuthorizedContext(testEnv, mockedGlobalConfig),
         ),
       ).toEqual({
-        statusCode: 415,
-        body: createFailureResponseBody({ message: "Body not provided." }),
-        headers: responseHeaders,
+        statusCode: 400,
+        // Accepted deviation: PATCH has no required model members, so an absent
+        // body passes model validation and is caught by the operation's strict Zod
+        // re-parse (delegated 400) as "expected object, received undefined" rather
+        // than the pre-Smithy "Body not provided." message.
+        body: createFailureResponseBody({
+          field: "input",
+          message: "Invalid input: expected object, received undefined",
+        }),
+        headers: responseHeadersWithErrorType("ValidationError"),
       });
     });
 
@@ -2241,7 +2522,7 @@ describe("Leases Handler", async () => {
       const leaseCompositeKey = generateSchemaData(LeaseKeySchema);
       const leaseId = base64EncodeCompositeKey(leaseCompositeKey);
       const oldLease = generateSchemaData(
-        MonitoredLeaseSchema,
+        PersistedMonitoredLeaseSchema,
         leaseCompositeKey,
       );
 
@@ -2273,7 +2554,7 @@ describe("Leases Handler", async () => {
           field: "input",
           message: 'Unrecognized key: "abc"',
         }),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("ValidationError"),
       });
     });
 
@@ -2352,14 +2633,14 @@ describe("Leases Handler", async () => {
           field: "input",
           message: 'Unrecognized keys: "userEmail", "leaseTerms"',
         }),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("ValidationError"),
       });
     });
 
     it("should return 400 when patching a pending lease", async () => {
       const leaseCompositeKey = generateSchemaData(LeaseKeySchema);
       const leaseId = base64EncodeCompositeKey(leaseCompositeKey);
-      const oldLease = generateSchemaData(PendingLeaseSchema, {
+      const oldLease = generateSchemaData(PersistedPendingLeaseSchema, {
         meta: undefined,
         ...leaseCompositeKey,
       });
@@ -2398,14 +2679,14 @@ describe("Leases Handler", async () => {
         body: createFailureResponseBody({
           message: "Can only update an active lease",
         }),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("ValidationError"),
       });
     });
 
     it.each([
-      { name: "expired", leaseType: ExpiredLeaseSchema },
-      { name: "pending", leaseType: PendingLeaseSchema },
-      { name: "denied", leaseType: ApprovalDeniedLeaseSchema },
+      { name: "expired", leaseType: PersistedExpiredLeaseSchema },
+      { name: "pending", leaseType: PersistedPendingLeaseSchema },
+      { name: "denied", leaseType: PersistedApprovalDeniedLeaseSchema },
     ])(
       "should return 400 when patching a(n) $name lease",
       async ({ leaseType }) => {
@@ -2450,7 +2731,7 @@ describe("Leases Handler", async () => {
           body: createFailureResponseBody({
             message: "Can only update an active lease",
           }),
-          headers: responseHeaders,
+          headers: responseHeadersWithErrorType("ValidationError"),
         });
       },
     );
@@ -2500,7 +2781,7 @@ describe("Leases Handler", async () => {
           },
           { zone: "utc" },
         );
-        const oldLease = generateSchemaData(MonitoredLeaseSchema, {
+        const oldLease = generateSchemaData(PersistedMonitoredLeaseSchema, {
           meta: undefined,
           ...leaseCompositeKey,
           maxSpend: 25,
@@ -2541,7 +2822,7 @@ describe("Leases Handler", async () => {
           body: createFailureResponseBody({
             message: expectedError,
           }),
-          headers: responseHeaders,
+          headers: responseHeadersWithErrorType("ValidationError"),
         });
       },
     );
@@ -2574,7 +2855,7 @@ describe("Leases Handler", async () => {
 
         const leaseCompositeKey = generateSchemaData(LeaseKeySchema);
         const leaseId = base64EncodeCompositeKey(leaseCompositeKey);
-        const oldLease = generateSchemaData(MonitoredLeaseSchema, {
+        const oldLease = generateSchemaData(PersistedMonitoredLeaseSchema, {
           ...leaseCompositeKey,
           costReportGroup: previousCostReportGroup,
           startDate: new Date().toISOString(),
@@ -2611,7 +2892,7 @@ describe("Leases Handler", async () => {
           body: createFailureResponseBody({
             message: expectedError,
           }),
-          headers: responseHeaders,
+          headers: responseHeadersWithErrorType("ValidationError"),
         });
       },
     );
@@ -2621,7 +2902,7 @@ describe("Leases Handler", async () => {
       async ({ status }) => {
         const leaseCompositeKey = generateSchemaData(LeaseKeySchema);
         const leaseId = base64EncodeCompositeKey(leaseCompositeKey);
-        const oldLease = generateSchemaData(MonitoredLeaseSchema, {
+        const oldLease = generateSchemaData(PersistedMonitoredLeaseSchema, {
           ...leaseCompositeKey,
           status: <"Active" | "Frozen">status,
           leaseDurationInHours: 48,
@@ -2650,7 +2931,7 @@ describe("Leases Handler", async () => {
           costReportGroup: undefined,
         };
 
-        const updatedLease = generateSchemaData(MonitoredLeaseSchema, {
+        const updatedLease = generateSchemaData(PersistedMonitoredLeaseSchema, {
           ...oldLease,
           ...requestJsonBody,
         });
@@ -2681,11 +2962,11 @@ describe("Leases Handler", async () => {
           ),
         ).toEqual({
           statusCode: 200,
-          body: JSON.stringify({
+          body: rawBodyLike({
             status: "success",
-            data: updatedLease,
+            data: projectLease(updatedLease),
           }),
-          headers: responseHeaders,
+          headers: expect.objectContaining(responseHeaders),
         });
         expect(spyPut).toHaveBeenCalledOnce();
         expect(spyPut).toHaveBeenCalledWith({
@@ -2702,7 +2983,7 @@ describe("Leases Handler", async () => {
 
       const leaseCompositeKey = generateSchemaData(LeaseKeySchema);
       const leaseId = base64EncodeCompositeKey(leaseCompositeKey);
-      const oldLease = generateSchemaData(MonitoredLeaseSchema, {
+      const oldLease = generateSchemaData(PersistedMonitoredLeaseSchema, {
         ...leaseCompositeKey,
         status: "Active",
         costReportGroup: undefined,
@@ -2743,7 +3024,7 @@ describe("Leases Handler", async () => {
     it("should return 200 when nullable values are used to clear data", async () => {
       const leaseCompositeKey = generateSchemaData(LeaseKeySchema);
       const leaseId = base64EncodeCompositeKey(leaseCompositeKey);
-      const oldLease = generateSchemaData(MonitoredLeaseSchema, {
+      const oldLease = generateSchemaData(PersistedMonitoredLeaseSchema, {
         ...leaseCompositeKey,
         costReportGroup: undefined,
         startDate: new Date().toISOString(),
@@ -2769,7 +3050,7 @@ describe("Leases Handler", async () => {
         maxSpend: 20, //no max budget is disallowed in mock global config
       };
 
-      const updatedLease = generateSchemaData(MonitoredLeaseSchema, {
+      const updatedLease = generateSchemaData(PersistedMonitoredLeaseSchema, {
         ...oldLease,
         ...requestJsonBody,
         expirationDate: undefined,
@@ -2802,11 +3083,11 @@ describe("Leases Handler", async () => {
         ),
       ).toEqual({
         statusCode: 200,
-        body: JSON.stringify({
+        body: rawBodyLike({
           status: "success",
-          data: updatedLease,
+          data: projectLease(updatedLease),
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
       expect(spyPut).toHaveBeenCalledOnce();
       expect(spyPut).toHaveBeenCalledWith({
@@ -2823,7 +3104,7 @@ describe("Leases Handler", async () => {
 
       const leaseCompositeKey = generateSchemaData(LeaseKeySchema);
       const leaseId = base64EncodeCompositeKey(leaseCompositeKey);
-      const oldLease = generateSchemaData(MonitoredLeaseSchema, {
+      const oldLease = generateSchemaData(PersistedMonitoredLeaseSchema, {
         ...leaseCompositeKey,
         status: "Active",
         costReportGroup: "valid-group-1",
@@ -2875,7 +3156,7 @@ describe("Leases Handler", async () => {
 
       const leaseCompositeKey = generateSchemaData(LeaseKeySchema);
       const leaseId = base64EncodeCompositeKey(leaseCompositeKey);
-      const oldLease = generateSchemaData(MonitoredLeaseSchema, {
+      const oldLease = generateSchemaData(PersistedMonitoredLeaseSchema, {
         ...leaseCompositeKey,
         status: "Active",
         costReportGroup: "valid-group-1",
@@ -2951,7 +3232,7 @@ describe("Leases Handler", async () => {
           message:
             "Cannot enable allowOwnerToShareLease because lease sharing is not available.",
         }),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("ValidationError"),
       });
     });
 
@@ -3011,8 +3292,8 @@ describe("Leases Handler", async () => {
     function buildLeaseAt(opts: {
       userEmail: string;
       createdAtIso: string;
-    }): Lease {
-      const base = generateSchemaData(MonitoredLeaseSchema, {
+    }): PersistedLease {
+      const base = generateSchemaData(PersistedMonitoredLeaseSchema, {
         userEmail: opts.userEmail,
         status: "Active",
       });
@@ -3049,7 +3330,7 @@ describe("Leases Handler", async () => {
     function mockPublicTemplate() {
       vi.spyOn(DynamoLeaseTemplateStore.prototype, "get").mockReturnValue(
         Promise.resolve({
-          result: generateSchemaData(LeaseTemplateSchema, {
+          result: generateSchemaData(PersistedLeaseTemplateSchema, {
             visibility: "PUBLIC",
           }),
         }),
@@ -3060,13 +3341,15 @@ describe("Leases Handler", async () => {
       mockPublicTemplate();
       const userEmail = isbAuthorizedUserUserRoleOnly.user.email;
       const earliest = DateTime.utc().minus({ hours: 24 }).toISO()!;
-      const seededLeases: Lease[] = Array.from({ length: 10 }, (_, i) =>
-        buildLeaseAt({
-          userEmail,
-          createdAtIso: DateTime.utc()
-            .minus({ hours: 24 - i })
-            .toISO()!,
-        }),
+      const seededLeases: PersistedLease[] = Array.from(
+        { length: 10 },
+        (_, i) =>
+          buildLeaseAt({
+            userEmail,
+            createdAtIso: DateTime.utc()
+              .minus({ hours: 24 - i })
+              .toISO()!,
+          }),
       );
       // ensure earliest is at index 0
       seededLeases[0] = buildLeaseAt({ userEmail, createdAtIso: earliest });
@@ -3098,13 +3381,15 @@ describe("Leases Handler", async () => {
       mockPublicTemplate();
       const userEmail = isbAuthorizedUserUserRoleOnly.user.email;
       const earliest = DateTime.utc().minus({ hours: 24 }).toISO()!;
-      const seededLeases: Lease[] = Array.from({ length: 10 }, (_, i) =>
-        buildLeaseAt({
-          userEmail,
-          createdAtIso: DateTime.utc()
-            .minus({ hours: 24 - i })
-            .toISO()!,
-        }),
+      const seededLeases: PersistedLease[] = Array.from(
+        { length: 10 },
+        (_, i) =>
+          buildLeaseAt({
+            userEmail,
+            createdAtIso: DateTime.utc()
+              .minus({ hours: 24 - i })
+              .toISO()!,
+          }),
       );
       seededLeases[0] = buildLeaseAt({ userEmail, createdAtIso: earliest });
 
@@ -3143,14 +3428,16 @@ describe("Leases Handler", async () => {
       // i.e. the 2nd-oldest in this case.
       mockPublicTemplate();
       const userEmail = isbAuthorizedUserUserRoleOnly.user.email;
-      const seededLeases: Lease[] = Array.from({ length: 12 }, (_, i) =>
-        buildLeaseAt({
-          userEmail,
-          // index 0 is oldest (24h ago), index 11 is newest (13h ago)
-          createdAtIso: DateTime.utc()
-            .minus({ hours: 24 - i })
-            .toISO()!,
-        }),
+      const seededLeases: PersistedLease[] = Array.from(
+        { length: 12 },
+        (_, i) =>
+          buildLeaseAt({
+            userEmail,
+            // index 0 is oldest (24h ago), index 11 is newest (13h ago)
+            createdAtIso: DateTime.utc()
+              .minus({ hours: 24 - i })
+              .toISO()!,
+          }),
       );
       const expectedPivot = seededLeases[2]!.meta!.createdTime!; // 12 - 10 = 2
 
@@ -3177,7 +3464,7 @@ describe("Leases Handler", async () => {
     it("returns 201 when User is under the limit", async () => {
       mockPublicTemplate();
       const userEmail = isbAuthorizedUserUserRoleOnly.user.email;
-      const seededLeases: Lease[] = Array.from({ length: 5 }, (_, i) =>
+      const seededLeases: PersistedLease[] = Array.from({ length: 5 }, (_, i) =>
         buildLeaseAt({
           userEmail,
           createdAtIso: DateTime.utc()
@@ -3190,7 +3477,7 @@ describe("Leases Handler", async () => {
       );
       const requestLeaseSpy = vi
         .spyOn(InnovationSandbox, "requestLease")
-        .mockResolvedValue(generateSchemaData(PendingLeaseSchema));
+        .mockResolvedValue(generateSchemaData(PersistedPendingLeaseSchema));
 
       const response = await handler(
         makeUserOnlyEvent(),
@@ -3205,7 +3492,7 @@ describe("Leases Handler", async () => {
       mockPublicTemplate();
       const userEmail = isbAuthorizedUserUserRoleOnly.user.email;
       // 10 leases but the earliest is 200h old (outside 168h window)
-      const inWindow: Lease[] = Array.from({ length: 9 }, (_, i) =>
+      const inWindow: PersistedLease[] = Array.from({ length: 9 }, (_, i) =>
         buildLeaseAt({
           userEmail,
           createdAtIso: DateTime.utc()
@@ -3222,7 +3509,7 @@ describe("Leases Handler", async () => {
       );
       const requestLeaseSpy = vi
         .spyOn(InnovationSandbox, "requestLease")
-        .mockResolvedValue(generateSchemaData(PendingLeaseSchema));
+        .mockResolvedValue(generateSchemaData(PersistedPendingLeaseSchema));
 
       const response = await handler(
         makeUserOnlyEvent(),
@@ -3244,7 +3531,7 @@ describe("Leases Handler", async () => {
           roles: ["User"],
         }),
       } as any);
-      const tenLeases: Lease[] = Array.from({ length: 10 }, (_, i) =>
+      const tenLeases: PersistedLease[] = Array.from({ length: 10 }, (_, i) =>
         buildLeaseAt({
           userEmail: targetEmail,
           createdAtIso: DateTime.utc()
@@ -3257,7 +3544,7 @@ describe("Leases Handler", async () => {
         .mockResolvedValue({ result: tenLeases, nextPageIdentifier: null });
       const requestLeaseSpy = vi
         .spyOn(InnovationSandbox, "requestLease")
-        .mockResolvedValue(generateSchemaData(PendingLeaseSchema));
+        .mockResolvedValue(generateSchemaData(PersistedPendingLeaseSchema));
 
       const event = createAPIGatewayProxyEvent({
         httpMethod: "POST",
@@ -3284,32 +3571,35 @@ describe("Leases Handler", async () => {
     it.each([
       {
         excludedStatus: "PendingApproval" as const,
-        schema: PendingLeaseSchema,
+        schema: PersistedPendingLeaseSchema,
       },
       {
         excludedStatus: "ApprovalDenied" as const,
-        schema: ApprovalDeniedLeaseSchema,
+        schema: PersistedApprovalDeniedLeaseSchema,
       },
     ])(
       "does not count $excludedStatus leases toward the rate limit",
       async ({ excludedStatus, schema }) => {
         mockPublicTemplate();
         const userEmail = isbAuthorizedUserUserRoleOnly.user.email;
-        const seededLeases: Lease[] = Array.from({ length: 10 }, (_, i) => ({
-          ...generateSchemaData(schema, {
-            userEmail,
-            status: excludedStatus,
+        const seededLeases: PersistedLease[] = Array.from(
+          { length: 10 },
+          (_, i) => ({
+            ...generateSchemaData(schema, {
+              userEmail,
+              status: excludedStatus,
+            }),
+            meta: {
+              schemaVersion: 4,
+              createdTime: DateTime.utc()
+                .minus({ hours: i + 1 })
+                .toISO()!,
+              lastEditTime: DateTime.utc()
+                .minus({ hours: i + 1 })
+                .toISO()!,
+            },
           }),
-          meta: {
-            schemaVersion: 4,
-            createdTime: DateTime.utc()
-              .minus({ hours: i + 1 })
-              .toISO()!,
-            lastEditTime: DateTime.utc()
-              .minus({ hours: i + 1 })
-              .toISO()!,
-          },
-        }));
+        );
         vi.spyOn(
           DynamoLeaseStore.prototype,
           "findByUserEmail",
@@ -3319,7 +3609,7 @@ describe("Leases Handler", async () => {
         });
         const requestLeaseSpy = vi
           .spyOn(InnovationSandbox, "requestLease")
-          .mockResolvedValue(generateSchemaData(PendingLeaseSchema));
+          .mockResolvedValue(generateSchemaData(PersistedPendingLeaseSchema));
 
         const response = await handler(
           makeUserOnlyEvent(),
@@ -3346,7 +3636,7 @@ describe("Leases Handler", async () => {
         { result: [], nextPageIdentifier: null },
       );
       vi.spyOn(InnovationSandbox, "requestLease").mockResolvedValue(
-        generateSchemaData(PendingLeaseSchema),
+        generateSchemaData(PersistedPendingLeaseSchema),
       );
       const warnSpy = vi.spyOn(Logger.prototype, "warn");
 
@@ -3382,7 +3672,7 @@ describe("Leases Handler", async () => {
         userEmail,
         createdAtIso: DateTime.utc().minus({ hours: 800 }).toISO()!,
       });
-      const inCap: Lease[] = Array.from({ length: 9 }, (_, i) =>
+      const inCap: PersistedLease[] = Array.from({ length: 9 }, (_, i) =>
         buildLeaseAt({
           userEmail,
           createdAtIso: DateTime.utc()
@@ -3398,7 +3688,7 @@ describe("Leases Handler", async () => {
       );
       const requestLeaseSpy = vi
         .spyOn(InnovationSandbox, "requestLease")
-        .mockResolvedValue(generateSchemaData(PendingLeaseSchema));
+        .mockResolvedValue(generateSchemaData(PersistedPendingLeaseSchema));
 
       const response = await handler(
         makeUserOnlyEvent(),
@@ -3413,7 +3703,7 @@ describe("Leases Handler", async () => {
 
   describe("POST /leases/{leaseId}/review", () => {
     it("should return 200 and invoke the approveLease action", async () => {
-      const mockedLease = generateSchemaData(PendingLeaseSchema);
+      const mockedLease = generateSchemaData(PersistedPendingLeaseSchema);
       const mockedLeaseId = base64EncodeCompositeKey({
         userEmail: mockedLease.userEmail,
         uuid: mockedLease.uuid,
@@ -3450,17 +3740,60 @@ describe("Leases Handler", async () => {
         ),
       ).toEqual({
         statusCode: 200,
-        body: JSON.stringify({
+        body: rawBodyLike({
           status: "success",
           data: null,
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
       expect(getLeaseSpy).toHaveBeenCalledOnce();
       expect(approveLeaseSpy).toHaveBeenCalledOnce();
     });
+
+    it("should approve a pending lease with an existing group when new group assignments are disabled", async () => {
+      mockedGlobalConfig.leases.groupAssignmentMode = "NONE";
+      mockAppConfigMiddleware(mockedGlobalConfig, mockedReportingConfig);
+
+      const mockedLease = generateSchemaData(PersistedPendingLeaseSchema, {
+        desiredAssignments: [
+          generateSchemaData(DesiredAssignmentSchema, {
+            principalType: "GROUP",
+          }),
+        ],
+      });
+      const mockedLeaseId = base64EncodeCompositeKey({
+        userEmail: mockedLease.userEmail,
+        uuid: mockedLease.uuid,
+      });
+      const event = createAPIGatewayProxyEvent({
+        httpMethod: "POST",
+        path: `/leases/${mockedLeaseId}/review`,
+        body: JSON.stringify({ action: "Approve" }),
+        headers: { "Content-Type": "application/json" },
+        isbUser: isbAuthorizedUser.user,
+      });
+
+      vi.spyOn(DynamoLeaseStore.prototype, "get").mockResolvedValue({
+        result: mockedLease,
+      });
+      const approveLeaseSpy = vi
+        .spyOn(InnovationSandbox, "approveLease")
+        .mockResolvedValue({
+          newItem: mockedLease,
+          oldItem: mockedLease,
+        });
+
+      const response = await handler(
+        event,
+        mockAuthorizedContext(testEnv, mockedGlobalConfig),
+      );
+
+      expect(response.statusCode).toBe(200);
+      expect(approveLeaseSpy).toHaveBeenCalledOnce();
+    });
+
     it("should return 200 and invoke the denyLease action", async () => {
-      const mockedLease = generateSchemaData(PendingLeaseSchema);
+      const mockedLease = generateSchemaData(PersistedPendingLeaseSchema);
       const mockedLeaseId = base64EncodeCompositeKey({
         userEmail: mockedLease.userEmail,
         uuid: mockedLease.uuid,
@@ -3494,17 +3827,17 @@ describe("Leases Handler", async () => {
         ),
       ).toEqual({
         statusCode: 200,
-        body: JSON.stringify({
+        body: rawBodyLike({
           status: "success",
           data: null,
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
       expect(getLeaseSpy).toHaveBeenCalledOnce();
       expect(denyLeaseSpy).toHaveBeenCalledOnce();
     });
     it("should return 400 and when the leaseId path parameter is invalid", async () => {
-      const mockedLease = generateSchemaData(PendingLeaseSchema);
+      const mockedLease = generateSchemaData(PersistedPendingLeaseSchema);
       const mockedLeaseId = "INVALID_ID";
       const event = createAPIGatewayProxyEvent({
         httpMethod: "POST",
@@ -3541,13 +3874,13 @@ describe("Leases Handler", async () => {
         body: createFailureResponseBody({
           message: "LeaseId path parameter provided is invalid.",
         }),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("ValidationError"),
       });
       expect(getLeaseSpy).not.toHaveBeenCalledOnce();
       expect(approveLeaseSpy).not.toHaveBeenCalledOnce();
     });
     it("should return 400 and when the request body is invalid", async () => {
-      const mockedLease = generateSchemaData(PendingLeaseSchema);
+      const mockedLease = generateSchemaData(PersistedPendingLeaseSchema);
       const mockedLeaseId = base64EncodeCompositeKey({
         userEmail: mockedLease.userEmail,
         uuid: mockedLease.uuid,
@@ -3589,13 +3922,13 @@ describe("Leases Handler", async () => {
           field: "input",
           message: 'Unrecognized key: "invalidField"',
         }),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("ValidationError"),
       });
       expect(getLeaseSpy).not.toHaveBeenCalledOnce();
       expect(approveLeaseSpy).not.toHaveBeenCalledOnce();
     });
     it("should return 404 when the lease to review does not exist", async () => {
-      const mockedLease = generateSchemaData(PendingLeaseSchema);
+      const mockedLease = generateSchemaData(PersistedPendingLeaseSchema);
       const mockedLeaseId = base64EncodeCompositeKey({
         userEmail: mockedLease.userEmail,
         uuid: mockedLease.uuid,
@@ -3641,7 +3974,7 @@ describe("Leases Handler", async () => {
       expect(approveLeaseSpy).not.toHaveBeenCalledOnce();
     });
     it("should return 409 when the lease is in a non-reviewable state", async () => {
-      const mockedLease = generateSchemaData(MonitoredLeaseSchema);
+      const mockedLease = generateSchemaData(PersistedMonitoredLeaseSchema);
       const mockedLeaseId = base64EncodeCompositeKey({
         userEmail: mockedLease.userEmail,
         uuid: mockedLease.uuid,
@@ -3681,13 +4014,13 @@ describe("Leases Handler", async () => {
         body: createFailureResponseBody({
           message: LEASE_NOT_PENDING_REVIEW_ERROR,
         }),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("ConflictError"),
       });
       expect(getLeaseSpy).toHaveBeenCalledOnce();
       expect(approveLeaseSpy).not.toHaveBeenCalledOnce();
     });
     it("should return 500 when an unexpected error occurs", async () => {
-      const mockedLease = generateSchemaData(PendingLeaseSchema);
+      const mockedLease = generateSchemaData(PersistedPendingLeaseSchema);
       const mockedLeaseId = base64EncodeCompositeKey({
         userEmail: mockedLease.userEmail,
         uuid: mockedLease.uuid,
@@ -3722,7 +4055,7 @@ describe("Leases Handler", async () => {
       ).toEqual({
         statusCode: 500,
         body: createErrorResponseBody("An unexpected error occurred."),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("InternalServerError"),
       });
       expect(getLeaseSpy).toHaveBeenCalledOnce();
       expect(approveLeaseSpy).toHaveBeenCalledOnce();
@@ -3731,7 +4064,7 @@ describe("Leases Handler", async () => {
 
   describe("POST /leases/{leaseId}/freeze", () => {
     it("should return 200 and invoke the freezeLease action", async () => {
-      const mockedLease = generateSchemaData(MonitoredLeaseSchema);
+      const mockedLease = generateSchemaData(PersistedMonitoredLeaseSchema);
       const mockedLeaseId = base64EncodeCompositeKey({
         userEmail: mockedLease.userEmail,
         uuid: mockedLease.uuid,
@@ -3762,17 +4095,17 @@ describe("Leases Handler", async () => {
         ),
       ).toEqual({
         statusCode: 200,
-        body: JSON.stringify({
+        body: rawBodyLike({
           status: "success",
           data: null,
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
       expect(getLeaseSpy).toHaveBeenCalledOnce();
       expect(freezeLeaseSpy).toHaveBeenCalledOnce();
     });
     it("should return 400 and when the leaseId path parameter is invalid", async () => {
-      const mockedLease = generateSchemaData(MonitoredLeaseSchema);
+      const mockedLease = generateSchemaData(PersistedMonitoredLeaseSchema);
       const mockedLeaseId = "INVALID_ID";
       const event = createAPIGatewayProxyEvent({
         httpMethod: "POST",
@@ -3803,13 +4136,13 @@ describe("Leases Handler", async () => {
         body: createFailureResponseBody({
           message: "LeaseId path parameter provided is invalid.",
         }),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("ValidationError"),
       });
       expect(getLeaseSpy).not.toHaveBeenCalledOnce();
       expect(freezeLeaseSpy).not.toHaveBeenCalledOnce();
     });
     it("should return 404 when the lease to review does not exist", async () => {
-      const mockedLease = generateSchemaData(MonitoredLeaseSchema);
+      const mockedLease = generateSchemaData(PersistedMonitoredLeaseSchema);
       const mockedLeaseId = base64EncodeCompositeKey({
         userEmail: mockedLease.userEmail,
         uuid: mockedLease.uuid,
@@ -3849,7 +4182,7 @@ describe("Leases Handler", async () => {
       expect(freezeLeaseSpy).not.toHaveBeenCalledOnce();
     });
     it("should return 409 when the lease is in a non-freezeable state", async () => {
-      const mockedLease = generateSchemaData(PendingLeaseSchema);
+      const mockedLease = generateSchemaData(PersistedPendingLeaseSchema);
       const mockedLeaseId = base64EncodeCompositeKey({
         userEmail: mockedLease.userEmail,
         uuid: mockedLease.uuid,
@@ -3883,7 +4216,7 @@ describe("Leases Handler", async () => {
         body: createFailureResponseBody({
           message: `Only active leases can be frozen.`,
         }),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("ConflictError"),
       });
       expect(getLeaseSpy).toHaveBeenCalledOnce();
       expect(freezeLeaseSpy).not.toHaveBeenCalledOnce();
@@ -3895,7 +4228,7 @@ describe("Leases Handler", async () => {
     ])(
       "should return $statusCode when $error.name is thrown by freeze call",
       async ({ statusCode, error }) => {
-        const mockedLease = generateSchemaData(MonitoredLeaseSchema);
+        const mockedLease = generateSchemaData(PersistedMonitoredLeaseSchema);
         const mockedLeaseId = base64EncodeCompositeKey({
           userEmail: mockedLease.userEmail,
           uuid: mockedLease.uuid,
@@ -3929,7 +4262,10 @@ describe("Leases Handler", async () => {
           body: createFailureResponseBody({
             message: error.name,
           }),
-          headers: responseHeaders,
+          headers:
+            statusCode === 409
+              ? responseHeadersWithErrorType("ConflictError")
+              : responseHeaders,
         });
         expect(getLeaseSpy).toHaveBeenCalledOnce();
         expect(freezeLeaseSpy).toHaveBeenCalledOnce();
@@ -3938,7 +4274,7 @@ describe("Leases Handler", async () => {
     it("should return 409 when a competing lock holder blocks the freeze", async () => {
       // Previously fell through to the generic handler as a 500, which gave the
       // caller no way to tell a retryable conflict from a server fault.
-      const mockedLease = generateSchemaData(MonitoredLeaseSchema);
+      const mockedLease = generateSchemaData(PersistedMonitoredLeaseSchema);
       const mockedLeaseId = base64EncodeCompositeKey({
         userEmail: mockedLease.userEmail,
         uuid: mockedLease.uuid,
@@ -3970,11 +4306,11 @@ describe("Leases Handler", async () => {
           message:
             "Another operation is currently being processed for this lease. Try again once it completes.",
         }),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("ConflictError"),
       });
     });
     it("should return 500 when an unexpected error occurs", async () => {
-      const mockedLease = generateSchemaData(MonitoredLeaseSchema);
+      const mockedLease = generateSchemaData(PersistedMonitoredLeaseSchema);
       const mockedLeaseId = base64EncodeCompositeKey({
         userEmail: mockedLease.userEmail,
         uuid: mockedLease.uuid,
@@ -4006,7 +4342,7 @@ describe("Leases Handler", async () => {
       ).toEqual({
         statusCode: 500,
         body: createErrorResponseBody("An unexpected error occurred."),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("InternalServerError"),
       });
       expect(getLeaseSpy).toHaveBeenCalledOnce();
       expect(freezeLeaseSpy).toHaveBeenCalledOnce();
@@ -4015,7 +4351,7 @@ describe("Leases Handler", async () => {
 
   describe("POST /leases/{leaseId}/terminate", () => {
     it("should return 200 and invoke the lease termination process", async () => {
-      const mockedLease = generateSchemaData(MonitoredLeaseSchema);
+      const mockedLease = generateSchemaData(PersistedMonitoredLeaseSchema);
       const mockedLeaseId = base64EncodeCompositeKey({
         userEmail: mockedLease.userEmail,
         uuid: mockedLease.uuid,
@@ -4046,11 +4382,11 @@ describe("Leases Handler", async () => {
         ),
       ).toEqual({
         statusCode: 200,
-        body: JSON.stringify({
+        body: rawBodyLike({
           status: "success",
           data: null,
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
       expect(getLeaseSpy).toHaveBeenCalledOnce();
       expect(terminateLeaseSpy).toHaveBeenCalledOnce();
@@ -4059,7 +4395,7 @@ describe("Leases Handler", async () => {
     it("should return 409 when a termination is already being processed", async () => {
       // Terminate preempts every other intent, so a conflict here means another
       // termination already holds the lock.
-      const mockedLease = generateSchemaData(MonitoredLeaseSchema);
+      const mockedLease = generateSchemaData(PersistedMonitoredLeaseSchema);
       const mockedLeaseId = base64EncodeCompositeKey({
         userEmail: mockedLease.userEmail,
         uuid: mockedLease.uuid,
@@ -4090,12 +4426,12 @@ describe("Leases Handler", async () => {
         body: createFailureResponseBody({
           message: "A termination is already being processed for this lease.",
         }),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("ConflictError"),
       });
     });
 
     it("should return 404 when lease is not found", async () => {
-      const mockedLease = generateSchemaData(MonitoredLeaseSchema);
+      const mockedLease = generateSchemaData(PersistedMonitoredLeaseSchema);
       const mockedLeaseId = base64EncodeCompositeKey({
         userEmail: mockedLease.userEmail,
         uuid: mockedLease.uuid,
@@ -4135,7 +4471,7 @@ describe("Leases Handler", async () => {
       expect(terminateLeaseSpy).not.toHaveBeenCalledOnce();
     });
     it("should return 409 when lease is in non-active state", async () => {
-      const mockedLease = generateSchemaData(ExpiredLeaseSchema);
+      const mockedLease = generateSchemaData(PersistedExpiredLeaseSchema);
       const mockedLeaseId = base64EncodeCompositeKey({
         userEmail: mockedLease.userEmail,
         uuid: mockedLease.uuid,
@@ -4169,7 +4505,7 @@ describe("Leases Handler", async () => {
         body: createFailureResponseBody({
           message: `Only [Active, Frozen, Provisioning] leases can be terminated.`,
         }),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("ConflictError"),
       });
       expect(getLeaseSpy).toHaveBeenCalledOnce();
       expect(terminateLeaseSpy).not.toHaveBeenCalledOnce();
@@ -4180,7 +4516,7 @@ describe("Leases Handler", async () => {
     ])(
       "should return $statusCode when $error.name is thrown by terminate call",
       async ({ statusCode, error }) => {
-        const mockedLease = generateSchemaData(MonitoredLeaseSchema);
+        const mockedLease = generateSchemaData(PersistedMonitoredLeaseSchema);
         const mockedLeaseId = base64EncodeCompositeKey({
           userEmail: mockedLease.userEmail,
           uuid: mockedLease.uuid,
@@ -4219,7 +4555,7 @@ describe("Leases Handler", async () => {
       },
     );
     it("should return 500 when unexpected error occurs", async () => {
-      const mockedLease = generateSchemaData(MonitoredLeaseSchema);
+      const mockedLease = generateSchemaData(PersistedMonitoredLeaseSchema);
       const mockedLeaseId = base64EncodeCompositeKey({
         userEmail: mockedLease.userEmail,
         uuid: mockedLease.uuid,
@@ -4251,14 +4587,14 @@ describe("Leases Handler", async () => {
       ).toEqual({
         statusCode: 500,
         body: createErrorResponseBody("An unexpected error occurred."),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("InternalServerError"),
       });
       expect(getLeaseSpy).toHaveBeenCalledOnce();
       expect(terminateLeaseSpy).toHaveBeenCalledOnce();
     });
 
     it("should return 200 and pass UserTerminated when User owns an Active lease", async () => {
-      const mockedLease = generateSchemaData(MonitoredLeaseSchema, {
+      const mockedLease = generateSchemaData(PersistedMonitoredLeaseSchema, {
         status: "Active",
         userEmail: isbAuthorizedUserUserRoleOnly.user.email,
       });
@@ -4295,7 +4631,7 @@ describe("Leases Handler", async () => {
     });
 
     it("should return 403 when User attempts to terminate another user's lease", async () => {
-      const mockedLease = generateSchemaData(MonitoredLeaseSchema, {
+      const mockedLease = generateSchemaData(PersistedMonitoredLeaseSchema, {
         status: "Active",
         userEmail: `another_${isbAuthorizedUserUserRoleOnly.user.email}`,
       });
@@ -4331,7 +4667,7 @@ describe("Leases Handler", async () => {
     it.each([{ status: "Frozen" }, { status: "Provisioning" }] as const)(
       "should return 403 when User attempts to terminate own $status lease",
       async ({ status }) => {
-        const mockedLease = generateSchemaData(MonitoredLeaseSchema, {
+        const mockedLease = generateSchemaData(PersistedMonitoredLeaseSchema, {
           status,
           userEmail: isbAuthorizedUserUserRoleOnly.user.email,
         });
@@ -4366,7 +4702,7 @@ describe("Leases Handler", async () => {
     );
 
     it("should return 403 when User attempts to terminate but allowUserLeaseTermination is disabled", async () => {
-      const mockedLease = generateSchemaData(MonitoredLeaseSchema, {
+      const mockedLease = generateSchemaData(PersistedMonitoredLeaseSchema, {
         status: "Active",
         userEmail: isbAuthorizedUserUserRoleOnly.user.email,
       });
@@ -4413,7 +4749,7 @@ describe("Leases Handler", async () => {
       // leaseId learns the lease's lifecycle state from the response code
       // (409 = expired/quarantined, 403 = active/monitored). The authorization
       // gate fires first so both cases return the same 403.
-      const mockedLease = generateSchemaData(ExpiredLeaseSchema, {
+      const mockedLease = generateSchemaData(PersistedExpiredLeaseSchema, {
         userEmail: `another_${isbAuthorizedUserUserRoleOnly.user.email}`,
       });
       const mockedLeaseId = base64EncodeCompositeKey({
@@ -4449,7 +4785,7 @@ describe("Leases Handler", async () => {
       // Mirror of the oracle guard: an authorized caller (the owner) passes the
       // authorization gate and legitimately sees the 409 status response. Confirms
       // the gate does not over-block authorized users.
-      const mockedLease = generateSchemaData(ExpiredLeaseSchema, {
+      const mockedLease = generateSchemaData(PersistedExpiredLeaseSchema, {
         userEmail: isbAuthorizedUserUserRoleOnly.user.email,
       });
       const mockedLeaseId = base64EncodeCompositeKey({
@@ -4544,7 +4880,7 @@ describe("Leases Handler", async () => {
     });
 
     it("should preserve ManuallyTerminated when Admin/Manager terminates another user's Frozen lease", async () => {
-      const mockedLease = generateSchemaData(MonitoredLeaseSchema, {
+      const mockedLease = generateSchemaData(PersistedMonitoredLeaseSchema, {
         status: "Frozen",
         userEmail: "someone-else@example.com",
       });
@@ -4603,7 +4939,7 @@ describe("Leases Handler", async () => {
     // end without hitting AWS. sendIsbEvents is left as the assertion seam.
     function stubTerminationCollaborators(account: { awsAccountId: string }) {
       vi.spyOn(DynamoSandboxAccountStore.prototype, "get").mockResolvedValue({
-        result: generateSchemaData(SandboxAccountSchema, {
+        result: generateSchemaData(PersistedSandboxAccountSchema, {
           awsAccountId: account.awsAccountId,
           status: "Active",
         }),
@@ -4655,7 +4991,7 @@ describe("Leases Handler", async () => {
     }
 
     it("publishes a LeaseTerminatedEvent with reason UserTerminated when a User terminates their own Active lease", async () => {
-      const mockedLease = generateSchemaData(MonitoredLeaseSchema, {
+      const mockedLease = generateSchemaData(PersistedMonitoredLeaseSchema, {
         status: "Active",
         userEmail: isbAuthorizedUserUserRoleOnly.user.email,
         awsAccountId: "000000000000",
@@ -4689,7 +5025,7 @@ describe("Leases Handler", async () => {
     });
 
     it("publishes a LeaseTerminatedEvent with reason ManuallyTerminated when an Admin terminates another user's lease", async () => {
-      const mockedLease = generateSchemaData(MonitoredLeaseSchema, {
+      const mockedLease = generateSchemaData(PersistedMonitoredLeaseSchema, {
         status: "Active",
         userEmail: "someone-else@example.com",
         awsAccountId: "000000000000",
@@ -4725,7 +5061,7 @@ describe("Leases Handler", async () => {
 
   describe("POST /leases/{leaseId}/unfreeze", () => {
     it("should return 200 and invoke the unfreezeLease action", async () => {
-      const mockedLease = generateSchemaData(MonitoredLeaseSchema, {
+      const mockedLease = generateSchemaData(PersistedMonitoredLeaseSchema, {
         status: "Frozen",
       });
       const mockedLeaseId = base64EncodeCompositeKey({
@@ -4761,14 +5097,14 @@ describe("Leases Handler", async () => {
         ),
       ).toEqual({
         statusCode: 200,
-        body: JSON.stringify({
+        body: rawBodyLike({
           status: "success",
           data: {
-            ...mockedLease,
+            ...projectLease(mockedLease),
             leaseId: mockedLeaseId,
           },
         }),
-        headers: responseHeaders,
+        headers: expect.objectContaining(responseHeaders),
       });
       expect(getLeaseSpy).toHaveBeenCalledOnce();
       expect(unfreezeLeaseSpy).toHaveBeenCalledOnce();
@@ -4776,7 +5112,7 @@ describe("Leases Handler", async () => {
     it("should return 409 when assignment processing holds the lock", async () => {
       // Unfreeze is non-critical, so ANY live lock rejects it. This previously
       // surfaced as a 500.
-      const mockedLease = generateSchemaData(MonitoredLeaseSchema, {
+      const mockedLease = generateSchemaData(PersistedMonitoredLeaseSchema, {
         status: "Frozen",
       });
       const mockedLeaseId = base64EncodeCompositeKey({
@@ -4810,11 +5146,11 @@ describe("Leases Handler", async () => {
           message:
             "Another operation is currently being processed for this lease. Try again once it completes.",
         }),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("ConflictError"),
       });
     });
     it("should return 400 when the leaseId path parameter is invalid", async () => {
-      const mockedLease = generateSchemaData(MonitoredLeaseSchema);
+      const mockedLease = generateSchemaData(PersistedMonitoredLeaseSchema);
       const mockedLeaseId = "INVALID_ID";
       const event = createAPIGatewayProxyEvent({
         httpMethod: "POST",
@@ -4848,14 +5184,14 @@ describe("Leases Handler", async () => {
         body: createFailureResponseBody({
           message: "LeaseId path parameter provided is invalid.",
         }),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("ValidationError"),
       });
       expect(getLeaseSpy).not.toHaveBeenCalled();
       expect(unfreezeLeaseSpy).not.toHaveBeenCalled();
     });
 
     it("should return 404 when the lease does not exist", async () => {
-      const mockedLease = generateSchemaData(MonitoredLeaseSchema);
+      const mockedLease = generateSchemaData(PersistedMonitoredLeaseSchema);
       const mockedLeaseId = base64EncodeCompositeKey({
         userEmail: mockedLease.userEmail,
         uuid: mockedLease.uuid,
@@ -4899,7 +5235,7 @@ describe("Leases Handler", async () => {
     });
 
     it("should return 409 when the lease is not frozen", async () => {
-      const mockedLease = generateSchemaData(PendingLeaseSchema);
+      const mockedLease = generateSchemaData(PersistedPendingLeaseSchema);
       const mockedLeaseId = base64EncodeCompositeKey({
         userEmail: mockedLease.userEmail,
         uuid: mockedLease.uuid,
@@ -4936,7 +5272,7 @@ describe("Leases Handler", async () => {
         body: createFailureResponseBody({
           message: `Only frozen leases can be unfrozen.`,
         }),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("ConflictError"),
       });
       expect(getLeaseSpy).toHaveBeenCalledOnce();
       expect(unfreezeLeaseSpy).not.toHaveBeenCalled();
@@ -4948,7 +5284,7 @@ describe("Leases Handler", async () => {
     ])(
       "should return $statusCode when $error.name is thrown by unfreeze call",
       async ({ statusCode, error }) => {
-        const mockedLease = generateSchemaData(MonitoredLeaseSchema, {
+        const mockedLease = generateSchemaData(PersistedMonitoredLeaseSchema, {
           status: "Frozen",
         });
         const mockedLeaseId = base64EncodeCompositeKey({
@@ -4984,14 +5320,17 @@ describe("Leases Handler", async () => {
           body: createFailureResponseBody({
             message: error.name,
           }),
-          headers: responseHeaders,
+          headers:
+            statusCode === 409
+              ? responseHeadersWithErrorType("ConflictError")
+              : responseHeaders,
         });
         expect(getLeaseSpy).toHaveBeenCalledOnce();
         expect(unfreezeLeaseSpy).toHaveBeenCalledOnce();
       },
     );
     it("should return 500 when an unexpected error occurs", async () => {
-      const mockedLease = generateSchemaData(MonitoredLeaseSchema, {
+      const mockedLease = generateSchemaData(PersistedMonitoredLeaseSchema, {
         status: "Frozen",
       });
       const mockedLeaseId = base64EncodeCompositeKey({
@@ -5025,7 +5364,7 @@ describe("Leases Handler", async () => {
       ).toEqual({
         statusCode: 500,
         body: createErrorResponseBody("An unexpected error occurred."),
-        headers: responseHeaders,
+        headers: responseHeadersWithErrorType("InternalServerError"),
       });
       expect(getLeaseSpy).toHaveBeenCalledOnce();
       expect(unfreezeLeaseSpy).toHaveBeenCalledOnce();
@@ -5040,7 +5379,7 @@ describe("Leases Handler", async () => {
     // access records), so both inputs must be pinned: zocker would otherwise
     // generate random desiredAssignments and a random resourceLock, changing the
     // row count and the derived statuses from run to run.
-    const lease = generateSchemaData(LeaseSchema, {
+    const lease = generateSchemaData(PersistedLeaseSchema, {
       userEmail: leaseOwnerEmail,
       uuid: leaseUuid,
       status: "Active",
@@ -5063,7 +5402,7 @@ describe("Leases Handler", async () => {
     }
 
     it("should return 200 with assignments for Admin", async () => {
-      const userAssignment = generateSchemaData(UserAssignmentSchema, {
+      const userAssignment = generateSchemaData(PersistedUserAssignmentSchema, {
         pk: "user#a0b1c2d3-e4f5-6789-abcd-ef0123456789",
         sk: `lease#${leaseUuid}`,
         userId: "a0b1c2d3-e4f5-6789-abcd-ef0123456789",
@@ -5109,14 +5448,17 @@ describe("Leases Handler", async () => {
         roles: ["Manager"],
       };
 
-      const groupAssignment = generateSchemaData(GroupAssignmentSchema, {
-        pk: "group#a0b1c2d3-e4f5-6789-abcd-ef0123456789",
-        sk: `lease#${leaseUuid}`,
-        groupId: "a0b1c2d3-e4f5-6789-abcd-ef0123456789",
-        principalType: "GROUP",
-        leaseId: leaseUuid,
-        leaseOwnerEmail,
-      });
+      const groupAssignment = generateSchemaData(
+        PersistedGroupAssignmentSchema,
+        {
+          pk: "group#a0b1c2d3-e4f5-6789-abcd-ef0123456789",
+          sk: `lease#${leaseUuid}`,
+          groupId: "a0b1c2d3-e4f5-6789-abcd-ef0123456789",
+          principalType: "GROUP",
+          leaseId: leaseUuid,
+          leaseOwnerEmail,
+        },
+      );
 
       vi.spyOn(DynamoLeaseStore.prototype, "get").mockResolvedValue({
         result: lease,
@@ -5155,7 +5497,7 @@ describe("Leases Handler", async () => {
         roles: ["User"],
       };
 
-      const userAssignment = generateSchemaData(UserAssignmentSchema, {
+      const userAssignment = generateSchemaData(PersistedUserAssignmentSchema, {
         pk: "user#a0b1c2d3-e4f5-6789-abcd-ef0123456789",
         sk: `lease#${leaseUuid}`,
         userId: "a0b1c2d3-e4f5-6789-abcd-ef0123456789",
@@ -5282,7 +5624,7 @@ describe("Leases Handler", async () => {
     });
 
     it("should return 200 with mixed user and group assignments", async () => {
-      const userAssignment = generateSchemaData(UserAssignmentSchema, {
+      const userAssignment = generateSchemaData(PersistedUserAssignmentSchema, {
         pk: "user#a0b1c2d3-e4f5-6789-abcd-ef0123456789",
         sk: `lease#${leaseUuid}`,
         userId: "a0b1c2d3-e4f5-6789-abcd-ef0123456789",
@@ -5292,15 +5634,18 @@ describe("Leases Handler", async () => {
         assigneeEmail: "user1@example.com",
       });
 
-      const groupAssignment = generateSchemaData(GroupAssignmentSchema, {
-        pk: "group#b1c2d3e4-f5a6-7890-bcde-f01234567890",
-        sk: `lease#${leaseUuid}`,
-        groupId: "b1c2d3e4-f5a6-7890-bcde-f01234567890",
-        principalType: "GROUP",
-        displayName: "Engineering Team",
-        leaseId: leaseUuid,
-        leaseOwnerEmail,
-      });
+      const groupAssignment = generateSchemaData(
+        PersistedGroupAssignmentSchema,
+        {
+          pk: "group#b1c2d3e4-f5a6-7890-bcde-f01234567890",
+          sk: `lease#${leaseUuid}`,
+          groupId: "b1c2d3e4-f5a6-7890-bcde-f01234567890",
+          principalType: "GROUP",
+          displayName: "Engineering Team",
+          leaseId: leaseUuid,
+          leaseOwnerEmail,
+        },
+      );
 
       vi.spyOn(DynamoLeaseStore.prototype, "get").mockResolvedValue({
         result: lease,
@@ -5372,7 +5717,7 @@ describe("Leases Handler", async () => {
     const putLeaseCompositeKey = base64EncodeCompositeKey(putLeaseKey)!;
     const putOwnerIdcId = "a1b2c3d4e5-550e8400-e29b-41d4-a716-446655440000";
 
-    const putActiveLease = generateSchemaData(MonitoredLeaseSchema, {
+    const putActiveLease = generateSchemaData(PersistedMonitoredLeaseSchema, {
       userEmail: putOwnerEmail,
       uuid: putLeaseId,
       status: "Active",
@@ -5384,7 +5729,7 @@ describe("Leases Handler", async () => {
         DynamoPrincipalStore.prototype,
         "batchGetCacheItems",
       ).mockResolvedValue([
-        generateSchemaData(PrincipalCacheItemSchema, {
+        generateSchemaData(PersistedPrincipalCacheItemSchema, {
           sk: `user#${putOwnerIdcId}`,
           principalId: putOwnerIdcId,
           principalType: "USER",
@@ -5497,6 +5842,64 @@ describe("Leases Handler", async () => {
 
         vi.spyOn(DynamoLeaseStore.prototype, "get").mockResolvedValue({
           result: putActiveLease as any,
+        });
+        stubServiceToSucceed();
+
+        const event = createPutEvent({
+          assignments: [{ principalId: putOwnerIdcId, principalType: "USER" }],
+        });
+        const response = await handler(
+          event,
+          mockAuthorizedContext(testEnv, mockedGlobalConfig),
+        );
+
+        expect(response.statusCode).toBe(202);
+      });
+    });
+
+    describe("group assignment mode", () => {
+      it("should reject a new group assignment for an admin", async () => {
+        mockedGlobalConfig.leases.groupAssignmentMode = "NONE";
+        mockAppConfigMiddleware(mockedGlobalConfig, mockedReportingConfig);
+
+        vi.spyOn(DynamoLeaseStore.prototype, "get").mockResolvedValue({
+          result: { ...putActiveLease, desiredAssignments: [] } as any,
+        });
+
+        const event = createPutEvent({
+          assignments: [
+            {
+              principalId: crypto.randomUUID(),
+              principalType: "GROUP",
+            },
+          ],
+        });
+        const response = await handler(
+          event,
+          mockAuthorizedContext(testEnv, mockedGlobalConfig),
+        );
+
+        expect(response.statusCode).toBe(400);
+        const body = JSON.parse(response.body);
+        expect(body.data.errors[0].message).toContain(
+          "New group assignments are not enabled",
+        );
+      });
+
+      it("should allow an existing group assignment to be removed", async () => {
+        mockedGlobalConfig.leases.groupAssignmentMode = "NONE";
+        mockAppConfigMiddleware(mockedGlobalConfig, mockedReportingConfig);
+
+        vi.spyOn(DynamoLeaseStore.prototype, "get").mockResolvedValue({
+          result: {
+            ...putActiveLease,
+            desiredAssignments: [
+              {
+                principalId: crypto.randomUUID(),
+                principalType: "GROUP",
+              },
+            ],
+          } as any,
         });
         stubServiceToSucceed();
 
@@ -5754,7 +6157,7 @@ describe("Leases Handler", async () => {
           DynamoPrincipalStore.prototype,
           "batchGetCacheItems",
         ).mockResolvedValue([
-          generateSchemaData(PrincipalCacheItemSchema, {
+          generateSchemaData(PersistedPrincipalCacheItemSchema, {
             sk: `user#${putOwnerIdcId}`,
             principalId: putOwnerIdcId,
             principalType: "USER",
@@ -5796,7 +6199,7 @@ describe("Leases Handler", async () => {
           DynamoPrincipalStore.prototype,
           "batchGetCacheItems",
         ).mockResolvedValue([
-          generateSchemaData(PrincipalCacheItemSchema, {
+          generateSchemaData(PersistedPrincipalCacheItemSchema, {
             sk: `user#${putOwnerIdcId}`,
             principalId: putOwnerIdcId,
             principalType: "USER",
@@ -5844,13 +6247,13 @@ describe("Leases Handler", async () => {
           DynamoPrincipalStore.prototype,
           "batchGetCacheItems",
         ).mockResolvedValue([
-          generateSchemaData(PrincipalCacheItemSchema, {
+          generateSchemaData(PersistedPrincipalCacheItemSchema, {
             sk: `user#${putOwnerIdcId}`,
             principalId: putOwnerIdcId,
             principalType: "USER",
             email: putOwnerEmail,
           }),
-          generateSchemaData(PrincipalCacheItemSchema, {
+          generateSchemaData(PersistedPrincipalCacheItemSchema, {
             sk: "user#c3d4e5f6a7-770e8400-e29b-41d4-a716-446655440088",
             principalId: "c3d4e5f6a7-770e8400-e29b-41d4-a716-446655440088",
             principalType: "USER",
@@ -5891,7 +6294,7 @@ describe("Leases Handler", async () => {
     const sharedUserId = randomUUID();
     const otherUserId = randomUUID();
 
-    const sharedLease = generateSchemaData(LeaseSchema, {
+    const sharedLease = generateSchemaData(PersistedLeaseSchema, {
       status: "Active",
     });
 
@@ -5906,6 +6309,31 @@ describe("Leases Handler", async () => {
         isbUser: user,
       });
     }
+
+    // Literal-over-label routing precedence: the generated mux binds both
+    // `/leases/shared` (ListSharedLeases) and `/leases/{leaseId}` (GetLease).
+    // `preferLiteralRoutes` (in the handler) ensures `GET /leases/shared` reaches
+    // ListSharedLeases rather than GetLease with `leaseId="shared"` — mirrors the
+    // accounts `/accounts/unregistered` literal-routing test. Without it the
+    // request would decode "shared" as a composite key and 400/404 via GetLease.
+    it("routes GET /leases/shared to ListSharedLeases, not GetLease", async () => {
+      const listSharedSpy = vi
+        .spyOn(DynamoPrincipalStore.prototype, "getDirectAssignmentsForUser")
+        .mockResolvedValue({ result: [], nextPageIdentifier: null });
+      const getLeaseSpy = vi.spyOn(DynamoLeaseStore.prototype, "get");
+
+      const response = await handler(
+        buildSharedEvent({ userId: sharedUserId, accessType: "direct" }),
+        mockAuthorizedContext(testEnv, mockedGlobalConfig),
+      );
+
+      // Reached the shared-leases path (200 + the ListSharedLeases store call)...
+      expect(response.statusCode).toBe(200);
+      expect(listSharedSpy).toHaveBeenCalledOnce();
+      // ...and never fell through to GetLease's single-lease fetch (which would
+      // have tried to decode "shared" as a leaseId composite key).
+      expect(getLeaseSpy).not.toHaveBeenCalled();
+    });
 
     describe("?accessType=direct", () => {
       it("maps public maxResults to internal pageSize", async () => {
@@ -5976,7 +6404,9 @@ describe("Leases Handler", async () => {
             uuid: sharedLease.uuid,
           }),
         );
-        expect(body.data.nextPageIdentifier).toBeNull();
+        // Accepted deviation: the restJson1 serializer drops null members, so an
+        // absent nextPageIdentifier is undefined on the wire, not null.
+        expect(body.data.nextPageIdentifier).toBeUndefined();
       });
 
       it("returns empty result when user has no direct assignments", async () => {
@@ -5996,14 +6426,16 @@ describe("Leases Handler", async () => {
         expect(response.statusCode).toBe(200);
         const body = JSON.parse(response.body);
         expect(body.data.result).toEqual([]);
-        expect(body.data.nextPageIdentifier).toBeNull();
+        // Accepted deviation: the restJson1 serializer drops null members, so an
+        // absent nextPageIdentifier is undefined on the wire, not null.
+        expect(body.data.nextPageIdentifier).toBeUndefined();
       });
     });
 
     describe("?accessType=group", () => {
       it("maps public maxResults to group pagination pageSize", async () => {
         const groupId = randomUUID();
-        const secondSharedLease = generateSchemaData(LeaseSchema, {
+        const secondSharedLease = generateSchemaData(PersistedLeaseSchema, {
           status: "Active",
         });
         vi.spyOn(
@@ -6157,6 +6589,47 @@ describe("Leases Handler", async () => {
         expect(response.statusCode).toBe(200);
         const body = JSON.parse(response.body);
         expect(body.data.result).toEqual([]);
+      });
+    });
+
+    describe("pagination defaults", () => {
+      it("defaults pageSize to 100 for direct access when maxResults is omitted", async () => {
+        // The operation passes `maxResults ?? 100`. The service's OWN default is 50,
+        // so observing a downstream pageSize of 100 proves the OPERATION applied the
+        // 100 default (not the service's 50) — the pre-Smithy `/leases/shared` cap.
+        const getDirectAssignmentsSpy = vi
+          .spyOn(DynamoPrincipalStore.prototype, "getDirectAssignmentsForUser")
+          .mockResolvedValue({ result: [], nextPageIdentifier: null });
+
+        const response = await handler(
+          buildSharedEvent({ userId: sharedUserId, accessType: "direct" }),
+          mockAuthorizedContext(testEnv, mockedGlobalConfig),
+        );
+
+        expect(response.statusCode).toBe(200);
+        expect(getDirectAssignmentsSpy).toHaveBeenCalledWith({
+          userId: sharedUserId,
+          pageIdentifier: undefined,
+          pageSize: 100,
+        });
+      });
+
+      it("defaults pageSize to 100 for group access when maxResults is omitted", async () => {
+        // Group access slices in memory (no store pageSize arg), so assert the
+        // service call args directly: the operation must pass pageSize 100.
+        const viaGroupsSpy = vi
+          .spyOn(leaseAssignment, "getLeasesForUserViaGroups")
+          .mockResolvedValue({ result: [], nextPageIdentifier: null });
+
+        const response = await handler(
+          buildSharedEvent({ userId: sharedUserId, accessType: "group" }),
+          mockAuthorizedContext(testEnv, mockedGlobalConfig),
+        );
+
+        expect(response.statusCode).toBe(200);
+        expect(viaGroupsSpy.mock.calls[0]![0]).toEqual(
+          expect.objectContaining({ pageSize: 100 }),
+        );
       });
     });
 

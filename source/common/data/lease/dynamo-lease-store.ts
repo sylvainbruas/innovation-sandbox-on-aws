@@ -38,18 +38,9 @@ import {
   LeaseStore,
 } from "@amzn/innovation-sandbox-commons/data/lease/lease-store.js";
 import {
-  BlockingLockIntents,
-  DesiredAssignmentWithDisplaySchema,
-  ExpiredLeaseStatus,
-  Lease,
-  LeaseKey,
-  LeaseLockIntent,
-  LeaseResourceLock,
-  LeaseResourceLockSchema,
-  LeaseSchema,
   LeaseSchemaVersion,
-  LeaseStatus,
-  MonitoredLeaseStatus,
+  PersistedLease,
+  PersistedLeaseSchema,
 } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import {
   chunk,
@@ -63,6 +54,17 @@ import {
   nowAsIsoDatetimeString,
   parseDatetime,
 } from "@amzn/innovation-sandbox-commons/utils/time-utils.js";
+import {
+  BlockingLockIntents,
+  DesiredAssignmentWithDisplaySchema,
+  ExpiredLeaseStatus,
+  LeaseKey,
+  LeaseLockIntent,
+  LeaseResourceLock,
+  LeaseResourceLockSchema,
+  LeaseStatus,
+  MonitoredLeaseStatus,
+} from "@amzn/innovation-sandbox-shared/types/lease.js";
 import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
 
 export class DynamoLeaseStore extends LeaseStore {
@@ -291,9 +293,9 @@ export class DynamoLeaseStore extends LeaseStore {
     }
   }
 
-  @validateItem(LeaseSchema)
+  @validateItem(PersistedLeaseSchema)
   @withMetadata(LeaseSchemaVersion)
-  public override async update<T extends Lease>(
+  public override async update<T extends PersistedLease>(
     lease: T,
     expected?: T,
   ): Promise<PutResult<T>> {
@@ -345,9 +347,9 @@ export class DynamoLeaseStore extends LeaseStore {
     }
   }
 
-  @validateItem(LeaseSchema)
+  @validateItem(PersistedLeaseSchema)
   @withMetadata(LeaseSchemaVersion)
-  public override async create<T extends Lease>(lease: T): Promise<T> {
+  public override async create<T extends PersistedLease>(lease: T): Promise<T> {
     try {
       await this.ddbClient.send(
         new PutCommand({
@@ -368,7 +370,7 @@ export class DynamoLeaseStore extends LeaseStore {
   public override async get(
     key: LeaseKey,
     options?: { consistentRead?: boolean },
-  ): Promise<SingleItemResult<Lease>> {
+  ): Promise<SingleItemResult<PersistedLease>> {
     const result = await this.ddbClient.send(
       new GetCommand({
         TableName: this.tableName,
@@ -377,10 +379,10 @@ export class DynamoLeaseStore extends LeaseStore {
       }),
     );
 
-    return parseSingleItemResult(result.Item, LeaseSchema);
+    return parseSingleItemResult(result.Item, PersistedLeaseSchema);
   }
 
-  public override async batchGet(keys: LeaseKey[]): Promise<Lease[]> {
+  public override async batchGet(keys: LeaseKey[]): Promise<PersistedLease[]> {
     if (keys.length === 0) return [];
 
     // Deduplicate input keys (BatchGetItem rejects duplicates). Tuple-stable
@@ -430,7 +432,7 @@ export class DynamoLeaseStore extends LeaseStore {
       { concurrency: 5 },
     );
 
-    const { result } = parseResults(allRawItems, LeaseSchema);
+    const { result } = parseResults(allRawItems, PersistedLeaseSchema);
     return result;
   }
 
@@ -449,7 +451,7 @@ export class DynamoLeaseStore extends LeaseStore {
   public override async findAll(props: {
     pageIdentifier?: string;
     pageSize?: number;
-  }): Promise<PaginatedQueryResult<Lease>> {
+  }): Promise<PaginatedQueryResult<PersistedLease>> {
     const { pageIdentifier, pageSize } = props;
 
     const result = await this.ddbClient.send(
@@ -461,7 +463,7 @@ export class DynamoLeaseStore extends LeaseStore {
     );
 
     return {
-      ...parseResults(result.Items, LeaseSchema),
+      ...parseResults(result.Items, PersistedLeaseSchema),
       nextPageIdentifier: base64EncodeCompositeKey(result.LastEvaluatedKey),
     };
   }
@@ -470,7 +472,7 @@ export class DynamoLeaseStore extends LeaseStore {
     status: LeaseStatus;
     pageIdentifier?: string;
     pageSize?: number;
-  }): Promise<PaginatedQueryResult<Lease>> {
+  }): Promise<PaginatedQueryResult<PersistedLease>> {
     const { status, pageIdentifier, pageSize } = props;
 
     const result = await this.ddbClient.send(
@@ -490,7 +492,7 @@ export class DynamoLeaseStore extends LeaseStore {
     );
 
     return {
-      ...parseResults(result.Items, LeaseSchema),
+      ...parseResults(result.Items, PersistedLeaseSchema),
       nextPageIdentifier: base64EncodeCompositeKey(result.LastEvaluatedKey),
     };
   }
@@ -500,7 +502,7 @@ export class DynamoLeaseStore extends LeaseStore {
     awsAccountId: string;
     pageIdentifier?: string;
     pageSize?: number;
-  }): Promise<PaginatedQueryResult<Lease>> {
+  }): Promise<PaginatedQueryResult<PersistedLease>> {
     const { status, awsAccountId, pageIdentifier, pageSize } = props;
 
     const result = await this.ddbClient.send(
@@ -523,7 +525,7 @@ export class DynamoLeaseStore extends LeaseStore {
     );
 
     return {
-      ...parseResults(result.Items, LeaseSchema),
+      ...parseResults(result.Items, PersistedLeaseSchema),
       nextPageIdentifier: base64EncodeCompositeKey(result.LastEvaluatedKey),
     };
   }
@@ -532,7 +534,7 @@ export class DynamoLeaseStore extends LeaseStore {
     userEmail: EmailAddress;
     pageIdentifier?: string;
     pageSize?: number;
-  }): Promise<PaginatedQueryResult<Lease>> {
+  }): Promise<PaginatedQueryResult<PersistedLease>> {
     const { userEmail, pageIdentifier, pageSize } = props;
 
     const result = await this.ddbClient.send(
@@ -550,7 +552,7 @@ export class DynamoLeaseStore extends LeaseStore {
       }),
     );
     return {
-      ...parseResults(result.Items, LeaseSchema),
+      ...parseResults(result.Items, PersistedLeaseSchema),
       nextPageIdentifier: base64EncodeCompositeKey(result.LastEvaluatedKey),
     };
   }
@@ -560,7 +562,7 @@ export class DynamoLeaseStore extends LeaseStore {
     uuid: string;
     pageIdentifier?: string;
     pageSize?: number;
-  }): Promise<PaginatedQueryResult<Lease>> {
+  }): Promise<PaginatedQueryResult<PersistedLease>> {
     const { status, uuid, pageIdentifier, pageSize } = props;
 
     const result = await this.ddbClient.send(
@@ -582,7 +584,7 @@ export class DynamoLeaseStore extends LeaseStore {
       }),
     );
     return {
-      ...parseResults(result.Items, LeaseSchema),
+      ...parseResults(result.Items, PersistedLeaseSchema),
       nextPageIdentifier: base64EncodeCompositeKey(result.LastEvaluatedKey),
     };
   }

@@ -76,6 +76,11 @@ describe("ActiveLeases", () => {
     await waitFor(() => {
       expect(screen.getByText("My Owned Lease")).toBeInTheDocument();
     });
+    expect(
+      screen.getByText(
+        "Current sandbox leases you own or that are shared with you",
+      ),
+    ).toBeInTheDocument();
   });
 
   test("renders shared leases (direct + group merged)", async () => {
@@ -85,6 +90,7 @@ describe("ActiveLeases", () => {
         originalLeaseTemplateName: "DirectTemplate",
       }),
       leaseId: "direct-lease-id",
+      accessType: "direct",
     };
     const groupLease = {
       ...createActiveLease({
@@ -92,6 +98,7 @@ describe("ActiveLeases", () => {
         originalLeaseTemplateName: "GroupTemplate",
       }),
       leaseId: "group-lease-id",
+      accessType: "group",
     };
 
     mockLeaseApi.returns([]);
@@ -145,6 +152,7 @@ describe("ActiveLeases", () => {
         uuid: ownedLease.uuid,
       }),
       leaseId: "shared-lease-id",
+      accessType: "direct",
     };
 
     mockLeaseApi.returns([ownedLease]);
@@ -181,6 +189,25 @@ describe("ActiveLeases", () => {
     expect(headingTexts.some((t) => t?.includes("SharedTpl"))).toBe(false);
     // Only one lease card total
     expect(headings).toHaveLength(1);
+  });
+
+  test("renders provisioning leases with their provisioning status", async () => {
+    const lease = createActiveLease({
+      userEmail: "test@example.com",
+      originalLeaseTemplateName: "Provisioning Lease",
+      status: "Provisioning",
+    });
+    mockLeaseApi.returns([lease]);
+    server.use(mockLeaseApi.getHandler());
+
+    renderComponent();
+
+    await waitFor(() => {
+      expect(
+        screen.getAllByText("Provisioning Lease", { exact: false }).length,
+      ).toBeGreaterThan(0);
+    });
+    expect(screen.getByText("Provisioning")).toBeInTheDocument();
   });
 
   test("filters out expired/terminated leases (only active statuses shown)", async () => {

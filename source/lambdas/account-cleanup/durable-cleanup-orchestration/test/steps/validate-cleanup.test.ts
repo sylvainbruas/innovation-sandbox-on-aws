@@ -5,8 +5,8 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 import { ResourceCount } from "@amzn/innovation-sandbox-commons/data/cleanup-report/cleanup-report.js";
 import { GlobalConfig } from "@amzn/innovation-sandbox-commons/data/global-config/global-config.js";
 import { ListResourcesResult } from "@amzn/innovation-sandbox-commons/isb-services/resource-explorer-service.js";
+import { CleanupValidationMode } from "@amzn/innovation-sandbox-shared/types/sandbox-account.js";
 
-import { CleanupValidationMode } from "@amzn/innovation-sandbox-commons/data/config/config.js";
 import type { CleanupContext } from "@amzn/innovation-sandbox-durable-cleanup-orchestration/steps/types.js";
 import { validateCleanup } from "@amzn/innovation-sandbox-durable-cleanup-orchestration/steps/validate-cleanup.js";
 

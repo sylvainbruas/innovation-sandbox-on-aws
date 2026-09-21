@@ -4,6 +4,7 @@
 import {
   CleanupConfigSchema,
   CleanupConfigWriteSchema,
+  CONFIG_BOUNDS,
   ConfigSchemas,
   ConfigWriteSchemas,
   CostReportingConfigSchema,
@@ -13,7 +14,7 @@ import {
   MaintenanceConfigSchema,
   NotificationConfigSchema,
   TermsOfServiceConfigSchema,
-} from "@amzn/innovation-sandbox-commons/data/config/config.js";
+} from "@amzn/innovation-sandbox-shared/types/configuration.js";
 import { describe, expect, it } from "vitest";
 
 describe("LeasesConfigSchema", () => {
@@ -31,6 +32,7 @@ describe("LeasesConfigSchema", () => {
       maxLeaseRequestsPerWindow: 10,
       leaseSharingEnabled: false,
       enablePrincipalSearch: true,
+      groupAssignmentMode: "NONE",
     });
   });
 
@@ -39,10 +41,12 @@ describe("LeasesConfigSchema", () => {
       maxBudget: 500,
       ttl: 90,
       enablePrincipalSearch: false,
+      groupAssignmentMode: "NONE",
     });
     expect(parsed.maxBudget).toBe(500);
     expect(parsed.ttl).toBe(90);
     expect(parsed.enablePrincipalSearch).toBe(false);
+    expect(parsed.groupAssignmentMode).toBe("NONE");
   });
 
   it("allows maxBudget and maxDurationHours of 0 (gte(0) bound)", () => {
@@ -213,16 +217,31 @@ describe("CostReportingConfigSchema", () => {
     });
   });
 
-  it("rejects more than 100 groups", () => {
+  it("accepts the maximum number of groups", () => {
     const result = CostReportingConfigSchema.safeParse({
-      costReportGroups: Array.from({ length: 101 }, (_, i) => `g${i}`),
+      costReportGroups: Array.from(
+        { length: CONFIG_BOUNDS.MAX_COST_REPORT_GROUPS },
+        (_, i) => `g${i}`,
+      ),
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects more than the maximum number of groups", () => {
+    const result = CostReportingConfigSchema.safeParse({
+      costReportGroups: Array.from(
+        { length: CONFIG_BOUNDS.MAX_COST_REPORT_GROUPS + 1 },
+        (_, i) => `g${i}`,
+      ),
     });
     expect(result.success).toBe(false);
   });
 
-  it("rejects a group name longer than 50 characters", () => {
+  it("rejects a group name longer than the maximum length", () => {
     const result = CostReportingConfigSchema.safeParse({
-      costReportGroups: ["x".repeat(51)],
+      costReportGroups: [
+        "x".repeat(CONFIG_BOUNDS.MAX_COST_REPORT_GROUP_LENGTH + 1),
+      ],
     });
     expect(result.success).toBe(false);
   });

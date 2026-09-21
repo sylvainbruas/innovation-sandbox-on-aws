@@ -3,9 +3,9 @@
 
 import { describe, expect, it } from "vitest";
 
-import { CostReportingConfig } from "@amzn/innovation-sandbox-commons/data/config/config.js";
 import { ValidationException } from "@amzn/innovation-sandbox-commons/data/global-config/global-config-utils.js";
 import { validateCostReportGroup } from "@amzn/innovation-sandbox-commons/data/reporting-config/reporting-config-utils.js";
+import { CostReportingConfig } from "@amzn/innovation-sandbox-shared/types/configuration.js";
 
 const notRequired: CostReportingConfig = {
   costReportGroups: ["valid-group-1", "valid-group-2"],

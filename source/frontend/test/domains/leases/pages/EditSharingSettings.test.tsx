@@ -11,9 +11,10 @@ import {
   showErrorToast,
   showSuccessToast,
 } from "@amzn/innovation-sandbox-frontend/components/Toast";
+import { MonitoredLeaseView } from "@amzn/innovation-sandbox-frontend/domains/leases/model";
 import { EditSharingSettings } from "@amzn/innovation-sandbox-frontend/domains/leases/pages/EditSharingSettings";
-import { MonitoredLeaseWithLeaseId } from "@amzn/innovation-sandbox-frontend/domains/leases/types";
 import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
+import { createConfiguration } from "@amzn/innovation-sandbox-frontend/mocks/factories/configurationFactory";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
 import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
 import { ApiResponse } from "@amzn/innovation-sandbox-frontend/types";
@@ -38,8 +39,8 @@ vi.mock("@amzn/innovation-sandbox-frontend/components/Toast", () => ({
   showErrorToast: vi.fn(),
 }));
 
-const mockLease: MonitoredLeaseWithLeaseId = {
-  uuid: "lease-123",
+const mockLease: MonitoredLeaseView = {
+  uuid: "11111111-1111-4111-8111-111111111111",
   leaseId: "lease-123",
   userEmail: "user@example.com",
   status: "Active",
@@ -53,9 +54,10 @@ const mockLease: MonitoredLeaseWithLeaseId = {
   allowOwnerToShareLease: false,
 };
 
-const mockConfig = {
-  costReportGroups: [],
-  requireCostReportGroup: false,
+// Full AdminConfig via the shared factory (the generated client's
+// `getConfigurations` requires every section); overrides carry the leases values
+// this suite asserts.
+const mockConfig = createConfiguration({
   leases: {
     maxBudget: 500,
     requireMaxBudget: false,
@@ -63,9 +65,8 @@ const mockConfig = {
     requireMaxDuration: false,
     leaseSharingEnabled: true,
   },
-  termsOfService: "Terms",
   isbManagedRegions: ["us-east-1"],
-};
+});
 
 describe("EditSharingSettings", () => {
   const renderComponent = () =>
@@ -83,7 +84,7 @@ describe("EditSharingSettings", () => {
 
     server.use(
       http.get(`${getConfig().ApiUrl}/leases/lease-123`, () => {
-        const response: ApiResponse<MonitoredLeaseWithLeaseId> = {
+        const response: ApiResponse<MonitoredLeaseView> = {
           status: "success",
           data: mockLease,
         };
@@ -169,9 +170,9 @@ describe("EditSharingSettings", () => {
 
     server.use(
       http.get(`${getConfig().ApiUrl}/leases/lease-123`, () => {
-        const response: ApiResponse<MonitoredLeaseWithLeaseId> = {
+        const response: ApiResponse<MonitoredLeaseView> = {
           status: "success",
-          data: leaseWithSharing as MonitoredLeaseWithLeaseId,
+          data: leaseWithSharing as MonitoredLeaseView,
         };
         return HttpResponse.json(response);
       }),
@@ -283,9 +284,9 @@ describe("EditSharingSettings", () => {
 
     server.use(
       http.get(`${getConfig().ApiUrl}/leases/lease-123`, () => {
-        const response: ApiResponse<MonitoredLeaseWithLeaseId> = {
+        const response: ApiResponse<MonitoredLeaseView> = {
           status: "success",
-          data: leaseWithSharing as MonitoredLeaseWithLeaseId,
+          data: leaseWithSharing as MonitoredLeaseView,
         };
         return HttpResponse.json(response);
       }),

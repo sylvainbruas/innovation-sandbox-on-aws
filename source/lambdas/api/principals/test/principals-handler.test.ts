@@ -71,6 +71,7 @@ beforeEach(() => {
   mockedGlobalConfig.maintenance.enabled = false;
   mockedGlobalConfig.leases.leaseSharingEnabled = false;
   mockedGlobalConfig.leases.enablePrincipalSearch = true;
+  mockedGlobalConfig.leases.groupAssignmentMode = "ALL";
   mockAppConfigMiddleware(mockedGlobalConfig);
   mockPrincipalStore.getCacheItems.mockResolvedValue([]);
   mockPrincipalStore.batchPutCacheItems.mockResolvedValue(undefined);
@@ -78,6 +79,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  mockedGlobalConfig.leases.groupAssignmentMode = "ALL";
   vi.clearAllMocks();
   vi.unstubAllEnvs();
 });
@@ -155,6 +157,32 @@ describe("GET /principals/search", () => {
     expect(body.data.principals).toHaveLength(4);
     expect(body.data.totalMatches).toBe(4);
     expect(result.headers?.["Content-Type"]).toBe("application/json");
+  });
+
+  it("caps results at the default limit of 20 while reporting the true totalMatches", async () => {
+    // Asserts the external contract (default cap + honest count), not the private
+    // DEFAULT_LIMIT constant: 21 matches -> 20 returned, totalMatches 21. Fails if
+    // the default cap changes or is ignored.
+    const items = Array.from({ length: 21 }, (_, i) =>
+      cachedUser(`User ${i}`, `user${i}@example.com`),
+    );
+    mockPrincipalStore.getCacheItems.mockResolvedValue(items);
+
+    const event = createAPIGatewayProxyEvent({
+      httpMethod: "GET",
+      path: "/principals/search",
+      isbUser: isbAuthorizedUser.user,
+    });
+
+    const result = await handler(
+      event,
+      mockAuthorizedContext(testEnv, mockedGlobalConfig),
+    );
+
+    expect(result.statusCode).toBe(200);
+    const body = JSON.parse(result.body);
+    expect(body.data.principals).toHaveLength(20);
+    expect(body.data.totalMatches).toBe(21);
   });
 
   it("should filter principals by search query (case-insensitive)", async () => {
@@ -252,6 +280,83 @@ describe("GET /principals/search", () => {
     expect(mockPrincipalStore.getCacheItems).toHaveBeenCalledWith({
       type: "GROUP",
     });
+  });
+
+  it("should reject group search when new group assignments are disabled", async () => {
+    mockedGlobalConfig.leases.groupAssignmentMode = "NONE";
+    mockAppConfigMiddleware(mockedGlobalConfig);
+
+    const event = createAPIGatewayProxyEvent({
+      httpMethod: "GET",
+      path: "/principals/search",
+      queryStringParameters: { type: "groups" },
+      isbUser: isbAuthorizedUser.user,
+    });
+
+    const result = await handler(
+      event,
+      mockAuthorizedContext(testEnv, mockedGlobalConfig),
+    );
+
+    expect(result.statusCode).toBe(403);
+    expect(JSON.parse(result.body).data.errors[0].message).toContain(
+      "Group search is not enabled",
+    );
+    expect(mockPrincipalStore.getCacheItems).not.toHaveBeenCalled();
+  });
+
+  it("should search only users when new group assignments are disabled", async () => {
+    mockedGlobalConfig.leases.groupAssignmentMode = "NONE";
+    mockAppConfigMiddleware(mockedGlobalConfig);
+    mockPrincipalStore.getCacheItems.mockResolvedValue([
+      cachedUser("Alice", "alice@example.com"),
+    ]);
+
+    const event = createAPIGatewayProxyEvent({
+      httpMethod: "GET",
+      path: "/principals/search",
+      isbUser: isbAuthorizedUser.user,
+    });
+
+    const result = await handler(
+      event,
+      mockAuthorizedContext(testEnv, mockedGlobalConfig),
+    );
+
+    expect(result.statusCode).toBe(200);
+    expect(mockPrincipalStore.getCacheItems).toHaveBeenCalledWith({
+      type: "USER",
+    });
+    const principals = JSON.parse(result.body).data.principals;
+    expect(principals).toHaveLength(1);
+    expect(principals[0].principalType).toBe("USER");
+  });
+
+  it("should reject exact group lookup when new group assignments are disabled", async () => {
+    mockedGlobalConfig.leases.groupAssignmentMode = "NONE";
+    mockAppConfigMiddleware(mockedGlobalConfig);
+
+    const event = createAPIGatewayProxyEvent({
+      httpMethod: "GET",
+      path: "/principals/search",
+      queryStringParameters: {
+        q: "Engineering",
+        type: "groups",
+        exact: "true",
+      },
+      isbUser: isbAuthorizedUser.user,
+    });
+
+    const result = await handler(
+      event,
+      mockAuthorizedContext(testEnv, mockedGlobalConfig),
+    );
+
+    expect(result.statusCode).toBe(403);
+    expect(JSON.parse(result.body).data.errors[0].message).toContain(
+      "Group search is not enabled",
+    );
+    expect(mockIdcService.getCachedPrincipalByAttr).not.toHaveBeenCalled();
   });
 
   it("should return 400 for invalid type parameter", async () => {
@@ -635,6 +740,206 @@ describe("GET /principals/search", () => {
       expect(body.data.principals[0].principalId).toBe(
         resolvedUser.principalId,
       );
+    });
+  });
+
+  describe("Smithy migration: query decoding, boundaries, dispatch", () => {
+    // The Smithy path reads `multiValueQueryStringParameters` (convertEvent), so
+    // an encoded value there must be decoded by the shared query parser.
+    function withEncodedMultiValueQuery(
+      event: ReturnType<typeof createAPIGatewayProxyEvent>,
+      multi: Record<string, string[]>,
+    ) {
+      (
+        event as unknown as {
+          multiValueQueryStringParameters: Record<string, string[]>;
+        }
+      ).multiValueQueryStringParameters = multi;
+      return event;
+    }
+
+    it("decodes a percent-encoded exact-lookup email from the multi-value query map", async () => {
+      const resolvedUser = {
+        principalId: crypto.randomUUID(),
+        principalType: "USER" as const,
+        displayName: "Alice Smith",
+        email: "alice@example.com",
+      };
+      mockIdcService.getCachedPrincipalByAttr.mockResolvedValue(resolvedUser);
+
+      const event = withEncodedMultiValueQuery(
+        createAPIGatewayProxyEvent({
+          httpMethod: "GET",
+          path: "/principals/search",
+          queryStringParameters: { type: "users", exact: "true" },
+          isbUser: isbAuthorizedUser.user,
+        }),
+        { q: ["alice%40example.com"], type: ["users"], exact: ["true"] },
+      );
+
+      const result = await handler(
+        event,
+        mockAuthorizedContext(testEnv, mockedGlobalConfig),
+      );
+
+      expect(result.statusCode).toBe(200);
+      // Decoded, not the raw `alice%40example.com` that would 404.
+      expect(mockIdcService.getCachedPrincipalByAttr).toHaveBeenCalledWith(
+        "USER",
+        "alice@example.com",
+        mockPrincipalStore,
+        expect.anything(),
+      );
+    });
+
+    it("decodes a percent-encoded fuzzy query from the multi-value query map", async () => {
+      mockPrincipalStore.getCacheItems.mockResolvedValue([
+        cachedGroup("Cloud Team"),
+      ]);
+
+      const event = withEncodedMultiValueQuery(
+        createAPIGatewayProxyEvent({
+          httpMethod: "GET",
+          path: "/principals/search",
+          queryStringParameters: { type: "groups" },
+          isbUser: isbAuthorizedUser.user,
+        }),
+        { q: ["Cloud%20Team"], type: ["groups"] },
+      );
+
+      const result = await handler(
+        event,
+        mockAuthorizedContext(testEnv, mockedGlobalConfig),
+      );
+
+      expect(result.statusCode).toBe(200);
+      const body = JSON.parse(result.body);
+      expect(body.data.principals).toHaveLength(1);
+      expect(body.data.totalMatches).toBe(1);
+    });
+
+    it("projects only the four wire fields — no cache keys/ttl/sync fields leak", async () => {
+      mockPrincipalStore.getCacheItems.mockResolvedValue([
+        cachedUser("Alice Smith", "alice@example.com"),
+      ]);
+
+      const result = await handler(
+        createAPIGatewayProxyEvent({
+          httpMethod: "GET",
+          path: "/principals/search",
+          isbUser: isbAuthorizedUser.user,
+        }),
+        mockAuthorizedContext(testEnv, mockedGlobalConfig),
+      );
+
+      const body = JSON.parse(result.body);
+      expect(Object.keys(body.data.principals[0]).sort()).toEqual([
+        "displayName",
+        "email",
+        "principalId",
+        "principalType",
+      ]);
+    });
+
+    it("returns 400 for a malformed exact boolean without leaking framework internals", async () => {
+      const result = await handler(
+        createAPIGatewayProxyEvent({
+          httpMethod: "GET",
+          path: "/principals/search",
+          queryStringParameters: {
+            q: "alice",
+            type: "users",
+            exact: "notabool",
+          },
+          isbUser: isbAuthorizedUser.user,
+        }),
+        mockAuthorizedContext(testEnv, mockedGlobalConfig),
+      );
+
+      expect(result.statusCode).toBe(400);
+      expect(JSON.parse(result.body).status).toBe("fail");
+      expect(result.body).not.toContain("SerializationException");
+    });
+
+    it.each([
+      ["limit at minimum", { limit: "1" }],
+      ["limit at maximum", { limit: "100" }],
+      ["q at max length", { q: "a".repeat(200) }],
+    ])("accepts %s (valid boundary)", async (_label, queryStringParameters) => {
+      mockPrincipalStore.getCacheItems.mockResolvedValue([]);
+      const result = await handler(
+        createAPIGatewayProxyEvent({
+          httpMethod: "GET",
+          path: "/principals/search",
+          queryStringParameters,
+          isbUser: isbAuthorizedUser.user,
+        }),
+        mockAuthorizedContext(testEnv, mockedGlobalConfig),
+      );
+      expect(result.statusCode).toBe(200);
+    });
+
+    it("reports a single 400 error for an undecodable query value (no duplicate across both query maps)", async () => {
+      // `%ZZ` is malformed. Set it in BOTH maps explicitly so the de-dup path is
+      // exercised regardless of fixture behavior: the parser must record the
+      // failure once, not once per map.
+      const result = await handler(
+        withEncodedMultiValueQuery(
+          createAPIGatewayProxyEvent({
+            httpMethod: "GET",
+            path: "/principals/search",
+            queryStringParameters: { q: "%ZZ" },
+            isbUser: isbAuthorizedUser.user,
+          }),
+          { q: ["%ZZ"] },
+        ),
+        mockAuthorizedContext(testEnv, mockedGlobalConfig),
+      );
+
+      expect(result.statusCode).toBe(400);
+      const body = JSON.parse(result.body);
+      expect(
+        body.data.errors.filter((e: { field?: string }) => e.field === "q"),
+      ).toHaveLength(1);
+    });
+
+    it("a fuzzy search never reaches the exact-lookup service", async () => {
+      mockPrincipalStore.getCacheItems.mockResolvedValue([]);
+      await handler(
+        createAPIGatewayProxyEvent({
+          httpMethod: "GET",
+          path: "/principals/search",
+          queryStringParameters: { q: "alice", type: "users" },
+          isbUser: isbAuthorizedUser.user,
+        }),
+        mockAuthorizedContext(testEnv, mockedGlobalConfig),
+      );
+      expect(mockIdcService.getCachedPrincipalByAttr).not.toHaveBeenCalled();
+      expect(mockPrincipalStore.getCacheItems).toHaveBeenCalled();
+    });
+
+    it("an exact lookup never scans the cache", async () => {
+      mockIdcService.getCachedPrincipalByAttr.mockResolvedValue({
+        principalId: crypto.randomUUID(),
+        principalType: "USER" as const,
+        displayName: "Alice",
+        email: "alice@example.com",
+      });
+      await handler(
+        createAPIGatewayProxyEvent({
+          httpMethod: "GET",
+          path: "/principals/search",
+          queryStringParameters: {
+            q: "alice@example.com",
+            type: "users",
+            exact: "true",
+          },
+          isbUser: isbAuthorizedUser.user,
+        }),
+        mockAuthorizedContext(testEnv, mockedGlobalConfig),
+      );
+      expect(mockPrincipalStore.getCacheItems).not.toHaveBeenCalled();
+      expect(mockIdcService.getCachedPrincipalByAttr).toHaveBeenCalled();
     });
   });
 });

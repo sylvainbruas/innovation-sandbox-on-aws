@@ -5,12 +5,12 @@ import { KeyValuePairs } from "@cloudscape-design/components";
 
 import InputField from "@amzn/innovation-sandbox-frontend/components/FormFields/InputField";
 import { SectionForm } from "@amzn/innovation-sandbox-frontend/domains/settings/components/forms/SectionForm";
-import { SectionData } from "@amzn/innovation-sandbox-frontend/domains/settings/service";
+import { ConfigurationSectionView } from "@amzn/innovation-sandbox-frontend/domains/settings/model";
 
 export function NotificationForm({
   data,
 }: {
-  data: SectionData<"notification">;
+  data: ConfigurationSectionView<"notification">;
 }) {
   return (
     <SectionForm

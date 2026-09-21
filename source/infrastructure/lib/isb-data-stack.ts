@@ -47,7 +47,11 @@ export class IsbDataStack extends Stack {
 
     addParameterGroup(this, {
       label: "Data Stack Configuration",
-      parameters: [namespaceParam, samlMetadataUrlParam, awsAccessPortalUrlParam],
+      parameters: [
+        namespaceParam,
+        samlMetadataUrlParam,
+        awsAccessPortalUrlParam,
+      ],
     });
 
     const dataResources = new IsbDataResources(this, {

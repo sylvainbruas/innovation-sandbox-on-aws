@@ -4,15 +4,9 @@ import { Logger } from "@aws-lambda-powertools/logger";
 import { Tracer } from "@aws-lambda-powertools/tracer";
 import { z } from "zod";
 
-import type { DesiredAssignmentWithDisplay } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
-import {
-  CriticalLockIntents,
-  LeaseLockIntentSchema,
-} from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
-import {
-  PrincipalTypeSchema,
-  type GroupAssignment,
-  type UserAssignment,
+import type {
+  PersistedGroupAssignment,
+  PersistedUserAssignment,
 } from "@amzn/innovation-sandbox-commons/data/principal/principal.js";
 import { AssignmentCreatedEvent } from "@amzn/innovation-sandbox-commons/events/assignment-created-event.js";
 import { AssignmentRemovedEvent } from "@amzn/innovation-sandbox-commons/events/assignment-removed-event.js";
@@ -31,6 +25,12 @@ import {
 } from "@amzn/innovation-sandbox-commons/observability/logging.js";
 import { assertNever } from "@amzn/innovation-sandbox-commons/types/type-guards.js";
 import { AwsAccountIdSchema } from "@amzn/innovation-sandbox-commons/utils/zod.js";
+import {
+  CriticalLockIntents,
+  DesiredAssignmentWithDisplay,
+  LeaseLockIntentSchema,
+} from "@amzn/innovation-sandbox-shared/types/lease.js";
+import { PrincipalTypeSchema } from "@amzn/innovation-sandbox-shared/types/principal.js";
 
 const serviceName = "AssignmentProcessor";
 const tracer = new Tracer({ serviceName });
@@ -349,7 +349,7 @@ async function handleCompletion(
  * USER/GROUP-specific principal id and denormalized display fields.
  */
 function recordToWorkItem(
-  record: UserAssignment | GroupAssignment,
+  record: PersistedUserAssignment | PersistedGroupAssignment,
   permissionSetArn: string,
 ): FanOutWorkItem {
   const principalId =
@@ -373,13 +373,8 @@ function recordToWorkItem(
  * and are more authoritative than the record's assigneeEmail).
  */
 async function buildWorkItems(
-  desiredAssignments: Array<{
-    principalId: string;
-    principalType: string;
-    displayName?: string;
-    email?: string;
-  }>,
-  currentRecords: Array<UserAssignment | GroupAssignment>,
+  desiredAssignments: DesiredAssignmentWithDisplay[],
+  currentRecords: Array<PersistedUserAssignment | PersistedGroupAssignment>,
   idcStackConfigStore: { get: () => Promise<{ userPermissionSetArn: string }> },
 ): Promise<{ workItems: FanOutWorkItem[]; preExistingPrincipalIds: string[] }> {
   // Nothing to process — skip the IDC config SSM read.
@@ -396,7 +391,7 @@ async function buildWorkItems(
     if (!principalMap.has(desired.principalId)) {
       principalMap.set(desired.principalId, {
         principalId: desired.principalId,
-        principalType: desired.principalType as "USER" | "GROUP",
+        principalType: desired.principalType,
         displayName: desired.displayName ?? "",
         email: desired.email ?? "",
         permissionSetArn,

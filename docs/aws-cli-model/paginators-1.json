@@ -1,0 +1,52 @@
+{
+  "pagination": {
+    "ListAccounts": {
+      "input_token": "pageIdentifier",
+      "output_token": "data.nextPageIdentifier",
+      "limit_key": "maxResults",
+      "result_key": "data.result"
+    },
+    "ListBlueprints": {
+      "input_token": "pageIdentifier",
+      "output_token": "data.nextPageIdentifier",
+      "limit_key": "maxResults",
+      "result_key": "data.blueprints"
+    },
+    "ListCleanupReports": {
+      "input_token": "pageIdentifier",
+      "output_token": "data.nextPageIdentifier",
+      "limit_key": "maxResults",
+      "result_key": "data.result"
+    },
+    "ListLeaseTemplates": {
+      "input_token": "pageIdentifier",
+      "output_token": "data.nextPageIdentifier",
+      "limit_key": "maxResults",
+      "result_key": "data.result"
+    },
+    "ListLeases": {
+      "input_token": "pageIdentifier",
+      "output_token": "data.nextPageIdentifier",
+      "limit_key": "maxResults",
+      "result_key": "data.result"
+    },
+    "ListSharedLeases": {
+      "input_token": "pageIdentifier",
+      "output_token": "data.nextPageIdentifier",
+      "limit_key": "maxResults",
+      "result_key": "data.result"
+    },
+    "ListStackSets": {
+      "input_token": "pageIdentifier",
+      "output_token": "data.nextPageIdentifier",
+      "limit_key": "maxResults",
+      "result_key": "data.result"
+    },
+    "ListUnregisteredAccounts": {
+      "input_token": "pageIdentifier",
+      "output_token": "data.nextPageIdentifier",
+      "limit_key": "maxResults",
+      "result_key": "data.result"
+    }
+  }
+}

@@ -14,7 +14,7 @@ import {
 import { DateTime } from "luxon";
 import { useState } from "react";
 
-import { DeploymentHistory } from "@amzn/innovation-sandbox-frontend/domains/blueprints/types";
+import { DeploymentHistoryView } from "@amzn/innovation-sandbox-frontend/domains/blueprints/model";
 
 const formatDateTime = (
   isoString: string,
@@ -25,13 +25,15 @@ const formatDateTime = (
 };
 
 interface DeploymentHistoryTableProps {
-  deployments: DeploymentHistory[];
+  deployments: DeploymentHistoryView[];
 }
 
 export const DeploymentHistoryTable = ({
   deployments,
 }: DeploymentHistoryTableProps) => {
-  const [selectedItems, setSelectedItems] = useState<DeploymentHistory[]>([]);
+  const [selectedItems, setSelectedItems] = useState<DeploymentHistoryView[]>(
+    [],
+  );
 
   const selectedDeployment = selectedItems[0] || null;
 
@@ -44,45 +46,46 @@ export const DeploymentHistoryTable = ({
     return statusMap[status] || "info";
   };
 
-  const columnDefinitions: TableProps.ColumnDefinition<DeploymentHistory>[] = [
-    {
-      id: "leaseId",
-      header: "Lease ID",
-      cell: (item) => item.leaseId,
-      sortingField: "leaseId",
-    },
-    {
-      id: "accountId",
-      header: "Account ID",
-      cell: (item) => item.accountId,
-      sortingField: "accountId",
-    },
-    {
-      id: "status",
-      header: "Status",
-      // prettier-ignore
-      cell: (item) => ( // NOSONAR typescript:S6478 - Table API requires cell render functions
+  const columnDefinitions: TableProps.ColumnDefinition<DeploymentHistoryView>[] =
+    [
+      {
+        id: "leaseId",
+        header: "Lease ID",
+        cell: (item) => item.leaseId,
+        sortingField: "leaseId",
+      },
+      {
+        id: "accountId",
+        header: "Account ID",
+        cell: (item) => item.accountId,
+        sortingField: "accountId",
+      },
+      {
+        id: "status",
+        header: "Status",
+        // prettier-ignore
+        cell: (item) => ( // NOSONAR typescript:S6478 - Table API requires cell render functions
         <StatusIndicator type={getStatusIndicatorType(item.status)}>
           {item.status}
         </StatusIndicator>
       ),
-      sortingField: "status",
-    },
-    {
-      id: "started",
-      header: "Started",
-      cell: (item) => formatDateTime(item.deploymentStartedAt),
-      sortingField: "deploymentStartedAt",
-    },
-    {
-      id: "duration",
-      header: "Duration",
-      cell: (item) => (item.duration ? `${item.duration} min` : "-"),
-      sortingField: "duration",
-    },
-  ];
+        sortingField: "status",
+      },
+      {
+        id: "started",
+        header: "Started",
+        cell: (item) => formatDateTime(item.deploymentStartedAt),
+        sortingField: "deploymentStartedAt",
+      },
+      {
+        id: "duration",
+        header: "Duration",
+        cell: (item) => (item.duration ? `${item.duration} min` : "-"),
+        sortingField: "duration",
+      },
+    ];
 
-  const buildOverviewItems = (deployment: DeploymentHistory) => {
+  const buildOverviewItems = (deployment: DeploymentHistoryView) => {
     const items: Array<{ label: string; value: string }> = [];
 
     items.push({ label: "Lease ID", value: deployment.leaseId });
@@ -120,7 +123,7 @@ export const DeploymentHistoryTable = ({
     return items;
   };
 
-  const buildErrorItems = (deployment: DeploymentHistory) => {
+  const buildErrorItems = (deployment: DeploymentHistoryView) => {
     const errorItems: Array<{ label: string; value: React.JSX.Element }> = [];
 
     if (deployment.errorType) {

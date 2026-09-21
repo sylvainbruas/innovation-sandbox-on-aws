@@ -8,12 +8,12 @@ import { http, HttpResponse } from "msw";
 import { BrowserRouter as Router } from "react-router-dom";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-import { LeaseTemplate } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
 import {
   showErrorToast,
   showSuccessToast,
 } from "@amzn/innovation-sandbox-frontend/components/Toast";
 import { AssignLease } from "@amzn/innovation-sandbox-frontend/domains/leases/pages/AssignLease";
+import { LeaseTemplateView } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/model";
 import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import {
   mockAdvancedLeaseTemplate,
@@ -470,7 +470,7 @@ describe("AssignLease", () => {
   test("displays error when no lease templates are available", async () => {
     server.use(
       http.get(`${getConfig().ApiUrl}/leaseTemplates`, () => {
-        const response: ApiResponse<ApiPaginatedResult<LeaseTemplate>> = {
+        const response: ApiResponse<ApiPaginatedResult<LeaseTemplateView>> = {
           status: "success",
           data: {
             result: [],

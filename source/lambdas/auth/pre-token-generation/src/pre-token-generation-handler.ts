@@ -11,13 +11,13 @@ import {
 } from "@amzn/innovation-sandbox-commons/lambda/environments/pre-token-generation-environment.js";
 import baseMiddlewareBundle from "@amzn/innovation-sandbox-commons/lambda/middleware/base-middleware-bundle.js";
 import { ValidatedEnvironment } from "@amzn/innovation-sandbox-commons/lambda/middleware/environment-validator.js";
+import { fromTemporaryIsbIdcCredentials } from "@amzn/innovation-sandbox-commons/utils/cross-account-roles.js";
 import {
   COGNITO_IDC_USER_ID_CLAIM,
   COGNITO_ISB_ROLES_CLAIM,
   COGNITO_USERNAME_CLAIM,
   resolveEmailFromClaims,
-} from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
-import { fromTemporaryIsbIdcCredentials } from "@amzn/innovation-sandbox-commons/utils/cross-account-roles.js";
+} from "@amzn/innovation-sandbox-shared/utils/auth-utils.js";
 
 import type {
   PreTokenGenerationV2Event,

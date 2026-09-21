@@ -3,12 +3,12 @@
 
 import {
   AccessCleanupSummary,
-  CleanupReport,
   CleanupReportError,
   CleanupReportKey,
   CleanupReportStatus,
   CleanupReportStep,
   CleanupStatusDetail,
+  PersistedCleanupReport,
   ReasonForCleanup,
   ResourceSummary,
 } from "@amzn/innovation-sandbox-commons/data/cleanup-report/cleanup-report.js";
@@ -29,7 +29,7 @@ export abstract class CleanupReportStore {
     reasonForCleanup: ReasonForCleanup;
     initiatedBy?: string;
     ttl: number;
-  }): Promise<CleanupReport>;
+  }): Promise<PersistedCleanupReport>;
 
   /**
    * Updates the status and/or other top-level fields of an existing report.
@@ -45,7 +45,7 @@ export abstract class CleanupReportStore {
     skipCooldownCallbackId?: string;
     cooldownSkippedBy?: string;
     ttl?: number;
-  }): Promise<CleanupReport>;
+  }): Promise<PersistedCleanupReport>;
 
   /**
    * Appends a new step entry to the report's steps array.
@@ -78,7 +78,7 @@ export abstract class CleanupReportStore {
   abstract getReport(
     key: CleanupReportKey,
     options?: { consistentRead?: boolean },
-  ): Promise<SingleItemResult<CleanupReport>>;
+  ): Promise<SingleItemResult<PersistedCleanupReport>>;
 
   /**
    * Gets the most recent cleanup report for an account.
@@ -86,7 +86,7 @@ export abstract class CleanupReportStore {
    */
   abstract getLatestReport(
     accountId: AwsAccountId,
-  ): Promise<SingleItemResult<CleanupReport>>;
+  ): Promise<SingleItemResult<PersistedCleanupReport>>;
 
   /**
    * Lists recent cleanup reports for an account, ordered newest first.
@@ -95,5 +95,5 @@ export abstract class CleanupReportStore {
     accountId: AwsAccountId;
     limit?: number;
     pageIdentifier?: string;
-  }): Promise<PaginatedQueryResult<CleanupReport>>;
+  }): Promise<PaginatedQueryResult<PersistedCleanupReport>>;
 }

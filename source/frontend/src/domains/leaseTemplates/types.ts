@@ -1,28 +1,14 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import {
-  LeaseTemplate,
-  Visibility,
-} from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template";
+import type { LeaseTemplateView } from "@amzn/innovation-sandbox-frontend/domains/leaseTemplates/model";
 
-export type LeaseTemplateFormData = LeaseTemplate & {
-  maxBudgetEnabled?: boolean;
-  maxDurationEnabled?: boolean;
-  visibility: {
-    label: string;
-    value: Visibility;
-  };
-  costReportGroupEnabled?: boolean;
-  selectedCostReportGroup?: {
-    label: string;
-    value: string;
-  };
-};
+export type CreateLeaseTemplateRequest = Omit<
+  LeaseTemplateView,
+  "uuid" | "createdBy" | "blueprintName" | "meta"
+>;
 
-export type NewLeaseTemplate = Omit<LeaseTemplate, "uuid" | "createdBy">;
-
-export type UpdateLeaseTemplate = Omit<
-  LeaseTemplate,
+export type UpdateLeaseTemplateRequest = Omit<
+  LeaseTemplateView,
   "uuid" | "blueprintName" | "createdBy"
 >;

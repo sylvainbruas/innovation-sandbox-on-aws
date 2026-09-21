@@ -57,10 +57,11 @@ export const EditDurationSettings = () => {
   const globalMaxDurationHours = config?.leases.maxDurationHours;
   const requireMaxDuration = config?.leases.requireMaxDuration || false;
 
-  // Get lease start date for duration validation (as ISO string)
-  const leaseStartDate = useMemo(() => {
-    return lease?.startDate || undefined;
-  }, [lease?.startDate]);
+  // Lifecycle dates are absent from pending and denied lease views.
+  const leaseStartDate = useMemo(
+    () => (lease && "startDate" in lease ? lease.startDate : undefined),
+    [lease],
+  );
 
   // Create dynamic schema based on requirements
   const schema = useMemo(
@@ -93,9 +94,12 @@ export const EditDurationSettings = () => {
   // Reset form when lease data loads
   useEffect(() => {
     if (lease) {
+      // Expiration dates are absent from pending and denied lease views.
+      const expirationDate =
+        "expirationDate" in lease ? lease.expirationDate : undefined;
       reset({
-        maxDurationEnabled: !!lease.expirationDate,
-        expirationDate: lease.expirationDate,
+        maxDurationEnabled: !!expirationDate,
+        expirationDate,
         durationThresholds: lease.durationThresholds,
       });
     }

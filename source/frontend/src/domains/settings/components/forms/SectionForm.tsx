@@ -26,26 +26,25 @@ import {
   useGetConfigurationSection,
   usePutConfigurationSection,
 } from "@amzn/innovation-sandbox-frontend/domains/settings/hooks";
-import {
-  ConfigSection,
-  SectionData,
-} from "@amzn/innovation-sandbox-frontend/domains/settings/service";
+import { ConfigurationSectionView } from "@amzn/innovation-sandbox-frontend/domains/settings/model";
+import { ConfigurationSectionRequest } from "@amzn/innovation-sandbox-frontend/domains/settings/types";
 import { ConfigWriteSchemas } from "@amzn/innovation-sandbox-frontend/domains/settings/validation";
-import { ApiError } from "@amzn/innovation-sandbox-frontend/helpers/ApiProxy";
+import { ApiError } from "@amzn/innovation-sandbox-frontend/helpers/apiError";
 import { useUser } from "@amzn/innovation-sandbox-frontend/hooks/useUser";
+import type {
+  ConfigSection,
+  ConfigSectionWriteFields,
+} from "@amzn/innovation-sandbox-shared/types/configuration.js";
 
-type SectionFields<T extends ConfigSection> = Omit<
-  SectionData<T>,
-  "lastSavedBy" | "meta"
->;
+type SectionFields<T extends ConfigSection> = ConfigSectionWriteFields<T>;
 
 export interface SectionFormProps<T extends ConfigSection> {
   section: T;
   /** Section title shown in the Container header. */
   title: string;
-  data: SectionData<T>;
+  data: ConfigurationSectionView<T>;
   renderFields: () => ReactNode;
-  renderReadOnly: (data: SectionData<T>) => ReactNode;
+  renderReadOnly: (data: ConfigurationSectionView<T>) => ReactNode;
   /** DOM id used as a scroll target for deep-links (e.g. the maintenance banner). */
   anchorId?: string;
   /**
@@ -128,7 +127,7 @@ const CONFLICT_MESSAGE =
 const ROOT_ERROR_SENTINEL = "input";
 
 function toFormValues<T extends ConfigSection>(
-  data: SectionData<T>,
+  data: ConfigurationSectionView<T>,
 ): SectionFields<T> {
   const { lastSavedBy: _l, meta: _m, ...fields } = data;
   return fields as SectionFields<T>;
@@ -289,7 +288,7 @@ export function SectionForm<T extends ConfigSection>({
       const updated = await putMutation.mutateAsync({
         ...values,
         meta: lastEditTime ? { lastEditTime } : undefined,
-      });
+      } as ConfigurationSectionRequest<T>);
       setLastEditTime(updated.meta?.lastEditTime);
       methods.reset(values);
       showSuccessToast("Settings saved.");

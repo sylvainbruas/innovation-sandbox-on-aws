@@ -2,29 +2,25 @@
 // SPDX-License-Identifier: Apache-2.0
 
 import {
-  AdminConfig,
-  ConfigMetadata,
+  AdminConfigurationView,
+  DeployTimeConfigurationView,
+} from "@amzn/innovation-sandbox-frontend/domains/settings/model";
+import {
   ConfigSchemas,
   ConfigSection,
-  DeployTimeConfigFields,
-  LastSavedBy,
-} from "@amzn/innovation-sandbox-commons/data/config/config.js";
-import { z } from "zod";
-
-type SectionFields<S extends ConfigSection> = z.infer<
-  (typeof ConfigSchemas)[S]
->;
+  ConfigSectionFields,
+  ConfigurationResponseMetadata,
+} from "@amzn/innovation-sandbox-shared/types/configuration.js";
 
 // Per-section partial fields + deploy-time fields, shallow merged onto schema defaults.
 export type ConfigurationOverrides = Partial<
   {
-    [S in ConfigSection]: Partial<SectionFields<S>>;
-  } & DeployTimeConfigFields
+    [S in ConfigSection]: Partial<ConfigSectionFields<S>>;
+  } & DeployTimeConfigurationView
 >;
 
-const DEFAULT_LAST_SAVED_BY: LastSavedBy = "admin@example.com";
-const DEFAULT_META: ConfigMetadata = {
-  schemaVersion: 1,
+const DEFAULT_LAST_SAVED_BY = "admin@example.com";
+const DEFAULT_META: ConfigurationResponseMetadata = {
   createdTime: "2026-04-04T10:00:00.000Z",
   lastEditTime: "2026-04-04T12:30:00.000Z",
 };
@@ -43,7 +39,7 @@ const BASELINE: ConfigurationOverrides = {
 
 export function createConfiguration(
   overrides: ConfigurationOverrides = {},
-): AdminConfig {
+): AdminConfigurationView {
   const sections = Object.fromEntries(
     (Object.keys(ConfigSchemas) as ConfigSection[]).map((section) => {
       const fields = ConfigSchemas[section].parse({});
@@ -68,5 +64,5 @@ export function createConfiguration(
     ],
     awsAccessPortalUrl:
       overrides.awsAccessPortalUrl ?? "https://d-0000000000.awsapps.com/start",
-  } as AdminConfig;
+  } as AdminConfigurationView;
 }

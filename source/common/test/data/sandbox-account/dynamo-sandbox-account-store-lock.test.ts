@@ -7,7 +7,7 @@ import { mockClient } from "aws-sdk-client-mock";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { DynamoSandboxAccountStore } from "@amzn/innovation-sandbox-commons/data/sandbox-account/dynamo-sandbox-account-store.js";
-import { SandboxAccountSchema } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
+import { PersistedSandboxAccountSchema } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
 
 const mockDynamoClient = mockClient(DynamoDBDocumentClient);
 
@@ -16,7 +16,7 @@ describe("DynamoSandboxAccountStore - Lock Methods", () => {
   const tableName = "test-account-table";
 
   /**
-   * Returns a valid SandboxAccount Attributes object for mocking
+   * Returns a valid PersistedSandboxAccount Attributes object for mocking
    * the ALL_NEW response from acquireLock's UpdateCommand.
    */
   function mockAcquireLockResponse(
@@ -230,7 +230,7 @@ describe("DynamoSandboxAccountStore - Lock Methods", () => {
   });
 });
 
-describe("SandboxAccountSchema - resourceLock field", () => {
+describe("PersistedSandboxAccountSchema - resourceLock field", () => {
   test("parses correctly with resourceLock present", () => {
     const account = {
       awsAccountId: "123456789012",
@@ -247,7 +247,7 @@ describe("SandboxAccountSchema - resourceLock field", () => {
       },
     };
 
-    const result = SandboxAccountSchema.safeParse(account);
+    const result = PersistedSandboxAccountSchema.safeParse(account);
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.resourceLock).toEqual({
@@ -269,7 +269,7 @@ describe("SandboxAccountSchema - resourceLock field", () => {
       },
     };
 
-    const result = SandboxAccountSchema.safeParse(account);
+    const result = PersistedSandboxAccountSchema.safeParse(account);
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.resourceLock).toBeUndefined();
@@ -293,7 +293,7 @@ describe("SandboxAccountSchema - resourceLock field", () => {
       },
     };
 
-    const result = SandboxAccountSchema.safeParse(account);
+    const result = PersistedSandboxAccountSchema.safeParse(account);
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.resourceLock!.meta).toEqual({

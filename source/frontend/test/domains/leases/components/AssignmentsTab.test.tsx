@@ -7,13 +7,16 @@ import userEvent from "@testing-library/user-event";
 import { http, HttpResponse } from "msw";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { Lease } from "@amzn/innovation-sandbox-commons/data/lease/lease";
 import { AssignmentsTab } from "@amzn/innovation-sandbox-frontend/domains/leases/components/AssignmentsTab";
-import { LeaseAssignment } from "@amzn/innovation-sandbox-frontend/domains/leases/types";
+import {
+  LeaseAssignmentView,
+  LeaseView,
+} from "@amzn/innovation-sandbox-frontend/domains/leases/model";
 import { getConfig } from "@amzn/innovation-sandbox-frontend/helpers/config";
 import { createActiveLease } from "@amzn/innovation-sandbox-frontend/mocks/factories/leaseFactory";
 import { server } from "@amzn/innovation-sandbox-frontend/mocks/server";
 import { createQueryClientWrapper } from "@amzn/innovation-sandbox-frontend/setupTests";
+import { GroupAssignmentMode } from "@amzn/innovation-sandbox-shared/types/configuration.js";
 
 vi.mock("@amzn/innovation-sandbox-frontend/components/Toast", () => ({
   showSuccessToast: vi.fn(),
@@ -42,23 +45,13 @@ const TYPEAHEAD_FIXTURE = [
 ];
 vi.mock(
   "@amzn/innovation-sandbox-frontend/domains/leases/components/PrincipalTypeahead",
-  () => ({
-    PrincipalTypeahead: ({
-      onSelect,
-      shouldExclude = () => false,
-    }: {
-      onSelect: (p: (typeof TYPEAHEAD_FIXTURE)[number]) => void;
-      shouldExclude?: (p: (typeof TYPEAHEAD_FIXTURE)[number]) => boolean;
-    }) => (
-      <div data-testid="typeahead-stub">
-        {TYPEAHEAD_FIXTURE.filter((p) => !shouldExclude(p)).map((p) => (
-          <button key={p.principalId} type="button" onClick={() => onSelect(p)}>
-            Add {p.principalId}
-          </button>
-        ))}
-      </div>
-    ),
-  }),
+  async () => {
+    const { createPrincipalTypeaheadStub } =
+      await import("@amzn/innovation-sandbox-frontend-test/utils/principalTypeaheadStub");
+    return {
+      PrincipalTypeahead: createPrincipalTypeaheadStub(() => TYPEAHEAD_FIXTURE),
+    };
+  },
 );
 
 vi.mock(
@@ -77,8 +70,8 @@ vi.mock(
   },
 );
 
-const lease: Lease = createActiveLease({
-  uuid: "lease-uuid-1",
+const lease: LeaseView = createActiveLease({
+  uuid: "11111111-1111-4111-8111-111111111111",
   userEmail: "owner@example.com",
   allowOwnerToShareLease: true,
 });
@@ -86,7 +79,7 @@ const lease: Lease = createActiveLease({
 // The API returns the reconciled view: each row already carries its
 // syncStatus and isOwner, so tests set the status they want directly instead of
 // arranging a desired-vs-records divergence on two endpoints.
-const userAssignment: LeaseAssignment = {
+const userAssignment: LeaseAssignmentView = {
   principalId: "user-1",
   principalType: "USER",
   displayName: "Alice Smith",
@@ -98,7 +91,7 @@ const userAssignment: LeaseAssignment = {
   syncStatus: "active",
 };
 
-const groupAssignment: LeaseAssignment = {
+const groupAssignment: LeaseAssignmentView = {
   principalId: "group-1",
   principalType: "GROUP",
   displayName: "Engineering",
@@ -109,12 +102,12 @@ const groupAssignment: LeaseAssignment = {
   syncStatus: "active",
 };
 
-const ownerAssignment: LeaseAssignment = {
+const ownerAssignment: LeaseAssignmentView = {
   principalId: "owner-principal-id",
   principalType: "USER",
   displayName: "Owner",
   assigneeEmail: "owner@example.com",
-  addedBy: "system",
+  addedBy: "system@example.com",
   addedDate: "2026-01-01T00:00:00.000Z",
   isOwner: true,
   isDesired: true,
@@ -123,8 +116,8 @@ const ownerAssignment: LeaseAssignment = {
 
 /** A row for a principal that is desired but has no access record yet. */
 const desiredOnly = (
-  overrides: Partial<LeaseAssignment> & { principalId: string },
-): LeaseAssignment => ({
+  overrides: Partial<LeaseAssignmentView> & { principalId: string },
+): LeaseAssignmentView => ({
   principalType: "USER",
   displayName: "Carol Davis",
   assigneeEmail: "carol@example.com",
@@ -136,8 +129,8 @@ const desiredOnly = (
 
 /** A record that lingers after a failed revoke: present, but no longer desired. */
 const lingeringRecord = (
-  overrides: Partial<LeaseAssignment> & { principalId: string },
-): LeaseAssignment => ({
+  overrides: Partial<LeaseAssignmentView> & { principalId: string },
+): LeaseAssignmentView => ({
   principalType: "USER",
   displayName: "Dave Lingering",
   assigneeEmail: "dave@example.com",
@@ -152,7 +145,7 @@ const lingeringRecord = (
 const LEASE_ROUTE_ID = "lease-route-id-base64";
 
 function stubGetAssignments(
-  items: LeaseAssignment[],
+  items: LeaseAssignmentView[],
   operationInProgress?: "FREEZE" | "UNFREEZE" | "TERMINATE" | "UPDATE",
 ) {
   server.use(
@@ -258,6 +251,21 @@ describe("AssignmentsTab", () => {
     expect(screen.getByText("Engineering")).toBeInTheDocument();
   });
 
+  it("keeps existing groups visible but searches only users when groups are disabled", async () => {
+    stubGetAssignments([ownerAssignment, groupAssignment]);
+    renderTab({ groupAssignmentMode: GroupAssignmentMode.NONE });
+
+    expect(await screen.findByText("Engineering")).toBeInTheDocument();
+    expect(screen.getByTestId("typeahead-stub")).toHaveAttribute(
+      "data-search-type",
+      "users",
+    );
+    expect(
+      screen.queryByRole("button", { name: "Add platform-id" }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Remove" })).toBeInTheDocument();
+  });
+
   it("always shows the owner row even when no other assignments exist", async () => {
     stubGetAssignments([ownerAssignment]);
     renderTab();
@@ -289,7 +297,10 @@ describe("AssignmentsTab", () => {
 
   it("hides add controls for owner when allowOwnerToShareLease is false", async () => {
     stubGetAssignments([userAssignment]);
-    const restrictedLease: Lease = { ...lease, allowOwnerToShareLease: false };
+    const restrictedLease: LeaseView = {
+      ...lease,
+      allowOwnerToShareLease: false,
+    };
     renderTab({ lease: restrictedLease, isOwner: true });
 
     expect(
@@ -389,7 +400,7 @@ describe("AssignmentsTab", () => {
   });
 
   it("hides Remove and shows the Owner badge on the lease owner's row", async () => {
-    const ownerAssignment: LeaseAssignment = {
+    const ownerAssignment: LeaseAssignmentView = {
       principalId: "owner-id",
       principalType: "USER",
       displayName: "Lease Owner",
@@ -544,7 +555,7 @@ describe("AssignmentsTab", () => {
   });
 
   describe("frozen lease", () => {
-    const frozenLease: Lease = { ...lease, status: "Frozen" };
+    const frozenLease: LeaseView = { ...lease, status: "Frozen" };
 
     it("shows suspended principals without calling them failures", async () => {
       // A freeze revokes the records but retains the desired set, so the API
@@ -610,10 +621,10 @@ describe("AssignmentsTab", () => {
   describe("terminated lease", () => {
     // The tab stays available on a terminal lease so an operator can answer
     // "who had access to this account", but nothing about it is editable.
-    const terminatedLease: Lease = {
+    const terminatedLease: LeaseView = {
       ...lease,
       status: "ManuallyTerminated",
-    } as Lease;
+    } as LeaseView;
 
     it("lists who had access, read-only", async () => {
       stubGetAssignments([
@@ -863,7 +874,7 @@ describe("AssignmentsTab", () => {
           putBody = (await request.json()) as typeof putBody;
           return HttpResponse.json({
             status: "success",
-            data: { assignments: [] },
+            data: { desiredCount: 2 },
           });
         },
       ),

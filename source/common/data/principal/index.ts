@@ -2,27 +2,24 @@
 // SPDX-License-Identifier: Apache-2.0
 
 export {
-  AssignmentSchema,
-  GroupAssignmentSchema,
-  GroupMembershipCacheSchema,
-  IdcPrincipalIdSchema,
   PRINCIPAL_CACHE_GROUP_SK_PREFIX,
   PRINCIPAL_CACHE_PK,
   PRINCIPAL_CACHE_USER_SK_PREFIX,
-  PrincipalCacheItemSchema,
+  PersistedAssignmentSchema,
+  PersistedGroupAssignmentSchema,
+  PersistedGroupMembershipCacheSchema,
+  PersistedPrincipalCacheItemSchema,
+  PersistedUserAssignmentSchema,
   PrincipalSchemaVersion,
-  PrincipalTypeSchema,
-  UserAssignmentSchema,
 } from "@amzn/innovation-sandbox-commons/data/principal/principal.js";
 
 export type {
-  Assignment,
-  GroupAssignment,
-  GroupMembershipCache,
-  PrincipalCacheItem,
-  PrincipalTableItem,
-  PrincipalType,
-  UserAssignment,
+  PersistedAssignment,
+  PersistedGroupAssignment,
+  PersistedGroupMembershipCache,
+  PersistedPrincipalCacheItem,
+  PersistedPrincipalTableItem,
+  PersistedUserAssignment,
 } from "@amzn/innovation-sandbox-commons/data/principal/principal.js";
 
 export { PrincipalStore } from "@amzn/innovation-sandbox-commons/data/principal/principal-store.js";

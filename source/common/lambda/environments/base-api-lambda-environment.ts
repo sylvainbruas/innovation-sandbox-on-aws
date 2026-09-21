@@ -4,13 +4,12 @@ import { BaseLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/la
 import { NAMESPACE_PATTERN } from "@amzn/innovation-sandbox-commons/types/isb-types.js";
 import { z } from "zod";
 
-export const BaseApiLambdaEnvironmentSchema = BaseLambdaEnvironmentSchema.extend(
-  {
+export const BaseApiLambdaEnvironmentSchema =
+  BaseLambdaEnvironmentSchema.extend({
     COGNITO_USER_POOL_ID: z.string().min(1),
     COGNITO_APP_CLIENT_ID: z.string().min(1),
     ISB_NAMESPACE: z.string().regex(new RegExp(NAMESPACE_PATTERN)),
-  },
-);
+  });
 
 export type BaseApiLambdaEnvironment = z.infer<
   typeof BaseApiLambdaEnvironmentSchema

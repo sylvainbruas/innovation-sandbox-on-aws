@@ -5,9 +5,9 @@ import { DateTime } from "luxon";
 
 import { CleanupReportStore } from "@amzn/innovation-sandbox-commons/data/cleanup-report/cleanup-report-store.js";
 import {
-  CleanupReport,
   CleanupReportKey,
   CleanupStatusDetail,
+  PersistedCleanupReport,
   ReasonForCleanup,
 } from "@amzn/innovation-sandbox-commons/data/cleanup-report/cleanup-report.js";
 import { nowAsIsoDatetimeString } from "@amzn/innovation-sandbox-commons/utils/time-utils.js";
@@ -58,7 +58,7 @@ export class CleanupReportWriter {
       reasonForCleanup: ReasonForCleanup;
       initiatedBy?: string;
     },
-  ): Promise<CleanupReport> {
+  ): Promise<PersistedCleanupReport> {
     const ttl = DateTime.fromISO(key.startedAt, { zone: "utc" })
       .plus({ days: DEFAULT_REPORT_RETENTION_DAYS })
       .toUnixInteger();

@@ -1,10 +1,10 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 import {
-  BlueprintItem,
-  BlueprintWithStackSets,
-  DeploymentHistoryItem,
-  StackSetItem,
+  PersistedBlueprintItem,
+  PersistedBlueprintWithStackSets,
+  PersistedDeploymentHistoryItem,
+  PersistedStackSetItem,
 } from "@amzn/innovation-sandbox-commons/data/blueprint/blueprint.js";
 import {
   OptionalItem,
@@ -20,21 +20,21 @@ export type BlueprintKey = {
 
 export abstract class BlueprintStore {
   abstract createBlueprintWithStackSet(
-    blueprint: BlueprintItem,
-    stackSet: StackSetItem,
-  ): Promise<BlueprintWithStackSets>;
+    blueprint: PersistedBlueprintItem,
+    stackSet: PersistedStackSetItem,
+  ): Promise<PersistedBlueprintWithStackSets>;
 
-  abstract update<T extends BlueprintItem>(
+  abstract update<T extends PersistedBlueprintItem>(
     blueprint: T,
     expected?: T,
   ): Promise<PutResult<T>>;
 
   abstract updateBlueprintWithStackSet(
-    blueprint: BlueprintItem,
-    stackSet: StackSetItem,
-  ): Promise<BlueprintWithStackSets>;
+    blueprint: PersistedBlueprintItem,
+    stackSet: PersistedStackSetItem,
+  ): Promise<PersistedBlueprintWithStackSets>;
 
-  transactionalUpdate<T extends BlueprintItem>(
+  transactionalUpdate<T extends PersistedBlueprintItem>(
     blueprint: T,
   ): Transaction<PutResult<T>> {
     return new Transaction({
@@ -43,7 +43,7 @@ export abstract class BlueprintStore {
       },
       rollbackTransaction: async (putResult) => {
         await this.update(
-          putResult.oldItem as BlueprintItem,
+          putResult.oldItem as PersistedBlueprintItem,
           putResult.newItem,
         );
       },
@@ -59,11 +59,11 @@ export abstract class BlueprintStore {
   abstract listBlueprints(props?: {
     pageIdentifier?: string;
     pageSize?: number;
-  }): Promise<PaginatedQueryResult<BlueprintWithStackSets>>;
+  }): Promise<PaginatedQueryResult<PersistedBlueprintWithStackSets>>;
 
   abstract get(
     blueprintId: string,
-  ): Promise<SingleItemResult<BlueprintWithStackSets>>;
+  ): Promise<SingleItemResult<PersistedBlueprintWithStackSets>>;
 
   abstract recordDeploymentStart(props: {
     blueprintId: string;
@@ -72,7 +72,7 @@ export abstract class BlueprintStore {
     accountId: string;
     operationId: string;
     deploymentStartedAt: string;
-  }): Promise<DeploymentHistoryItem>;
+  }): Promise<PersistedDeploymentHistoryItem>;
 
   abstract getDeploymentHistory(
     blueprintId: string,
@@ -80,7 +80,7 @@ export abstract class BlueprintStore {
       pageIdentifier?: string;
       pageSize?: number;
     },
-  ): Promise<PaginatedQueryResult<DeploymentHistoryItem>>;
+  ): Promise<PaginatedQueryResult<PersistedDeploymentHistoryItem>>;
 
   abstract updateDeploymentStatusAndMetrics(props: {
     blueprintId: string;

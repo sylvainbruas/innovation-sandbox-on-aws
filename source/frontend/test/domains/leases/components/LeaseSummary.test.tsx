@@ -4,12 +4,12 @@
 import { screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
-import { MonitoredLease } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import { LeaseSummary } from "@amzn/innovation-sandbox-frontend/domains/leases/components/LeaseSummary";
+import { MonitoredLeaseView } from "@amzn/innovation-sandbox-frontend/domains/leases/model";
 import { createActiveLease } from "@amzn/innovation-sandbox-frontend/mocks/factories/leaseFactory";
 import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
 
-const lease: MonitoredLease = createActiveLease({
+const lease: MonitoredLeaseView = createActiveLease({
   costReportGroup: "engineering-team",
   budgetThresholds: [{ dollarsSpent: 50, action: "FREEZE_ACCOUNT" }],
   durationThresholds: [{ hoursRemaining: 24, action: "ALERT" }],

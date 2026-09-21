@@ -1,12 +1,13 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { CleanupReport } from "@amzn/innovation-sandbox-frontend/domains/accounts/types";
 import { DateTime } from "luxon";
 
+import { CleanupReportView } from "@amzn/innovation-sandbox-frontend/domains/accounts/types";
+
 export function createMockCleanupReport(
-  overrides?: Partial<CleanupReport>,
-): CleanupReport {
+  overrides?: Partial<CleanupReportView>,
+): CleanupReportView {
   return {
     accountId: "123456789012",
     durableExecutionArn:
@@ -35,8 +36,8 @@ export function createMockCleanupReport(
 }
 
 export function createMockInProgressReport(
-  overrides?: Partial<CleanupReport>,
-): CleanupReport {
+  overrides?: Partial<CleanupReportView>,
+): CleanupReportView {
   return createMockCleanupReport({
     status: "IN_PROGRESS",
     cleanupStatus: "NUKE_PHASE_1",
@@ -60,8 +61,8 @@ export function createMockInProgressReport(
 }
 
 export function createMockFailedReport(
-  overrides?: Partial<CleanupReport>,
-): CleanupReport {
+  overrides?: Partial<CleanupReportView>,
+): CleanupReportView {
   return createMockCleanupReport({
     status: "FAILED",
     cleanupStatus: "FAILED",

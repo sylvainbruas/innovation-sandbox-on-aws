@@ -6,13 +6,13 @@ import { StepsProps } from "@cloudscape-design/components/steps";
 import { DateTime } from "luxon";
 import { ReactNode } from "react";
 
-import { CleanupReport } from "@amzn/innovation-sandbox-frontend/domains/accounts/types";
+import { CleanupReportView } from "@amzn/innovation-sandbox-frontend/domains/accounts/types";
 
 // =============================================================================
 // Types
 // =============================================================================
 
-export type CleanupStep = CleanupReport["steps"][number];
+export type CleanupStep = CleanupReportView["steps"][number];
 
 export interface ResourceTypeRow {
   type: string;
@@ -40,11 +40,11 @@ function getCodeBuildUrl(arn: string): string {
   return `https://${region}.console.aws.amazon.com/codesuite/codebuild/projects/${projectAndId.split(":")[0]}/build/${projectAndId}/log`;
 }
 
-export function isSilentMode(report: CleanupReport): boolean {
+export function isSilentMode(report: CleanupReportView): boolean {
   return report.resourceSummary?.validationMode === "Silent";
 }
 
-export function hasValidationWarning(report: CleanupReport): boolean {
+export function hasValidationWarning(report: CleanupReportView): boolean {
   // Silent mode is metrics-only, so it never warrants a warning.
   if (isSilentMode(report)) {
     return false;
@@ -63,7 +63,7 @@ export function getStepStatus(params: {
   step: CleanupStep;
   isLast: boolean;
   nextStep: CleanupStep | undefined;
-  report: CleanupReport;
+  report: CleanupReportView;
 }): StepsProps.Status {
   const { step, isLast, nextStep, report } = params;
   const isFailedStep =
@@ -90,7 +90,7 @@ export function getStepDurationText(params: {
   step: CleanupStep;
   nextStep: CleanupStep | undefined;
   isLast: boolean;
-  report: CleanupReport;
+  report: CleanupReportView;
 }): string {
   const { step, nextStep, isLast, report } = params;
   if (nextStep) {
@@ -109,7 +109,7 @@ export function getStepDurationText(params: {
 
 export function getStepDetails(
   step: CleanupStep,
-  report: CleanupReport,
+  report: CleanupReportView,
   durationText: string,
 ): ReactNode {
   if (isNukeStep(step.name) && step.meta?.codeBuildExecutionArn) {

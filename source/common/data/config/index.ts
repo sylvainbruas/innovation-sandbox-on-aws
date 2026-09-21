@@ -2,17 +2,15 @@
 // SPDX-License-Identifier: Apache-2.0
 
 export {
+  CONFIG_BOUNDS,
   CleanupConfigSchema,
   CleanupConfigWriteSchema,
-  CONFIG_BOUNDS,
   ConfigPutBodySchemas,
-  ConfigSchemaVersion,
   ConfigSchemas,
   ConfigWriteSchemas,
   CostReportingConfigSchema,
   CostReportingConfigWriteSchema,
   DEFAULT_TERMS_OF_SERVICE,
-  LastSavedBySchema,
   LeasesConfigBaseSchema,
   LeasesConfigSchema,
   LeasesConfigWriteSchema,
@@ -23,18 +21,25 @@ export {
   TermsOfServiceConfigSchema,
   TermsOfServiceConfigWriteSchema,
   leasesRefinement,
+} from "@amzn/innovation-sandbox-shared/types/configuration.js";
+
+export type {
+  ConfigSection,
+  ConfigSectionFields,
+  ConfigSectionWriteFields,
+  CostReportingConfig,
+  LeasesConfigInput,
+} from "@amzn/innovation-sandbox-shared/types/configuration.js";
+
+export {
+  ConfigSchemaVersion,
+  PersistedLastSavedBySchema,
 } from "@amzn/innovation-sandbox-commons/data/config/config.js";
 
 export type {
-  AdminConfig,
-  ConfigMetadata,
-  ConfigSection,
-  ConfigSectionData,
-  ConfigSectionResponse,
-  CostReportingConfig,
-  DeployTimeConfigFields,
-  LastSavedBy,
-  LeasesConfigInput,
+  PersistedConfigMetadata,
+  PersistedConfigSectionData,
+  PersistedLastSavedBy,
 } from "@amzn/innovation-sandbox-commons/data/config/config.js";
 
 export { ConflictError } from "@amzn/innovation-sandbox-commons/data/config/config-store.js";

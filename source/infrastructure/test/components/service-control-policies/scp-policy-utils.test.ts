@@ -495,8 +495,6 @@ describe("injectBedrockInferenceProfilePatterns", () => {
     );
 
     // Should not add ArnNotLike
-    expect(
-      policy.Statement[0]!.Condition?.ArnNotLike,
-    ).toBeUndefined();
+    expect(policy.Statement[0]!.Condition?.ArnNotLike).toBeUndefined();
   });
 });

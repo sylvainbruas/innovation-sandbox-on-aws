@@ -1,10 +1,6 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import {
-  SandboxAccount,
-  SandboxAccountStatus,
-} from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account";
 import { PieChartProps } from "@cloudscape-design/components";
 import {
   colorChartsPaletteCategorical16,
@@ -13,6 +9,9 @@ import {
   colorChartsStatusLow,
   colorChartsStatusPositive,
 } from "@cloudscape-design/design-tokens";
+
+import { SandboxAccountView } from "@amzn/innovation-sandbox-frontend/domains/accounts/model";
+import { SandboxAccountStatus } from "@amzn/innovation-sandbox-shared/types/sandbox-account";
 
 export type AccountStatusDatum = PieChartProps.Datum & {
   status?: SandboxAccountStatus;
@@ -33,7 +32,7 @@ export const getColor = (status?: SandboxAccountStatus) => {
   }
 };
 
-export const convertAccountsToSummary = (accounts: SandboxAccount[]) => {
+export const convertAccountsToSummary = (accounts: SandboxAccountView[]) => {
   return Object.values(
     accounts.reduce(
       (summary, account) => {

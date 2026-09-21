@@ -9,7 +9,6 @@ import {
 } from "aws-cdk-lib/aws-iam";
 import { Construct } from "constructs";
 
-import { computeRestApiIdSsmParamName } from "@amzn/innovation-sandbox-commons/types/isb-types";
 import {
   buildM2mRolePrefix,
   M2M_STACK_TYPE_TAG_KEY,
@@ -24,6 +23,8 @@ export interface IsbM2mClientResourcesProps {
   readonly role: string;
   readonly trustedPrincipal: string;
   readonly maxSessionDuration: number;
+  // Current REST API ID, resolved at deploy time via an SSM parameter value.
+  readonly restApiId: string;
 }
 
 export class IsbM2mClientResources {
@@ -38,8 +39,7 @@ export class IsbM2mClientResources {
     Tags.of(scope).add(M2M_STACK_TYPE_TAG_KEY, M2M_STACK_TYPE_TAG_VALUE);
     Tags.of(scope).add("aws-solutions:isb-stack-name", Aws.STACK_NAME);
 
-    const restApiIdSsmName = computeRestApiIdSsmParamName("${Namespace}");
-    const restApiId = Fn.sub(`{{resolve:ssm:/${restApiIdSsmName}}}`);
+    const restApiId = props.restApiId;
     this.apiArn = `arn:${Aws.PARTITION}:execute-api:${Aws.REGION}:${Aws.ACCOUNT_ID}:${restApiId}/*`;
     this.apiUrl = `https://${restApiId}.execute-api.${Aws.REGION}.${Aws.URL_SUFFIX}/prod`;
 

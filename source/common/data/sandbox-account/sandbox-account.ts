@@ -6,11 +6,13 @@ import {
   createItemWithMetadataSchema,
   createVersionRangeSchema,
 } from "@amzn/innovation-sandbox-commons/data/metadata.js";
-import { ResourceLockSchema } from "@amzn/innovation-sandbox-commons/data/resource-lock.js";
+import { AwsAccountIdSchema } from "@amzn/innovation-sandbox-commons/utils/zod.js";
+import { ResourceLockSchema } from "@amzn/innovation-sandbox-shared/types/resource-lock.js";
 import {
-  AwsAccountIdSchema,
-  enumErrorMap,
-} from "@amzn/innovation-sandbox-commons/utils/zod.js";
+  ActiveCleanupSchema,
+  CurrentLeaseSchema,
+  SandboxAccountStatusSchema,
+} from "@amzn/innovation-sandbox-shared/types/sandbox-account.js";
 
 // IMPORTANT -- this value must be updated whenever the schema changes.
 export const SandboxAccountSchemaVersion = 2;
@@ -26,41 +28,7 @@ const SandboxAccountItemWithMetadataSchema = createItemWithMetadataSchema(
   SandboxAccountSupportedVersionsSchema,
 );
 
-export const IsbOuSchema = z.enum(
-  ["Available", "Active", "CleanUp", "Quarantine", "Frozen", "Entry", "Exit"],
-  {
-    error: enumErrorMap,
-  },
-);
-
-export const SandboxAccountStatusSchema = IsbOuSchema.exclude([
-  "Entry",
-  "Exit",
-]);
-
-export const CleanupStatusSchema = z
-  .enum([
-    "INITIALIZING",
-    "REVOKING_ACCESS",
-    "VALIDATING",
-    "COOLING_DOWN",
-    "COMPLETED",
-    "FAILED",
-  ])
-  .or(z.string().regex(/^NUKE_PHASE_\d+$/));
-
-export const ActiveCleanupSchema = z.object({
-  status: CleanupStatusSchema,
-  executionArn: z.string(),
-  startedAt: z.iso.datetime(),
-});
-
-export const CurrentLeaseSchema = z.object({
-  leaseId: z.uuid(),
-  ownerEmail: z.email(),
-});
-
-export const SandboxAccountSchema = z.strictObject({
+export const PersistedSandboxAccountSchema = z.strictObject({
   awsAccountId: AwsAccountIdSchema,
   email: z.email().optional(),
   name: z.string().max(50).optional(),
@@ -86,9 +54,6 @@ export const SandboxAccountSchema = z.strictObject({
   resourceLock: ResourceLockSchema.optional(),
   ...SandboxAccountItemWithMetadataSchema.shape,
 });
-export type SandboxAccount = z.infer<typeof SandboxAccountSchema>;
-export type CurrentLease = z.infer<typeof CurrentLeaseSchema>;
-export type IsbOu = z.infer<typeof IsbOuSchema>;
-export type SandboxAccountStatus = z.infer<typeof SandboxAccountStatusSchema>;
-export type CleanupStatus = z.infer<typeof CleanupStatusSchema>;
-export type ActiveCleanup = z.infer<typeof ActiveCleanupSchema>;
+export type PersistedSandboxAccount = z.infer<
+  typeof PersistedSandboxAccountSchema
+>;

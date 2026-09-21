@@ -4,15 +4,10 @@ import { Tracer } from "@aws-lambda-powertools/tracer";
 import { DateTime } from "luxon";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import {
-  BudgetThreshold,
-  DurationThreshold,
-} from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
 import { DynamoLeaseStore } from "@amzn/innovation-sandbox-commons/data/lease/dynamo-lease-store.js";
 import {
-  Lease,
-  LeaseStatus,
-  MonitoredLease,
+  PersistedLease,
+  PersistedMonitoredLease,
 } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import { LeaseBudgetExceededAlert } from "@amzn/innovation-sandbox-commons/events/lease-budget-exceeded-alert.js";
 import { LeaseBudgetThresholdBreachedAlert } from "@amzn/innovation-sandbox-commons/events/lease-budget-threshold-breached-alert.js";
@@ -31,6 +26,11 @@ import { mockContext } from "@amzn/innovation-sandbox-commons/test/lambdas/fixtu
 import { bulkStubEnv } from "@amzn/innovation-sandbox-commons/test/lambdas/utils.js";
 import { now } from "@amzn/innovation-sandbox-commons/utils/time-utils.js";
 import { performAccountMonitoringScan } from "@amzn/innovation-sandbox-lease-monitoring/lease-monitoring-handler.js";
+import type {
+  BudgetThreshold,
+  DurationThreshold,
+} from "@amzn/innovation-sandbox-shared/types/lease-template.js";
+import { LeaseStatus } from "@amzn/innovation-sandbox-shared/types/lease.js";
 
 const costsMock = {
   ...new AccountsCostReport(),
@@ -73,7 +73,9 @@ afterEach(() => {
 function leaseStore() {
   return {
     findByStatus: {
-      returns: (leases: Partial<{ [key in LeaseStatus]: Lease[] }>) => {
+      returns: (
+        leases: Partial<{ [key in LeaseStatus]: PersistedLease[] }>,
+      ) => {
         vi.spyOn(DynamoLeaseStore.prototype, "findByStatus").mockImplementation(
           async (props: { status: LeaseStatus }) => {
             return {
@@ -88,7 +90,7 @@ function leaseStore() {
 }
 
 describe("performAccountMonitoringScan", () => {
-  const monitoredLeasesBase: MonitoredLease[] = [
+  const monitoredLeasesBase: PersistedMonitoredLease[] = [
     {
       userEmail: "test@example.com",
       uuid: "testLease101",
@@ -374,7 +376,9 @@ describe("performAccountMonitoringScan", () => {
       // each lease's account ID — confirming the lease-UUID → account-ID
       // re-keying happened.
       const updateSpy = vi.spyOn(DynamoLeaseStore.prototype, "update");
-      const updates = updateSpy.mock.calls.map((c) => c[0]) as MonitoredLease[];
+      const updates = updateSpy.mock.calls.map(
+        (c) => c[0],
+      ) as PersistedMonitoredLease[];
       const account0Update = updates.find(
         (u) => u.awsAccountId === monitoredLeases[0]!.awsAccountId,
       );

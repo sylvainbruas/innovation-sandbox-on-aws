@@ -1,29 +1,33 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import {
-  isActiveLease,
-  isFrozenLease,
-  isPendingLease,
-  LeaseWithLeaseId,
-} from "@amzn/innovation-sandbox-commons/data/lease/lease";
+import { createElement } from "react";
+
 import {
   FreezeLeaseAction,
   FreezeLeaseConfirmationModal,
 } from "@amzn/innovation-sandbox-frontend/domains/leases/components/FreezeLeaseConfirmationModal";
 import { TerminateLeaseConfirmationModal } from "@amzn/innovation-sandbox-frontend/domains/leases/components/TerminateLeaseConfirmationModal";
 import {
+  canLoginToLease,
   isAssignmentLockActive,
   isCriticalAssignmentLockActive,
   isLeaseOwner,
   isTerminationLockActive,
 } from "@amzn/innovation-sandbox-frontend/domains/leases/helpers";
+import { LeaseView } from "@amzn/innovation-sandbox-frontend/domains/leases/model";
 import { useGetConfigurations } from "@amzn/innovation-sandbox-frontend/domains/settings/hooks";
 import { useModal } from "@amzn/innovation-sandbox-frontend/hooks/useModal";
 import { useUser } from "@amzn/innovation-sandbox-frontend/hooks/useUser";
-import { createElement } from "react";
+import {
+  isActiveLease,
+  isFrozenLease,
+  isPendingLease,
+} from "@amzn/innovation-sandbox-shared/types/lease.js";
 
 export interface LeaseActionsState {
+  canLogin: boolean;
+  loginAccountId?: string;
   canTerminate: boolean;
   canFreeze: boolean;
   canUnfreeze: boolean;
@@ -58,15 +62,16 @@ export interface LeaseActionsOptions {
  * Derives the lease actions that depend on user identity, configuration, and
  * the modal: whether the current user can terminate/freeze/unfreeze, and the
  * openers for each confirmation. `hasAnyAction` also folds in the status-only
- * actions (login for active leases, pending indicator for pending leases) so
- * callers can gate a Cloudscape Header `actions` prop in one check.
+ * actions (login when permitted by role and lifecycle, pending indicator for
+ * pending leases) so callers can gate a Cloudscape Header `actions` prop in
+ * one check.
  *
  * Tolerates an undefined lease so callers can run the hook before the lease has
  * loaded (Rules of Hooks require it run unconditionally, ahead of any
  * loading/error early return).
  */
 export const useLeaseActions = (
-  lease: LeaseWithLeaseId | undefined,
+  lease: LeaseView | undefined,
   options?: LeaseActionsOptions,
 ): LeaseActionsState => {
   const { user, isAdmin, isManager } = useUser();
@@ -86,6 +91,11 @@ export const useLeaseActions = (
   const criticalLockActive = !!lease && isCriticalAssignmentLockActive(lease);
   const terminationLockActive = !!lease && isTerminationLockActive(lease);
 
+  const loginAccountId =
+    lease && canLoginToLease(lease, { isAdmin, isManager })
+      ? lease.awsAccountId
+      : undefined;
+  const canLogin = loginAccountId !== undefined;
   const canFreeze = isElevated && !!lease && isActiveLease(lease);
   const canUnfreeze = isElevated && !!lease && isFrozenLease(lease);
 
@@ -160,12 +170,15 @@ export const useLeaseActions = (
   };
 
   const hasAnyAction =
-    (!!lease && (isActiveLease(lease) || isPendingLease(lease))) ||
+    canLogin ||
+    (!!lease && isPendingLease(lease)) ||
     canTerminate ||
     canFreeze ||
     canUnfreeze;
 
   return {
+    canLogin,
+    loginAccountId,
     canTerminate,
     canFreeze,
     canUnfreeze,

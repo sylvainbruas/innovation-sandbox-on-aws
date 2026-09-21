@@ -4,13 +4,33 @@
 import { ColumnLayout, KeyValuePairs } from "@cloudscape-design/components";
 
 import NumberField from "@amzn/innovation-sandbox-frontend/components/FormFields/NumberField";
+import SelectField from "@amzn/innovation-sandbox-frontend/components/FormFields/SelectField";
 import ToggleField from "@amzn/innovation-sandbox-frontend/components/FormFields/ToggleField";
 import { BooleanStatus } from "@amzn/innovation-sandbox-frontend/domains/settings/components/forms/BooleanStatus";
 import { SectionForm } from "@amzn/innovation-sandbox-frontend/domains/settings/components/forms/SectionForm";
-import { SectionData } from "@amzn/innovation-sandbox-frontend/domains/settings/service";
+import { ConfigurationSectionView } from "@amzn/innovation-sandbox-frontend/domains/settings/model";
 import { CONFIG_CONSTRAINTS } from "@amzn/innovation-sandbox-frontend/domains/settings/validation";
+import {
+  DEFAULT_GROUP_ASSIGNMENT_MODE,
+  GroupAssignmentMode,
+} from "@amzn/innovation-sandbox-shared/types/configuration.js";
 
-export function LeasesForm({ data }: { data: SectionData<"leases"> }) {
+const GROUP_ASSIGNMENT_OPTIONS = [
+  { value: GroupAssignmentMode.ALL, label: "Allow all groups" },
+  { value: GroupAssignmentMode.NONE, label: "Do not allow groups" },
+] as const;
+
+function groupAssignmentOption(value: GroupAssignmentMode) {
+  return (
+    GROUP_ASSIGNMENT_OPTIONS.find((option) => option.value === value) ?? null
+  );
+}
+
+export function LeasesForm({
+  data,
+}: {
+  data: ConfigurationSectionView<"leases">;
+}) {
   return (
     <SectionForm
       section="leases"
@@ -125,6 +145,20 @@ export function LeasesForm({ data }: { data: SectionData<"leases"> }) {
             }}
             stateLabel
           />
+          <SelectField
+            controllerProps={{ name: "groupAssignmentMode" }}
+            formFieldProps={{
+              label: "Allow group assignments",
+              description:
+                "Controls whether new IAM Identity Center group-to-lease associations can be added. When disabled, existing associations remain effective and removable, but group search and exact lookup are unavailable.",
+            }}
+            selectProps={{
+              options: GROUP_ASSIGNMENT_OPTIONS,
+              valueToOption: groupAssignmentOption,
+              optionToValue: (option) =>
+                option?.value ?? DEFAULT_GROUP_ASSIGNMENT_MODE,
+            }}
+          />
         </ColumnLayout>
       )}
       renderReadOnly={(d) => (
@@ -165,6 +199,10 @@ export function LeasesForm({ data }: { data: SectionData<"leases"> }) {
             {
               label: "Enable principal search",
               value: <BooleanStatus value={d.enablePrincipalSearch} />,
+            },
+            {
+              label: "Allow group assignments",
+              value: groupAssignmentOption(d.groupAssignmentMode)?.label,
             },
           ]}
         />

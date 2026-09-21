@@ -1,18 +1,18 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
 
-import { BlueprintWithStackSets } from "@amzn/innovation-sandbox-commons/data/blueprint/blueprint.js";
+import { PersistedBlueprintWithStackSets } from "@amzn/innovation-sandbox-commons/data/blueprint/blueprint.js";
 import { PaginatedQueryResult } from "@amzn/innovation-sandbox-commons/data/common-types.js";
-import { LeaseTemplateSchema } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
+import { PersistedLeaseTemplateSchema } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
 import {
-  MonitoredLease,
-  MonitoredLeaseSchema,
+  PersistedMonitoredLease,
+  PersistedMonitoredLeaseSchema,
 } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import { PrincipalStore } from "@amzn/innovation-sandbox-commons/data/principal/principal-store.js";
-import { PrincipalCacheItemSchema } from "@amzn/innovation-sandbox-commons/data/principal/principal.js";
+import { PersistedPrincipalCacheItemSchema } from "@amzn/innovation-sandbox-commons/data/principal/principal.js";
 import {
-  SandboxAccount,
-  SandboxAccountSchema,
+  PersistedSandboxAccount,
+  PersistedSandboxAccountSchema,
 } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
 import { LeaseApprovedEvent } from "@amzn/innovation-sandbox-commons/events/lease-approved-event.js";
 import { LeaseRequestedEvent } from "@amzn/innovation-sandbox-commons/events/lease-requested-event.js";
@@ -35,7 +35,7 @@ import {
   type IdcIdentity,
   IdcIdentitySchema,
   M2MIdentitySchema,
-} from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
+} from "@amzn/innovation-sandbox-shared/utils/auth-utils.js";
 import { Logger } from "@aws-lambda-powertools/logger";
 import { Tracer } from "@aws-lambda-powertools/tracer";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
@@ -101,7 +101,7 @@ describe("InnovationSandbox.requestLease()", () => {
     mockContext.principalStore.batchGetCacheItems.mockImplementation(
       async (keys) =>
         keys.map((k) =>
-          generateSchemaData(PrincipalCacheItemSchema, {
+          generateSchemaData(PersistedPrincipalCacheItemSchema, {
             sk: `${k.principalType.toLowerCase()}#${k.principalId}`,
             principalId: k.principalId,
             principalType: k.principalType,
@@ -166,7 +166,7 @@ describe("InnovationSandbox.requestLease()", () => {
             },
           },
         ],
-      } as BlueprintWithStackSets,
+      } as PersistedBlueprintWithStackSets,
     );
 
     vi.useFakeTimers();
@@ -182,7 +182,7 @@ describe("InnovationSandbox.requestLease()", () => {
   test("HappyPath - Request lease requiring approval ", async () => {
     const result = await InnovationSandbox.requestLease(
       {
-        leaseTemplate: generateSchemaData(LeaseTemplateSchema, {
+        leaseTemplate: generateSchemaData(PersistedLeaseTemplateSchema, {
           requiresApproval: true,
         }),
         targetUser: mockUser,
@@ -205,17 +205,20 @@ describe("InnovationSandbox.requestLease()", () => {
   });
 
   test("HappyPath - Request lease auto-approved", async () => {
-    const mockAvailableAccount = generateSchemaData(SandboxAccountSchema, {
-      status: "Available",
-    });
+    const mockAvailableAccount = generateSchemaData(
+      PersistedSandboxAccountSchema,
+      {
+        status: "Available",
+      },
+    );
 
     mockContext.sandboxAccountStore.findByStatus.mockResolvedValueOnce({
       result: [mockAvailableAccount],
-    } as PaginatedQueryResult<SandboxAccount>);
+    } as PaginatedQueryResult<PersistedSandboxAccount>);
 
     const result = await InnovationSandbox.requestLease(
       {
-        leaseTemplate: generateSchemaData(LeaseTemplateSchema, {
+        leaseTemplate: generateSchemaData(PersistedLeaseTemplateSchema, {
           requiresApproval: false,
           blueprintId: null,
         }),
@@ -236,10 +239,13 @@ describe("InnovationSandbox.requestLease()", () => {
   });
 
   test("should reject lease request when user has a lease in Provisioning status", async () => {
-    const provisioningLease = generateSchemaData(MonitoredLeaseSchema, {
-      userEmail: mockUser.email,
-      status: "Provisioning",
-    });
+    const provisioningLease = generateSchemaData(
+      PersistedMonitoredLeaseSchema,
+      {
+        userEmail: mockUser.email,
+        status: "Provisioning",
+      },
+    );
 
     mockContext.leaseStore.findByUserEmail.mockResolvedValueOnce({
       result: [provisioningLease],
@@ -249,7 +255,7 @@ describe("InnovationSandbox.requestLease()", () => {
     await expect(
       InnovationSandbox.requestLease(
         {
-          leaseTemplate: generateSchemaData(LeaseTemplateSchema, {
+          leaseTemplate: generateSchemaData(PersistedLeaseTemplateSchema, {
             requiresApproval: true,
           }),
           targetUser: mockUser,
@@ -259,22 +265,25 @@ describe("InnovationSandbox.requestLease()", () => {
     ).rejects.toThrow("maximum number of active/pending leases");
   });
 
-  // Lease Assignment Tests
+  // Lease PersistedAssignment Tests
   describe("Lease Assignment Flow", () => {
     const managerEmail = "manager@example.com";
 
     test("Lease assignment auto-approves regardless of template settings", async () => {
-      const mockAvailableAccount = generateSchemaData(SandboxAccountSchema, {
-        status: "Available",
-      });
+      const mockAvailableAccount = generateSchemaData(
+        PersistedSandboxAccountSchema,
+        {
+          status: "Available",
+        },
+      );
 
       mockContext.sandboxAccountStore.findByStatus.mockResolvedValueOnce({
         result: [mockAvailableAccount],
-      } as PaginatedQueryResult<SandboxAccount>);
+      } as PaginatedQueryResult<PersistedSandboxAccount>);
 
       const result = (await InnovationSandbox.requestLease(
         {
-          leaseTemplate: generateSchemaData(LeaseTemplateSchema, {
+          leaseTemplate: generateSchemaData(PersistedLeaseTemplateSchema, {
             requiresApproval: true, // Should be auto-approved for assignments
             blueprintId: null,
           }),
@@ -282,7 +291,7 @@ describe("InnovationSandbox.requestLease()", () => {
           createdBy: managerEmail,
         },
         mockContext,
-      )) as MonitoredLease;
+      )) as PersistedMonitoredLease;
 
       // Should be auto-approved
       expect(
@@ -305,7 +314,7 @@ describe("InnovationSandbox.requestLease()", () => {
     test("Lease assignment without createdBy defaults to targetUser", async () => {
       const result = await InnovationSandbox.requestLease(
         {
-          leaseTemplate: generateSchemaData(LeaseTemplateSchema, {
+          leaseTemplate: generateSchemaData(PersistedLeaseTemplateSchema, {
             requiresApproval: true,
           }),
           targetUser: mockUser,
@@ -326,7 +335,7 @@ describe("InnovationSandbox.requestLease()", () => {
     await expect(
       InnovationSandbox.requestLease(
         {
-          leaseTemplate: generateSchemaData(LeaseTemplateSchema, {
+          leaseTemplate: generateSchemaData(PersistedLeaseTemplateSchema, {
             requiresApproval: true,
           }),
           targetUser: m2mUser,
@@ -351,7 +360,7 @@ describe("InnovationSandbox.requestLease()", () => {
 
       const result = await InnovationSandbox.requestLease(
         {
-          leaseTemplate: generateSchemaData(LeaseTemplateSchema, {
+          leaseTemplate: generateSchemaData(PersistedLeaseTemplateSchema, {
             requiresApproval: true,
             allowOwnerToShareLease: true,
           }),
@@ -390,7 +399,7 @@ describe("InnovationSandbox.requestLease()", () => {
     test("should always include owner in desiredAssignments even when no other assignments provided", async () => {
       const result = await InnovationSandbox.requestLease(
         {
-          leaseTemplate: generateSchemaData(LeaseTemplateSchema, {
+          leaseTemplate: generateSchemaData(PersistedLeaseTemplateSchema, {
             requiresApproval: true,
             allowOwnerToShareLease: true,
           }),
@@ -411,7 +420,7 @@ describe("InnovationSandbox.requestLease()", () => {
     test("should include owner even with empty assignments array", async () => {
       const result = await InnovationSandbox.requestLease(
         {
-          leaseTemplate: generateSchemaData(LeaseTemplateSchema, {
+          leaseTemplate: generateSchemaData(PersistedLeaseTemplateSchema, {
             requiresApproval: true,
             allowOwnerToShareLease: true,
           }),
@@ -433,7 +442,7 @@ describe("InnovationSandbox.requestLease()", () => {
     test("should denormalize allowOwnerToShareLease from template to lease", async () => {
       const result = await InnovationSandbox.requestLease(
         {
-          leaseTemplate: generateSchemaData(LeaseTemplateSchema, {
+          leaseTemplate: generateSchemaData(PersistedLeaseTemplateSchema, {
             requiresApproval: true,
             allowOwnerToShareLease: true,
           }),

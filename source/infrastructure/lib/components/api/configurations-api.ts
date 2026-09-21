@@ -1,16 +1,13 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
-import { LambdaIntegration } from "aws-cdk-lib/aws-apigateway";
 import { Effect, PolicyStatement, Role } from "aws-cdk-lib/aws-iam";
+import { IFunction } from "aws-cdk-lib/aws-lambda";
 import { Construct } from "constructs";
 import path from "path";
 
 import { ConfigurationLambdaEnvironmentSchema } from "@amzn/innovation-sandbox-commons/lambda/environments/config-lambda-environment.js";
-import {
-  RestApi,
-  RestApiProps,
-} from "@amzn/innovation-sandbox-infrastructure/components/api/rest-api-all";
-import { IsbLambdaFunction } from "@amzn/innovation-sandbox-infrastructure/components/isb-lambda-function";
+import type { RestApiProps } from "@amzn/innovation-sandbox-infrastructure/components/api/rest-api-all";
+import { IsbApiLambdaFunction } from "@amzn/innovation-sandbox-infrastructure/components/isb-lambda-function";
 import { IsbKmsKeys } from "@amzn/innovation-sandbox-infrastructure/components/kms";
 import {
   grantIsbDbReadWrite,
@@ -19,7 +16,9 @@ import {
 import { IsbComputeStack } from "@amzn/innovation-sandbox-infrastructure/isb-compute-stack";
 
 export class ConfigurationsApi {
-  constructor(restApi: RestApi, scope: Construct, props: RestApiProps) {
+  public readonly lambdaFunction: IFunction;
+
+  constructor(scope: Construct, props: RestApiProps) {
     const { namespace } = props;
     const {
       configTableName,
@@ -28,7 +27,7 @@ export class ConfigurationsApi {
       cognitoAppClientId,
     } = IsbComputeStack.sharedSpokeConfig.data;
 
-    const configurationsLambdaFunction = new IsbLambdaFunction(
+    const configurationsLambdaFunction = new IsbApiLambdaFunction(
       scope,
       "ConfigurationsLambdaFunction",
       {
@@ -58,10 +57,10 @@ export class ConfigurationsApi {
           COGNITO_APP_CLIENT_ID: cognitoAppClientId,
           ISB_NAMESPACE: namespace,
         },
-        logGroup: restApi.logGroup,
         envSchema: ConfigurationLambdaEnvironmentSchema,
       },
     );
+    this.lambdaFunction = configurationsLambdaFunction.lambdaFunction;
 
     // Configurations Lambda both reads and writes config sections.
     grantIsbDbReadWrite(scope, configurationsLambdaFunction, configTableName);
@@ -86,17 +85,5 @@ export class ConfigurationsApi {
         resources: ["*"],
       }),
     );
-
-    const configurationsResource = restApi.root.addResource("configurations", {
-      defaultIntegration: new LambdaIntegration(
-        configurationsLambdaFunction.lambdaFunction,
-        { allowTestInvoke: true, proxy: true },
-      ),
-    });
-    configurationsResource.addMethod("GET");
-
-    const sectionResource = configurationsResource.addResource("{section}");
-    sectionResource.addMethod("GET");
-    sectionResource.addMethod("PUT");
   }
 }

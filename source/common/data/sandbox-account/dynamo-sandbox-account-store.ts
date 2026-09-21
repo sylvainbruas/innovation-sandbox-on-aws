@@ -20,13 +20,11 @@ import {
   base64DecodeCompositeKey,
   base64EncodeCompositeKey,
 } from "@amzn/innovation-sandbox-commons/data/encoding.js";
-import { ResourceLock } from "@amzn/innovation-sandbox-commons/data/resource-lock.js";
 import { SandboxAccountStore } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account-store.js";
 import {
-  SandboxAccount,
-  SandboxAccountSchema,
+  PersistedSandboxAccount,
+  PersistedSandboxAccountSchema,
   SandboxAccountSchemaVersion,
-  SandboxAccountStatus,
 } from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account.js";
 import {
   parseResults,
@@ -38,6 +36,8 @@ import {
   nowAsIsoDatetimeString,
   parseDatetime,
 } from "@amzn/innovation-sandbox-commons/utils/time-utils.js";
+import { ResourceLock } from "@amzn/innovation-sandbox-shared/types/resource-lock.js";
+import { SandboxAccountStatus } from "@amzn/innovation-sandbox-shared/types/sandbox-account.js";
 import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
 
 export class DynamoSandboxAccountStore extends SandboxAccountStore {
@@ -53,11 +53,11 @@ export class DynamoSandboxAccountStore extends SandboxAccountStore {
     this.ddbClient = props.client;
   }
 
-  @validateItem(SandboxAccountSchema)
+  @validateItem(PersistedSandboxAccountSchema)
   @withMetadata(SandboxAccountSchemaVersion)
   public async put(
-    account: SandboxAccount,
-  ): Promise<PutResult<SandboxAccount>> {
+    account: PersistedSandboxAccount,
+  ): Promise<PutResult<PersistedSandboxAccount>> {
     const result = await this.ddbClient.send(
       new PutCommand({
         TableName: this.tableName,
@@ -90,7 +90,7 @@ export class DynamoSandboxAccountStore extends SandboxAccountStore {
     status: SandboxAccountStatus;
     pageIdentifier?: string;
     pageSize?: number;
-  }): Promise<PaginatedQueryResult<SandboxAccount>> {
+  }): Promise<PaginatedQueryResult<PersistedSandboxAccount>> {
     const result = await this.ddbClient.send(
       new ScanCommand({
         TableName: this.tableName,
@@ -107,7 +107,7 @@ export class DynamoSandboxAccountStore extends SandboxAccountStore {
     );
 
     return {
-      ...parseResults(result.Items, SandboxAccountSchema),
+      ...parseResults(result.Items, PersistedSandboxAccountSchema),
       nextPageIdentifier: base64EncodeCompositeKey(result.LastEvaluatedKey),
     };
   }
@@ -115,7 +115,7 @@ export class DynamoSandboxAccountStore extends SandboxAccountStore {
   public async findAll(args: {
     pageIdentifier?: string;
     pageSize?: number;
-  }): Promise<PaginatedQueryResult<SandboxAccount>> {
+  }): Promise<PaginatedQueryResult<PersistedSandboxAccount>> {
     const result = await this.ddbClient.send(
       new ScanCommand({
         TableName: this.tableName,
@@ -125,14 +125,14 @@ export class DynamoSandboxAccountStore extends SandboxAccountStore {
     );
 
     return {
-      ...parseResults(result.Items, SandboxAccountSchema),
+      ...parseResults(result.Items, PersistedSandboxAccountSchema),
       nextPageIdentifier: base64EncodeCompositeKey(result.LastEvaluatedKey),
     };
   }
 
   public async get(
     accountId: AwsAccountId,
-  ): Promise<SingleItemResult<SandboxAccount>> {
+  ): Promise<SingleItemResult<PersistedSandboxAccount>> {
     const result = await this.ddbClient.send(
       new GetCommand({
         TableName: this.tableName,
@@ -142,15 +142,15 @@ export class DynamoSandboxAccountStore extends SandboxAccountStore {
       }),
     );
 
-    return parseSingleItemResult(result.Item, SandboxAccountSchema);
+    return parseSingleItemResult(result.Item, PersistedSandboxAccountSchema);
   }
 
   public async update(
     accountId: AwsAccountId,
     params: {
-      set?: Partial<Omit<SandboxAccount, "awsAccountId" | "meta">>;
+      set?: Partial<Omit<PersistedSandboxAccount, "awsAccountId" | "meta">>;
       remove?: Array<
-        keyof Omit<SandboxAccount, "awsAccountId" | "meta" | "status">
+        keyof Omit<PersistedSandboxAccount, "awsAccountId" | "meta" | "status">
       >;
     },
   ): Promise<void> {
@@ -209,7 +209,7 @@ export class DynamoSandboxAccountStore extends SandboxAccountStore {
     ownerId: string,
     timeoutSeconds: number,
     meta?: Record<string, string>,
-  ): Promise<SandboxAccount> {
+  ): Promise<PersistedSandboxAccount> {
     const acquiredAt = nowAsIsoDatetimeString();
     const expiresAt = parseDatetime(acquiredAt)
       .plus({ seconds: timeoutSeconds })
@@ -238,7 +238,7 @@ export class DynamoSandboxAccountStore extends SandboxAccountStore {
       }),
     );
 
-    return SandboxAccountSchema.parse(result.Attributes);
+    return PersistedSandboxAccountSchema.parse(result.Attributes);
   }
 
   public async releaseLock(

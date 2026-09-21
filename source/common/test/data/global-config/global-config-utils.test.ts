@@ -7,7 +7,7 @@ import {
   ValidationException,
   validateLeaseTemplateCompliesWithGlobalConfig,
 } from "@amzn/innovation-sandbox-commons/data/global-config/global-config-utils.js";
-import { LeaseTemplateSchema } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
+import { PersistedLeaseTemplateSchema } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template.js";
 import { generateSchemaData } from "@amzn/innovation-sandbox-commons/test/generate-schema-data.js";
 import { mockGlobalConfig } from "@amzn/innovation-sandbox-commons/test/lambdas/fixtures.js";
 
@@ -15,7 +15,7 @@ function template(fields: {
   maxSpend: number | undefined;
   leaseDurationInHours: number | undefined;
 }) {
-  return generateSchemaData(LeaseTemplateSchema, {
+  return generateSchemaData(PersistedLeaseTemplateSchema, {
     allowOwnerToShareLease: false,
     ...fields,
   });

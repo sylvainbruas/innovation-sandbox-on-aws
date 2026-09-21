@@ -4,12 +4,12 @@ import { MiddlewareObj } from "@middy/core";
 import { Context } from "aws-lambda";
 
 import { ConfigStore } from "@amzn/innovation-sandbox-commons/data/config/config-store.js";
+import { GlobalConfig } from "@amzn/innovation-sandbox-commons/data/global-config/global-config.js";
+import { IsbServices } from "@amzn/innovation-sandbox-commons/isb-services/index.js";
 import {
   ConfigSchemas,
   ConfigSection,
-} from "@amzn/innovation-sandbox-commons/data/config/config.js";
-import { GlobalConfig } from "@amzn/innovation-sandbox-commons/data/global-config/global-config.js";
-import { IsbServices } from "@amzn/innovation-sandbox-commons/isb-services/index.js";
+} from "@amzn/innovation-sandbox-shared/types/configuration.js";
 
 export type ContextWithConfig = Context & {
   globalConfig: GlobalConfig;

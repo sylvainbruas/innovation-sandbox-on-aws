@@ -13,14 +13,14 @@ import ToggleField from "@amzn/innovation-sandbox-frontend/components/FormFields
 import TokenListField from "@amzn/innovation-sandbox-frontend/components/FormFields/TokenListField";
 import { BooleanStatus } from "@amzn/innovation-sandbox-frontend/domains/settings/components/forms/BooleanStatus";
 import { SectionForm } from "@amzn/innovation-sandbox-frontend/domains/settings/components/forms/SectionForm";
-import { SectionData } from "@amzn/innovation-sandbox-frontend/domains/settings/service";
+import { ConfigurationSectionView } from "@amzn/innovation-sandbox-frontend/domains/settings/model";
 import { CONFIG_CONSTRAINTS } from "@amzn/innovation-sandbox-frontend/domains/settings/validation";
 import { sortedCaseInsensitive } from "@amzn/innovation-sandbox-frontend/helpers/sorted-case-insensitive";
 
 export function CostReportingForm({
   data,
 }: {
-  data: SectionData<"costReporting">;
+  data: ConfigurationSectionView<"costReporting">;
 }) {
   return (
     <SectionForm

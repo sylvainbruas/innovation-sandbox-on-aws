@@ -20,11 +20,11 @@ import ToggleField from "@amzn/innovation-sandbox-frontend/components/FormFields
 import { BlueprintSelectionFormValues } from "@amzn/innovation-sandbox-frontend/components/Forms/validation";
 import { Loader } from "@amzn/innovation-sandbox-frontend/components/Loader";
 import { useGetBlueprints } from "@amzn/innovation-sandbox-frontend/domains/blueprints/hooks";
-import { Blueprint } from "@amzn/innovation-sandbox-frontend/domains/blueprints/types";
+import { BlueprintView } from "@amzn/innovation-sandbox-frontend/domains/blueprints/model";
 
 const BLUEPRINTS_PER_PAGE = 12;
 
-const BlueprintCardContent = ({ option }: { option: Blueprint }) => (
+const BlueprintCardContent = ({ option }: { option: BlueprintView }) => (
   <Box>
     <Divider />
     <KeyValuePairs
@@ -198,7 +198,11 @@ export const SelectBlueprintForm = () => {
               No blueprints match your search term. Try a different search.
             </Alert>
           ) : (
-            <CardsField<Blueprint, BlueprintSelectionFormValues, "blueprintId">
+            <CardsField<
+              BlueprintView,
+              BlueprintSelectionFormValues,
+              "blueprintId"
+            >
               controllerProps={{
                 control,
                 name: "blueprintId",

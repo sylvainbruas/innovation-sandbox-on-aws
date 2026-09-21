@@ -3,106 +3,177 @@
 
 import { describe, expect, it, vi } from "vitest";
 
+import {
+  LeaseView,
+  SharedLeaseView,
+} from "@amzn/innovation-sandbox-frontend/domains/leases/model";
 import { LeaseService } from "@amzn/innovation-sandbox-frontend/domains/leases/service";
-import { IApiProxy } from "@amzn/innovation-sandbox-frontend/helpers/ApiProxy";
+import { SmithyLeaseApi } from "@amzn/innovation-sandbox-frontend/domains/leases/smithy-client";
 
-const createMockApi = (): IApiProxy => ({
-  get: vi.fn(),
-  post: vi.fn(),
-  put: vi.fn(),
-  patch: vi.fn(),
-  delete: vi.fn(),
-});
+function stubApi(overrides: Partial<SmithyLeaseApi> = {}): SmithyLeaseApi {
+  return {
+    listLeases: vi.fn(),
+    getLease: vi.fn(),
+    requestLease: vi.fn(),
+    updateLease: vi.fn(),
+    reviewLease: vi.fn(),
+    terminateLease: vi.fn(),
+    freezeLease: vi.fn(),
+    unfreezeLease: vi.fn(),
+    getAssignments: vi.fn(),
+    updateAssignments: vi.fn(),
+    listSharedLeases: vi.fn(),
+    ...overrides,
+  };
+}
+
+const lease = (leaseId: string): LeaseView =>
+  ({
+    leaseId,
+    userEmail: "owner@example.com",
+    status: "Active",
+  }) as unknown as LeaseView;
+
+const shared = (leaseId: string): SharedLeaseView =>
+  ({
+    leaseId,
+    userEmail: "owner@example.com",
+    uuid: `uuid-${leaseId}`,
+    status: "Active",
+    accessType: "direct",
+  }) as unknown as SharedLeaseView;
 
 describe("LeaseService", () => {
+  describe("getLeases", () => {
+    it("follows the continuation token across pages", async () => {
+      const listLeases = vi
+        .fn()
+        .mockResolvedValueOnce({
+          result: [lease("lease-1")],
+          nextPageIdentifier: "page-2",
+        })
+        .mockResolvedValueOnce({
+          result: [lease("lease-2")],
+          nextPageIdentifier: null,
+        });
+      const service = new LeaseService(stubApi({ listLeases }));
+
+      const leases = await service.getLeases();
+
+      expect(leases.map((l) => l.leaseId)).toEqual(["lease-1", "lease-2"]);
+      // pageIdentifier is undefined on the first call, then the returned cursor.
+      expect(listLeases).toHaveBeenNthCalledWith(1, undefined, undefined);
+      expect(listLeases).toHaveBeenNthCalledWith(2, "page-2", undefined);
+    });
+
+    it("forwards the userEmail filter on every page", async () => {
+      const listLeases = vi.fn().mockResolvedValue({
+        result: [],
+        nextPageIdentifier: null,
+      });
+      const service = new LeaseService(stubApi({ listLeases }));
+
+      await service.getLeases("user@example.com");
+
+      expect(listLeases).toHaveBeenCalledWith(undefined, "user@example.com");
+    });
+  });
+
+  describe("delegation", () => {
+    it("delegates single-target methods to the adapter", async () => {
+      const api = stubApi();
+      const service = new LeaseService(api);
+
+      await service.getLeaseById("lease-1");
+      await service.requestNewLease({ leaseTemplateUuid: "tmpl-1" });
+      await service.updateLease({ leaseId: "lease-1", maxSpend: 10 });
+      await service.reviewLease("lease-1", true);
+      await service.terminateLease("lease-1");
+      await service.freezeLease("lease-1");
+      await service.unfreezeLease("lease-1");
+      await service.getAssignments("lease-1");
+      await service.updateAssignments("lease-1", [
+        { principalId: "p1", principalType: "USER" },
+      ]);
+
+      expect(api.getLease).toHaveBeenCalledWith("lease-1");
+      expect(api.requestLease).toHaveBeenCalledWith({
+        leaseTemplateUuid: "tmpl-1",
+      });
+      expect(api.updateLease).toHaveBeenCalledWith({
+        leaseId: "lease-1",
+        maxSpend: 10,
+      });
+      expect(api.reviewLease).toHaveBeenCalledWith("lease-1", true);
+      expect(api.terminateLease).toHaveBeenCalledWith("lease-1");
+      expect(api.freezeLease).toHaveBeenCalledWith("lease-1");
+      expect(api.unfreezeLease).toHaveBeenCalledWith("lease-1");
+      expect(api.getAssignments).toHaveBeenCalledWith("lease-1");
+      expect(api.updateAssignments).toHaveBeenCalledWith("lease-1", [
+        { principalId: "p1", principalType: "USER" },
+      ]);
+    });
+  });
+
   describe("getSharedLeases", () => {
     it("should fetch all pages exhaustively and return combined results", async () => {
-      const mockApi = createMockApi();
-      const service = new LeaseService(mockApi);
-
-      const page1Lease = {
-        leaseId: "lease-1",
-        userEmail: "owner@example.com",
-        uuid: "uuid-1",
-        status: "Active",
-        accessType: "direct",
-      };
-      const page2Lease = {
-        leaseId: "lease-2",
-        userEmail: "owner2@example.com",
-        uuid: "uuid-2",
-        status: "Active",
-        accessType: "direct",
-      };
-
-      (mockApi.get as ReturnType<typeof vi.fn>)
+      const listSharedLeases = vi
+        .fn()
         .mockResolvedValueOnce({
-          result: [page1Lease],
+          result: [shared("lease-1")],
           nextPageIdentifier: "cursor-2",
         })
         .mockResolvedValueOnce({
-          result: [page2Lease],
+          result: [shared("lease-2")],
           nextPageIdentifier: null,
         });
+      const service = new LeaseService(stubApi({ listSharedLeases }));
 
       const result = await service.getSharedLeases("user-id-1", "direct");
 
       expect(result.result).toHaveLength(2);
-      expect(result.result[0]).toEqual(page1Lease);
-      expect(result.result[1]).toEqual(page2Lease);
+      expect(result.result[0]!.leaseId).toBe("lease-1");
+      expect(result.result[1]!.leaseId).toBe("lease-2");
       expect(result.nextPageIdentifier).toBeNull();
 
-      // Verify pagination params
-      expect(mockApi.get).toHaveBeenCalledTimes(2);
-      expect(mockApi.get).toHaveBeenCalledWith(
-        expect.stringContaining("userId=user-id-1"),
+      expect(listSharedLeases).toHaveBeenCalledTimes(2);
+      // userId, accessType, maxResults=100, then the returned cursor.
+      expect(listSharedLeases).toHaveBeenNthCalledWith(
+        1,
+        "user-id-1",
+        "direct",
+        100,
+        undefined,
       );
-      expect(mockApi.get).toHaveBeenCalledWith(
-        expect.stringContaining("accessType=direct"),
-      );
-      expect(mockApi.get).toHaveBeenCalledWith(
-        expect.stringContaining("maxResults=100"),
-      );
-      // Second call should include pageIdentifier
-      expect(mockApi.get).toHaveBeenLastCalledWith(
-        expect.stringContaining("pageIdentifier=cursor-2"),
+      expect(listSharedLeases).toHaveBeenNthCalledWith(
+        2,
+        "user-id-1",
+        "direct",
+        100,
+        "cursor-2",
       );
     });
 
     it("should return single page when nextPageIdentifier is null on first call", async () => {
-      const mockApi = createMockApi();
-      const service = new LeaseService(mockApi);
-
-      const lease = {
-        leaseId: "lease-1",
-        userEmail: "owner@example.com",
-        uuid: "uuid-1",
-        status: "Active",
-        accessType: "group",
-        sourceGroupName: "Team A",
-      };
-
-      (mockApi.get as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
-        result: [lease],
+      const listSharedLeases = vi.fn().mockResolvedValueOnce({
+        result: [shared("lease-1")],
         nextPageIdentifier: null,
       });
+      const service = new LeaseService(stubApi({ listSharedLeases }));
 
       const result = await service.getSharedLeases("user-id-1", "group");
 
       expect(result.result).toHaveLength(1);
-      expect(result.result[0]).toEqual(lease);
       expect(result.nextPageIdentifier).toBeNull();
-      expect(mockApi.get).toHaveBeenCalledTimes(1);
+      expect(listSharedLeases).toHaveBeenCalledTimes(1);
     });
 
     it("should return empty result when no shared leases exist", async () => {
-      const mockApi = createMockApi();
-      const service = new LeaseService(mockApi);
-
-      (mockApi.get as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      const listSharedLeases = vi.fn().mockResolvedValueOnce({
         result: [],
         nextPageIdentifier: null,
       });
+      const service = new LeaseService(stubApi({ listSharedLeases }));
 
       const result = await service.getSharedLeases("user-id-1", "direct");
 
@@ -111,55 +182,54 @@ describe("LeaseService", () => {
     });
 
     it("should pass accessType=group when specified", async () => {
-      const mockApi = createMockApi();
-      const service = new LeaseService(mockApi);
-
-      (mockApi.get as ReturnType<typeof vi.fn>).mockResolvedValueOnce({
+      const listSharedLeases = vi.fn().mockResolvedValueOnce({
         result: [],
         nextPageIdentifier: null,
       });
+      const service = new LeaseService(stubApi({ listSharedLeases }));
 
       await service.getSharedLeases("user-id-1", "group");
 
-      expect(mockApi.get).toHaveBeenCalledWith(
-        expect.stringContaining("accessType=group"),
+      expect(listSharedLeases).toHaveBeenCalledWith(
+        "user-id-1",
+        "group",
+        100,
+        undefined,
       );
     });
 
     it("should handle three pages of results", async () => {
-      const mockApi = createMockApi();
-      const service = new LeaseService(mockApi);
-
-      (mockApi.get as ReturnType<typeof vi.fn>)
+      const listSharedLeases = vi
+        .fn()
         .mockResolvedValueOnce({
-          result: [{ leaseId: "1" }],
+          result: [shared("1")],
           nextPageIdentifier: "cursor-2",
         })
         .mockResolvedValueOnce({
-          result: [{ leaseId: "2" }],
+          result: [shared("2")],
           nextPageIdentifier: "cursor-3",
         })
         .mockResolvedValueOnce({
-          result: [{ leaseId: "3" }],
+          result: [shared("3")],
           nextPageIdentifier: null,
         });
+      const service = new LeaseService(stubApi({ listSharedLeases }));
 
       const result = await service.getSharedLeases("user-id-1", "direct");
 
       expect(result.result).toHaveLength(3);
-      expect(mockApi.get).toHaveBeenCalledTimes(3);
+      expect(listSharedLeases).toHaveBeenCalledTimes(3);
     });
 
     it("should propagate errors that occur mid-pagination", async () => {
-      const mockApi = createMockApi();
-      const service = new LeaseService(mockApi);
-
-      (mockApi.get as ReturnType<typeof vi.fn>)
+      const listSharedLeases = vi
+        .fn()
         .mockResolvedValueOnce({
-          result: [{ leaseId: "1" }],
+          result: [shared("1")],
           nextPageIdentifier: "cursor-2",
         })
         .mockRejectedValueOnce(new Error("Network error on page 2"));
+      const service = new LeaseService(stubApi({ listSharedLeases }));
 
       await expect(
         service.getSharedLeases("user-id-1", "direct"),
@@ -167,21 +237,19 @@ describe("LeaseService", () => {
     });
 
     it("should stop at MAX_PAGES to prevent infinite loops", async () => {
-      const mockApi = createMockApi();
-      const service = new LeaseService(mockApi);
-
-      // Always return a non-null cursor (simulates broken backend)
-      (mockApi.get as ReturnType<typeof vi.fn>).mockResolvedValue({
-        result: [{ leaseId: "item" }],
+      // Always return a non-null cursor (simulates a broken backend).
+      const listSharedLeases = vi.fn().mockResolvedValue({
+        result: [shared("item")],
         nextPageIdentifier: "always-more",
       });
+      const service = new LeaseService(stubApi({ listSharedLeases }));
 
       const result = await service.getSharedLeases("user-id-1", "direct");
 
-      // Should stop at 50 pages (MAX_PAGES)
-      expect(mockApi.get).toHaveBeenCalledTimes(50);
+      // Should stop at 50 pages (MAX_PAGES).
+      expect(listSharedLeases).toHaveBeenCalledTimes(50);
       expect(result.result).toHaveLength(50);
-      // Preserves nextPageIdentifier to indicate truncation
+      // Preserves nextPageIdentifier to indicate truncation.
       expect(result.nextPageIdentifier).toBe("always-more");
     });
   });

@@ -3,11 +3,11 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import {
-  type ConfigSection,
-  type SectionData,
-  SettingService,
-} from "./service";
+import type { ConfigSection } from "@amzn/innovation-sandbox-shared/types/configuration.js";
+
+import type { ConfigurationSectionView } from "./model";
+import { getSettingService } from "./service";
+import type { ConfigurationSectionRequest } from "./types";
 
 const CONFIG_STALE_TIME = 5 * 60 * 1000; // 5 minutes (matches backend SSM cache)
 
@@ -20,7 +20,7 @@ const CONFIG_STALE_TIME = 5 * 60 * 1000; // 5 minutes (matches backend SSM cache
 export const useGetConfigurations = () => {
   return useQuery({
     queryKey: ["configurations"],
-    queryFn: async () => await new SettingService().getConfigurations(),
+    queryFn: async () => await getSettingService().getConfigurations(),
     staleTime: CONFIG_STALE_TIME,
   });
 };
@@ -39,7 +39,7 @@ export const useGetConfigurationSection = (
   return useQuery({
     queryKey: ["configurations", section],
     queryFn: async () =>
-      await new SettingService().getConfigurationSection(section),
+      await getSettingService().getConfigurationSection(section),
     staleTime: CONFIG_STALE_TIME,
     enabled: (options?.enabled ?? true) && !!section,
   });
@@ -62,9 +62,13 @@ export const usePutConfigurationSection = <T extends ConfigSection>(
   section: T,
 ) => {
   const client = useQueryClient();
-  return useMutation<SectionData<T>, Error, unknown>({
-    mutationFn: async (data: unknown) =>
-      await new SettingService().putConfigurationSection(section, data),
+  return useMutation<
+    ConfigurationSectionView<T>,
+    Error,
+    ConfigurationSectionRequest<T>
+  >({
+    mutationFn: async (data) =>
+      await getSettingService().putConfigurationSection(section, data),
     onSuccess: () => {
       // Prefix match: invalidates ["configurations"] and
       // ["configurations", <section>] in one call.

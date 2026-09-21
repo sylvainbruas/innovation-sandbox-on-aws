@@ -40,22 +40,21 @@ import {
 } from "@amzn/innovation-sandbox-commons/data/principal/principal-dynamodb-keys.js";
 import { PrincipalStore } from "@amzn/innovation-sandbox-commons/data/principal/principal-store.js";
 import {
-  Assignment,
-  AssignmentSchema,
-  GroupAssignment,
-  GroupAssignmentSchema,
-  GroupIndexProjectionSchema,
-  GroupMembershipCache,
-  GroupMembershipCacheSchema,
+  PersistedAssignment,
+  PersistedAssignmentSchema,
+  PersistedGroupAssignment,
+  PersistedGroupAssignmentSchema,
+  PersistedGroupIndexProjectionSchema,
+  PersistedGroupMembershipCache,
+  PersistedGroupMembershipCacheSchema,
+  PersistedPrincipalCacheItem,
+  PersistedPrincipalCacheItemSchema,
+  PersistedUserAssignment,
+  PersistedUserAssignmentSchema,
   PRINCIPAL_CACHE_GROUP_SK_PREFIX,
   PRINCIPAL_CACHE_PK,
   PRINCIPAL_CACHE_USER_SK_PREFIX,
-  PrincipalCacheItem,
-  PrincipalCacheItemSchema,
   PrincipalSchemaVersion,
-  PrincipalType,
-  UserAssignment,
-  UserAssignmentSchema,
 } from "@amzn/innovation-sandbox-commons/data/principal/principal.js";
 import {
   chunk,
@@ -65,6 +64,7 @@ import {
   validateItem,
   withMetadata,
 } from "@amzn/innovation-sandbox-commons/data/utils.js";
+import type { PrincipalType } from "@amzn/innovation-sandbox-shared/types/principal.js";
 
 export class DynamoPrincipalStore extends PrincipalStore {
   private readonly tableName: string;
@@ -79,11 +79,11 @@ export class DynamoPrincipalStore extends PrincipalStore {
     this.ddbClient = props.client;
   }
 
-  @validateItem(UserAssignmentSchema)
+  @validateItem(PersistedUserAssignmentSchema)
   @withMetadata(PrincipalSchemaVersion)
   public override async createUserAssignment(
-    assignment: UserAssignment,
-  ): Promise<UserAssignment> {
+    assignment: PersistedUserAssignment,
+  ): Promise<PersistedUserAssignment> {
     try {
       await this.ddbClient.send(
         new PutCommand({
@@ -102,11 +102,11 @@ export class DynamoPrincipalStore extends PrincipalStore {
     }
   }
 
-  @validateItem(GroupAssignmentSchema)
+  @validateItem(PersistedGroupAssignmentSchema)
   @withMetadata(PrincipalSchemaVersion)
   public override async createGroupAssignment(
-    assignment: GroupAssignment,
-  ): Promise<GroupAssignment> {
+    assignment: PersistedGroupAssignment,
+  ): Promise<PersistedGroupAssignment> {
     try {
       await this.ddbClient.send(
         new PutCommand({
@@ -128,34 +128,34 @@ export class DynamoPrincipalStore extends PrincipalStore {
   public override async getUserAssignment(
     userId: string,
     leaseId: string,
-  ): Promise<SingleItemResult<UserAssignment>> {
+  ): Promise<SingleItemResult<PersistedUserAssignment>> {
     const result = await this.ddbClient.send(
       new GetCommand({
         TableName: this.tableName,
         Key: { pk: userPk(userId), sk: leaseSk(leaseId) },
       }),
     );
-    return parseSingleItemResult(result.Item, UserAssignmentSchema);
+    return parseSingleItemResult(result.Item, PersistedUserAssignmentSchema);
   }
 
   public override async getGroupAssignment(
     groupId: string,
     leaseId: string,
-  ): Promise<SingleItemResult<GroupAssignment>> {
+  ): Promise<SingleItemResult<PersistedGroupAssignment>> {
     const result = await this.ddbClient.send(
       new GetCommand({
         TableName: this.tableName,
         Key: { pk: groupPk(groupId), sk: leaseSk(leaseId) },
       }),
     );
-    return parseSingleItemResult(result.Item, GroupAssignmentSchema);
+    return parseSingleItemResult(result.Item, PersistedGroupAssignmentSchema);
   }
 
   public override async getAssignmentsForLease(props: {
     leaseId: string;
     pageIdentifier?: string;
     pageSize?: number;
-  }): Promise<PaginatedQueryResult<Assignment>> {
+  }): Promise<PaginatedQueryResult<PersistedAssignment>> {
     const { leaseId, pageIdentifier, pageSize } = props;
     const result = await this.ddbClient.send(
       new QueryCommand({
@@ -169,7 +169,7 @@ export class DynamoPrincipalStore extends PrincipalStore {
       }),
     );
     return {
-      ...parseResults(result.Items, AssignmentSchema),
+      ...parseResults(result.Items, PersistedAssignmentSchema),
       nextPageIdentifier: base64EncodeCompositeKey(result.LastEvaluatedKey),
     };
   }
@@ -178,7 +178,7 @@ export class DynamoPrincipalStore extends PrincipalStore {
     userId: string;
     pageIdentifier?: string;
     pageSize?: number;
-  }): Promise<PaginatedQueryResult<UserAssignment>> {
+  }): Promise<PaginatedQueryResult<PersistedUserAssignment>> {
     const { userId, pageIdentifier, pageSize } = props;
     const result = await this.ddbClient.send(
       new QueryCommand({
@@ -194,27 +194,30 @@ export class DynamoPrincipalStore extends PrincipalStore {
       }),
     );
     return {
-      ...parseResults(result.Items, UserAssignmentSchema),
+      ...parseResults(result.Items, PersistedUserAssignmentSchema),
       nextPageIdentifier: base64EncodeCompositeKey(result.LastEvaluatedKey),
     };
   }
 
   public override async getGroupMembershipCache(
     userId: string,
-  ): Promise<SingleItemResult<GroupMembershipCache>> {
+  ): Promise<SingleItemResult<PersistedGroupMembershipCache>> {
     const result = await this.ddbClient.send(
       new GetCommand({
         TableName: this.tableName,
         Key: { pk: userPk(userId), sk: GROUP_MEMBERSHIP_SK },
       }),
     );
-    return parseSingleItemResult(result.Item, GroupMembershipCacheSchema);
+    return parseSingleItemResult(
+      result.Item,
+      PersistedGroupMembershipCacheSchema,
+    );
   }
 
-  @validateItem(GroupMembershipCacheSchema)
+  @validateItem(PersistedGroupMembershipCacheSchema)
   @withMetadata(PrincipalSchemaVersion)
   public override async putGroupMembershipCache(
-    cache: GroupMembershipCache,
+    cache: PersistedGroupMembershipCache,
   ): Promise<void> {
     await this.ddbClient.send(
       new PutCommand({
@@ -259,7 +262,7 @@ export class DynamoPrincipalStore extends PrincipalStore {
    * method will silently overwrite existing records.
    */
   public override async batchPutAssignments(
-    assignments: Assignment[],
+    assignments: PersistedAssignment[],
   ): Promise<void> {
     if (assignments.length === 0) return;
     if (assignments.length > 25) {
@@ -269,7 +272,7 @@ export class DynamoPrincipalStore extends PrincipalStore {
     }
 
     const enrichedAssignments = assignments.map((assignment) => {
-      AssignmentSchema.parse(assignment);
+      PersistedAssignmentSchema.parse(assignment);
       return withUpdatedMetadata(assignment, PrincipalSchemaVersion);
     });
 
@@ -318,7 +321,7 @@ export class DynamoPrincipalStore extends PrincipalStore {
 
     const { result: validProjections } = parseResults(
       allRawItems,
-      GroupIndexProjectionSchema,
+      PersistedGroupIndexProjectionSchema,
     );
 
     return validProjections.map((p) => ({
@@ -329,7 +332,7 @@ export class DynamoPrincipalStore extends PrincipalStore {
 
   public override async batchGetGroupAssignments(
     keys: { groupId: string; leaseId: string }[],
-  ): Promise<GroupAssignment[]> {
+  ): Promise<PersistedGroupAssignment[]> {
     if (keys.length === 0) return [];
 
     // Dedupe input keys (BatchGetItem rejects duplicates). Tuple-stable
@@ -382,7 +385,10 @@ export class DynamoPrincipalStore extends PrincipalStore {
       { concurrency: 5 },
     );
 
-    const { result } = parseResults(allRawItems, GroupAssignmentSchema);
+    const { result } = parseResults(
+      allRawItems,
+      PersistedGroupAssignmentSchema,
+    );
     return result;
   }
 
@@ -392,12 +398,12 @@ export class DynamoPrincipalStore extends PrincipalStore {
    * Batches are written in parallel with a concurrency limit of 2.
    */
   public override async batchPutCacheItems(
-    items: PrincipalCacheItem[],
+    items: PersistedPrincipalCacheItem[],
   ): Promise<void> {
     if (items.length === 0) return;
 
     const enrichedItems = items.map((item) => {
-      const parsed = PrincipalCacheItemSchema.parse(item);
+      const parsed = PersistedPrincipalCacheItemSchema.parse(item);
       return withUpdatedMetadata(parsed, PrincipalSchemaVersion);
     });
 
@@ -444,7 +450,7 @@ export class DynamoPrincipalStore extends PrincipalStore {
    */
   public override async getCacheItems(props: {
     type?: PrincipalType;
-  }): Promise<PrincipalCacheItem[]> {
+  }): Promise<PersistedPrincipalCacheItem[]> {
     const allRawItems: Record<string, unknown>[] = [];
     let exclusiveStartKey: Record<string, unknown> | undefined;
 
@@ -481,7 +487,10 @@ export class DynamoPrincipalStore extends PrincipalStore {
       exclusiveStartKey = result.LastEvaluatedKey;
     } while (exclusiveStartKey);
 
-    const { result } = parseResults(allRawItems, PrincipalCacheItemSchema);
+    const { result } = parseResults(
+      allRawItems,
+      PersistedPrincipalCacheItemSchema,
+    );
     return result;
   }
 
@@ -492,7 +501,7 @@ export class DynamoPrincipalStore extends PrincipalStore {
    */
   public override async batchGetCacheItems(
     keys: { principalId: string; principalType: PrincipalType }[],
-  ): Promise<PrincipalCacheItem[]> {
+  ): Promise<PersistedPrincipalCacheItem[]> {
     if (keys.length === 0) return [];
 
     let dynamoKeys = keys.map(({ principalId, principalType }) => {
@@ -532,7 +541,10 @@ export class DynamoPrincipalStore extends PrincipalStore {
       },
     );
 
-    const { result } = parseResults(allRawItems, PrincipalCacheItemSchema);
+    const { result } = parseResults(
+      allRawItems,
+      PersistedPrincipalCacheItemSchema,
+    );
     return result;
   }
 
@@ -589,7 +601,7 @@ export class DynamoPrincipalStore extends PrincipalStore {
   public override async listAllAssignments(props: {
     pageIdentifier?: string;
     pageSize?: number;
-  }): Promise<PaginatedQueryResult<Assignment>> {
+  }): Promise<PaginatedQueryResult<PersistedAssignment>> {
     const { pageIdentifier, pageSize = 100 } = props;
 
     const result = await this.ddbClient.send(
@@ -604,7 +616,7 @@ export class DynamoPrincipalStore extends PrincipalStore {
 
     const { result: parsed } = parseResults(
       result.Items ?? [],
-      AssignmentSchema,
+      PersistedAssignmentSchema,
     );
 
     return {

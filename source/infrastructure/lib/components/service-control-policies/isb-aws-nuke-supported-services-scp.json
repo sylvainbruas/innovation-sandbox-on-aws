@@ -130,6 +130,7 @@
         "route53:*",
         "route53resolver:*",
         "s3:*",
+        "s3files:*",
         "s3tables:*",
         "s3vectors:*",
         "sagemaker:*",

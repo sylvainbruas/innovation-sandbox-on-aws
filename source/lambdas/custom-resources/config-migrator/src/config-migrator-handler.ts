@@ -18,10 +18,6 @@ import type {
 import yaml from "js-yaml";
 import { z } from "zod";
 
-import {
-  ConfigSchemas,
-  ConfigSection,
-} from "@amzn/innovation-sandbox-commons/data/config/config.js";
 import { IsbServices } from "@amzn/innovation-sandbox-commons/isb-services/index.js";
 import {
   ConfigMigratorLambdaEnvironment,
@@ -30,6 +26,10 @@ import {
 import baseMiddlewareBundle from "@amzn/innovation-sandbox-commons/lambda/middleware/base-middleware-bundle.js";
 import { ValidatedEnvironment } from "@amzn/innovation-sandbox-commons/lambda/middleware/environment-validator.js";
 import { IsbClients } from "@amzn/innovation-sandbox-commons/sdk-clients/index.js";
+import {
+  ConfigSchemas,
+  ConfigSection,
+} from "@amzn/innovation-sandbox-shared/types/configuration.js";
 
 const tracer = new Tracer();
 const logger = new Logger();

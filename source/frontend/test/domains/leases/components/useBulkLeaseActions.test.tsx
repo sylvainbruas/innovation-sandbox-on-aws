@@ -7,11 +7,8 @@ import { ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-import {
-  Lease,
-  LeaseWithLeaseId,
-} from "@amzn/innovation-sandbox-commons/data/lease/lease";
 import { useBulkLeaseActions } from "@amzn/innovation-sandbox-frontend/domains/leases/components/useBulkLeaseActions";
+import { LeaseView } from "@amzn/innovation-sandbox-frontend/domains/leases/model";
 import { ModalProvider } from "@amzn/innovation-sandbox-frontend/hooks/useModal";
 import { createActiveLease } from "@amzn/innovation-sandbox-frontend/mocks/factories/leaseFactory";
 import { createQueryClientWrapper } from "@amzn/innovation-sandbox-frontend/setupTests";
@@ -21,7 +18,7 @@ vi.mock("@amzn/innovation-sandbox-frontend/hooks/useUser", () => ({
   useUser: () => mockUseUser(),
 }));
 
-const withLeaseId = (lease: Lease): LeaseWithLeaseId => ({
+const withLeaseId = (lease: LeaseView): LeaseView => ({
   ...lease,
   leaseId: "encoded-lease-id",
 });
@@ -37,7 +34,7 @@ const liveLock = (intent?: string) => ({
  * Renders the hook, applies a selection, then mounts the returned header
  * actions and opens the dropdown so item disabled state can be asserted.
  */
-async function openActionsFor(selected: LeaseWithLeaseId[]) {
+async function openActionsFor(selected: LeaseView[]) {
   const QueryWrapper = createQueryClientWrapper();
   const Wrapper = ({ children }: { children: ReactNode }) => (
     <QueryWrapper>

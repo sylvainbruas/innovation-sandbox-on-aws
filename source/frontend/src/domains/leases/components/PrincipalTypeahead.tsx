@@ -19,11 +19,9 @@ import {
   PRINCIPAL_SEARCH_MIN_CHARS,
   useGetPrincipals,
   useResolvePrincipal,
-} from "@amzn/innovation-sandbox-frontend/domains/leases/hooks";
-import {
-  IdcPrincipal,
-  PrincipalSearchType,
-} from "@amzn/innovation-sandbox-frontend/domains/leases/types";
+} from "@amzn/innovation-sandbox-frontend/domains/principals/hooks";
+import type { IdcPrincipalView } from "@amzn/innovation-sandbox-frontend/domains/principals/model";
+import type { PrincipalSearchType } from "@amzn/innovation-sandbox-shared/types/principal.js";
 
 const DEBOUNCE_MS = 200;
 const RESULT_LIMIT = 20;
@@ -38,8 +36,8 @@ function getResolveType(
 }
 
 export type PrincipalTypeaheadProps = {
-  onSelect: (principal: IdcPrincipal) => void;
-  shouldExclude?: (principal: IdcPrincipal) => boolean;
+  onSelect: (principal: IdcPrincipalView) => void;
+  shouldExclude?: (principal: IdcPrincipalView) => boolean;
   type?: PrincipalSearchType;
   placeholder?: string;
   ariaLabel?: string;
@@ -60,7 +58,7 @@ export const PrincipalTypeahead = ({
   const [debouncedValue, setDebouncedValue] = useState("");
   const [errorText, setErrorText] = useState("");
   const [pendingGroupSelection, setPendingGroupSelection] =
-    useState<IdcPrincipal | null>(null);
+    useState<IdcPrincipalView | null>(null);
   const [selectedType, setSelectedType] = useState<"users" | "groups">(
     type === "groups" ? "groups" : "users",
   );
@@ -88,7 +86,7 @@ export const PrincipalTypeahead = ({
   const resolvePrincipal = useResolvePrincipal();
 
   const principalsByValue = useMemo(() => {
-    const map = new Map<string, IdcPrincipal>();
+    const map = new Map<string, IdcPrincipalView>();
     if (!enablePrincipalSearch) return map;
     (data?.principals ?? [])
       .filter((p) => !shouldExclude(p))
@@ -259,7 +257,7 @@ export const PrincipalTypeahead = ({
 // --- Shared group confirmation modal ---
 
 type GroupConfirmationModalProps = {
-  pendingGroupSelection: IdcPrincipal | null;
+  pendingGroupSelection: IdcPrincipalView | null;
   onConfirm: () => void;
   onCancel: () => void;
 };

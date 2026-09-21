@@ -2,11 +2,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import z from "zod";
 
-import {
-  ExpiredLeaseStatus,
-  LeaseKeySchema,
-  MonitoredLease,
-} from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
+import { PersistedMonitoredLease } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import { EventDetailTypes } from "@amzn/innovation-sandbox-commons/events/index.js";
 import { IsbEvent } from "@amzn/innovation-sandbox-commons/sdk-clients/event-bridge-client.js";
 import {
@@ -14,6 +10,10 @@ import {
   enumErrorMap,
   FreeTextSchema,
 } from "@amzn/innovation-sandbox-commons/utils/zod.js";
+import {
+  ExpiredLeaseStatus,
+  LeaseKeySchema,
+} from "@amzn/innovation-sandbox-shared/types/lease.js";
 
 export const LeaseTerminatedReasonTypeSchema = z.enum(
   [
@@ -126,7 +126,7 @@ export class LeaseTerminatedEvent<
 
 export function getLeaseTerminatedReason(
   expiredStatus: ExpiredLeaseStatus,
-  lease: MonitoredLease,
+  lease: PersistedMonitoredLease,
 ): LeaseTerminatedReason {
   switch (expiredStatus) {
     case "Expired":

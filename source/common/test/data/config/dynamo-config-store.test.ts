@@ -16,15 +16,15 @@ import { mockClient } from "aws-sdk-client-mock";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 import { ConflictError } from "@amzn/innovation-sandbox-commons/data/config/config-store.js";
-import {
-  ConfigSchemaVersion,
-  ConfigSchemas,
-  ConfigSection,
-  LeasesConfigSchema,
-} from "@amzn/innovation-sandbox-commons/data/config/config.js";
+import { ConfigSchemaVersion } from "@amzn/innovation-sandbox-commons/data/config/config.js";
 import { DynamoConfigStore } from "@amzn/innovation-sandbox-commons/data/config/dynamo-config-store.js";
 import { BatchGetUnprocessedKeysError } from "@amzn/innovation-sandbox-commons/data/errors.js";
 import { SchemaMismatchException } from "@amzn/innovation-sandbox-commons/data/metadata.js";
+import {
+  ConfigSchemas,
+  ConfigSection,
+  LeasesConfigSchema,
+} from "@amzn/innovation-sandbox-shared/types/configuration.js";
 
 const mockDynamoClient = mockClient(DynamoDBDocumentClient);
 
@@ -148,6 +148,30 @@ describe("DynamoConfigStore", () => {
       expect(result.cleanup).toBeUndefined();
     });
 
+    test("skips a section whose stored meta is present but incomplete", async () => {
+      // A meta missing `lastEditTime` (the concurrency token) is corruption, not
+      // a valid never-saved state — the aggregate read drops it to code defaults
+      // rather than forwarding a half-populated meta.
+      const { meta: _meta, ...cleanupWithoutEditTime } =
+        buildStoredItem("cleanup");
+      mockDynamoClient.on(BatchGetCommand).resolves({
+        Responses: {
+          [TABLE_NAME]: [
+            buildStoredItem("leases"),
+            {
+              ...cleanupWithoutEditTime,
+              meta: { createdTime: NOW, schemaVersion: ConfigSchemaVersion },
+            },
+          ],
+        },
+      });
+
+      const result = await store.getAllSections();
+
+      expect(Object.keys(result)).toEqual(["leases"]);
+      expect(result.cleanup).toBeUndefined();
+    });
+
     test("rejects after exhausting retries on unprocessed keys", async () => {
       vi.useRealTimers();
       mockDynamoClient.on(BatchGetCommand).resolves({
@@ -177,6 +201,17 @@ describe("DynamoConfigStore", () => {
       expect(result!.maxBudget).toBe(50);
       expect(result!.lastSavedBy).toBe("admin@example.com");
     });
+    test("defaults group assignment mode for records created before the field existed", async () => {
+      const {
+        groupAssignmentMode: _groupAssignmentMode,
+        ...storedBeforeField
+      } = buildStoredItem("leases");
+      mockDynamoClient.on(GetCommand).resolves({ Item: storedBeforeField });
+
+      const result = await store.getSection("leases");
+
+      expect(result?.groupAssignmentMode).toBe("NONE");
+    });
 
     test("returns null when the item does not exist", async () => {
       mockDynamoClient.on(GetCommand).resolves({});
@@ -187,6 +222,21 @@ describe("DynamoConfigStore", () => {
     test("throws when the stored item is missing meta", async () => {
       const { meta: _meta, ...itemWithoutMeta } = buildStoredItem("leases");
       mockDynamoClient.on(GetCommand).resolves({ Item: itemWithoutMeta });
+
+      await expect(store.getSection("leases")).rejects.toThrow(
+        SchemaMismatchException,
+      );
+    });
+
+    test("throws when the stored meta is present but missing a timestamp", async () => {
+      // The persisted invariant requires all three meta fields. A meta with a
+      // `createdTime` but no `lastEditTime` is corruption; the single-section
+      // read surfaces it loudly (becomes a 500 upstream) rather than returning a
+      // successful response whose next write cannot save.
+      const item = buildStoredItem("leases", {
+        meta: { createdTime: NOW, schemaVersion: ConfigSchemaVersion },
+      });
+      mockDynamoClient.on(GetCommand).resolves({ Item: item });
 
       await expect(store.getSection("leases")).rejects.toThrow(
         SchemaMismatchException,
@@ -403,9 +453,7 @@ describe("DynamoConfigStore", () => {
       // TransactionCanceledException with a ConditionalCheckFailed reason.
       mockDynamoClient
         .on(TransactWriteCommand)
-        .rejects(
-          transactionCanceled(["ConditionalCheckFailed", "None"]),
-        );
+        .rejects(transactionCanceled(["ConditionalCheckFailed", "None"]));
 
       const result = await store.migrateSections(sections, "system:migration");
 
@@ -433,7 +481,10 @@ describe("DynamoConfigStore", () => {
       mockDynamoClient
         .on(TransactWriteCommand)
         .rejects(
-          transactionCanceled(["ConditionalCheckFailed", "TransactionConflict"]),
+          transactionCanceled([
+            "ConditionalCheckFailed",
+            "TransactionConflict",
+          ]),
         );
 
       await expect(

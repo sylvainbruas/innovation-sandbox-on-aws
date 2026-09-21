@@ -16,10 +16,6 @@ import { DateTime } from "luxon";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import {
-  SandboxAccount,
-  SandboxAccountStatus,
-} from "@amzn/innovation-sandbox-commons/data/sandbox-account/sandbox-account";
 import { AccountLoginLink } from "@amzn/innovation-sandbox-frontend/components/AccountLoginLink";
 import { AccountsSummary } from "@amzn/innovation-sandbox-frontend/components/AccountsSummary";
 import { useAppLayoutContext } from "@amzn/innovation-sandbox-frontend/components/AppLayout/AppLayoutContext";
@@ -42,11 +38,13 @@ import {
   useGetAccounts,
   useQuarantineAccount,
 } from "@amzn/innovation-sandbox-frontend/domains/accounts/hooks";
+import { SandboxAccountView } from "@amzn/innovation-sandbox-frontend/domains/accounts/model";
 import { createDateSortingComparator } from "@amzn/innovation-sandbox-frontend/helpers/date-sorting-comparator";
 import { useBreadcrumb } from "@amzn/innovation-sandbox-frontend/hooks/useBreadcrumb";
 import { useModal } from "@amzn/innovation-sandbox-frontend/hooks/useModal";
+import { SandboxAccountStatus } from "@amzn/innovation-sandbox-shared/types/sandbox-account";
 
-const StatusCell = ({ account }: { account: SandboxAccount }) => (
+const StatusCell = ({ account }: { account: SandboxAccountView }) => (
   <AccountStatusIndicator
     status={account.status}
     activeCleanup={account.activeCleanup}
@@ -56,7 +54,7 @@ const StatusCell = ({ account }: { account: SandboxAccount }) => (
   />
 );
 
-const CreatedOnCell = ({ account }: { account: SandboxAccount }) =>
+const CreatedOnCell = ({ account }: { account: SandboxAccountView }) =>
   account.meta?.createdTime && (
     <Popover
       position="top"
@@ -69,7 +67,7 @@ const CreatedOnCell = ({ account }: { account: SandboxAccount }) =>
     </Popover>
   );
 
-const LastModifiedCell = ({ account }: { account: SandboxAccount }) =>
+const LastModifiedCell = ({ account }: { account: SandboxAccountView }) =>
   account.meta?.lastEditTime && (
     <Popover
       position="top"
@@ -82,8 +80,8 @@ const LastModifiedCell = ({ account }: { account: SandboxAccount }) =>
     </Popover>
   );
 
-const AccessCell = ({ account }: { account: SandboxAccount }) => (
-  <AccountLoginLink accountId={account.awsAccountId} />
+const AccessCell = ({ account }: { account: SandboxAccountView }) => (
+  <AccountLoginLink accountId={account.awsAccountId} wrapText={false} />
 );
 
 const createColumnDefinitions = (includeLinks: boolean) =>
@@ -92,7 +90,7 @@ const createColumnDefinitions = (includeLinks: boolean) =>
       id: "awsAccountId",
       header: "Account ID",
       sortingField: "awsAccountId",
-      cell: (account: SandboxAccount) => (
+      cell: (account: SandboxAccountView) => (
         <TextLink to={`/accounts/${account.awsAccountId}`}>
           {account.awsAccountId}
         </TextLink>
@@ -102,46 +100,52 @@ const createColumnDefinitions = (includeLinks: boolean) =>
       id: "status",
       header: "Status",
       sortingComparator: accountStatusSortingComparator,
-      cell: (account: SandboxAccount) => <StatusCell account={account} />,
+      cell: (account: SandboxAccountView) => <StatusCell account={account} />,
     },
     {
       id: "createdOn",
       header: "Added",
-      sortingComparator: createDateSortingComparator<SandboxAccount>(
+      sortingComparator: createDateSortingComparator<SandboxAccountView>(
         (a) => a.meta?.createdTime,
       ),
-      cell: (account: SandboxAccount) => <CreatedOnCell account={account} />,
+      cell: (account: SandboxAccountView) => (
+        <CreatedOnCell account={account} />
+      ),
     },
     {
       id: "lastModifiedOn",
       header: "Last Modified",
-      sortingComparator: createDateSortingComparator<SandboxAccount>(
+      sortingComparator: createDateSortingComparator<SandboxAccountView>(
         (a) => a.meta?.lastEditTime,
       ),
-      cell: (account: SandboxAccount) => <LastModifiedCell account={account} />,
+      cell: (account: SandboxAccountView) => (
+        <LastModifiedCell account={account} />
+      ),
     },
     {
       id: "name",
       header: "Name",
-      cell: (account: SandboxAccount) => account.name ?? "N/A",
+      cell: (account: SandboxAccountView) => account.name ?? "N/A",
     },
     {
       id: "email",
       header: "Email",
-      cell: (account: SandboxAccount) => account.email ?? "N/A",
+      cell: (account: SandboxAccountView) => account.email ?? "N/A",
     },
     {
       id: "link",
       header: "Access",
-      cell: (account: SandboxAccount) => <AccessCell account={account} />,
+      cell: (account: SandboxAccountView) => <AccessCell account={account} />,
     },
   ].filter((column) => includeLinks || column.id !== "link");
 
 type EjectModalProps = {
-  selectedAccounts: SandboxAccount[];
+  selectedAccounts: SandboxAccountView[];
   ejectAccount: (accountId: string) => Promise<any>;
   queryClient: any;
-  setSelectedAccounts: React.Dispatch<React.SetStateAction<SandboxAccount[]>>;
+  setSelectedAccounts: React.Dispatch<
+    React.SetStateAction<SandboxAccountView[]>
+  >;
 };
 
 const EjectModalContent = ({
@@ -156,7 +160,7 @@ const EjectModalContent = ({
     columnDefinitions={createColumnDefinitions(false)}
     identifierKey="awsAccountId"
     sequential
-    onSubmit={async (account: SandboxAccount) => {
+    onSubmit={async (account: SandboxAccountView) => {
       await ejectAccount(account.awsAccountId);
       setSelectedAccounts((prev) =>
         prev.filter((a) => a.awsAccountId !== account.awsAccountId),
@@ -181,10 +185,12 @@ const EjectModalContent = ({
 );
 
 type CleanupModalProps = {
-  selectedAccounts: SandboxAccount[];
+  selectedAccounts: SandboxAccountView[];
   cleanupAccount: (accountId: string) => Promise<any>;
   queryClient: any;
-  setSelectedAccounts: React.Dispatch<React.SetStateAction<SandboxAccount[]>>;
+  setSelectedAccounts: React.Dispatch<
+    React.SetStateAction<SandboxAccountView[]>
+  >;
 };
 
 const CleanupModalContent = ({
@@ -199,7 +205,7 @@ const CleanupModalContent = ({
     columnDefinitions={createColumnDefinitions(false)}
     identifierKey="awsAccountId"
     sequential
-    onSubmit={async (account: SandboxAccount) => {
+    onSubmit={async (account: SandboxAccountView) => {
       await cleanupAccount(account.awsAccountId);
       setSelectedAccounts((prev) =>
         prev.filter((a) => a.awsAccountId !== account.awsAccountId),
@@ -222,10 +228,12 @@ const CleanupModalContent = ({
 );
 
 type QuarantineModalProps = {
-  selectedAccounts: SandboxAccount[];
+  selectedAccounts: SandboxAccountView[];
   quarantineAccount: (accountId: string) => Promise<any>;
   queryClient: any;
-  setSelectedAccounts: React.Dispatch<React.SetStateAction<SandboxAccount[]>>;
+  setSelectedAccounts: React.Dispatch<
+    React.SetStateAction<SandboxAccountView[]>
+  >;
 };
 
 const QuarantineModalContent = ({
@@ -255,7 +263,7 @@ const QuarantineModalContent = ({
       columnDefinitions={createColumnDefinitions(false)}
       identifierKey="awsAccountId"
       sequential
-      onSubmit={async (account: SandboxAccount) => {
+      onSubmit={async (account: SandboxAccountView) => {
         await quarantineAccount(account.awsAccountId);
         setSelectedAccounts((prev) =>
           prev.filter((a) => a.awsAccountId !== account.awsAccountId),
@@ -308,12 +316,12 @@ export const ListAccounts = () => {
 
   // state
   const [filter, setFilter] = useState<SandboxAccountStatus>();
-  const [selectedAccounts, setSelectedAccounts] = useState<SandboxAccount[]>(
-    [],
-  );
-  const [filteredAccounts, setFilteredAccounts] = useState<SandboxAccount[]>(
-    [],
-  );
+  const [selectedAccounts, setSelectedAccounts] = useState<
+    SandboxAccountView[]
+  >([]);
+  const [filteredAccounts, setFilteredAccounts] = useState<
+    SandboxAccountView[]
+  >([]);
 
   useEffect(() => {
     setBreadcrumb([
@@ -330,9 +338,9 @@ export const ListAccounts = () => {
   useEffect(() => {
     if (!accounts) return;
 
-    filter
-      ? setFilteredAccounts(accounts.filter((x) => filter === x.status))
-      : setFilteredAccounts(accounts);
+    setFilteredAccounts(
+      filter ? accounts.filter((x) => filter === x.status) : accounts,
+    );
   }, [accounts, filter]);
 
   // Keep the current selection in sync with the latest account data. Selection
@@ -353,7 +361,9 @@ export const ListAccounts = () => {
 
       return prev
         .map((selected) => accountsById.get(selected.awsAccountId))
-        .filter((account): account is SandboxAccount => account !== undefined);
+        .filter(
+          (account): account is SandboxAccountView => account !== undefined,
+        );
     });
   }, [accounts]);
 
@@ -403,7 +413,7 @@ export const ListAccounts = () => {
   };
 
   const handleSelectionChange = ({ detail }: any) => {
-    const accounts = detail.selectedItems as SandboxAccount[];
+    const accounts = detail.selectedItems as SandboxAccountView[];
     setSelectedAccounts(accounts);
   };
 

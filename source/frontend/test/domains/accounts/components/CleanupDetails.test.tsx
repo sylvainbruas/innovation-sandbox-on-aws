@@ -12,8 +12,8 @@ import {
 } from "@amzn/innovation-sandbox-frontend-test/domains/accounts/factories/cleanupReportFactory";
 import { CleanupDetails } from "@amzn/innovation-sandbox-frontend/domains/accounts/components/CleanupDetails";
 import {
-  CleanupReport,
-  CleanupResourceSummary,
+  CleanupReportView,
+  CleanupResourceSummaryView,
 } from "@amzn/innovation-sandbox-frontend/domains/accounts/types";
 import { renderWithQueryClient } from "@amzn/innovation-sandbox-frontend/setupTests";
 
@@ -71,7 +71,7 @@ describe("CleanupDetails", () => {
   });
 
   test("renders resource summary success state when all resources cleaned", () => {
-    const resourceSummary: CleanupResourceSummary = {
+    const resourceSummary: CleanupResourceSummaryView = {
       beforeCleanup: {
         totalCount: 20,
         ignoredCount: 5,
@@ -92,7 +92,7 @@ describe("CleanupDetails", () => {
   });
 
   test("renders resource summary failure state when resources remain", () => {
-    const resourceSummary: CleanupResourceSummary = {
+    const resourceSummary: CleanupResourceSummaryView = {
       validationMode: "Quarantine",
       beforeCleanup: {
         totalCount: 20,
@@ -117,7 +117,7 @@ describe("CleanupDetails", () => {
   });
 
   test("hides the Post-cleanup validation section and Validate Cleanup step in Silent mode", () => {
-    const resourceSummary: CleanupResourceSummary = {
+    const resourceSummary: CleanupResourceSummaryView = {
       validationMode: "Silent",
       beforeCleanup: {
         totalCount: 10,
@@ -179,7 +179,7 @@ describe("CleanupDetails", () => {
   });
 
   test("Cleanup summary shows the disabled note and no resource evaluation in Silent mode", () => {
-    const resourceSummary: CleanupResourceSummary = {
+    const resourceSummary: CleanupResourceSummaryView = {
       validationMode: "Silent",
       beforeCleanup: {
         totalCount: 10,
@@ -217,7 +217,7 @@ describe("CleanupDetails", () => {
   });
 
   test("Cleanup summary reflects a FAILED cleanup in Silent mode", () => {
-    const resourceSummary: CleanupResourceSummary = {
+    const resourceSummary: CleanupResourceSummaryView = {
       validationMode: "Silent",
       beforeCleanup: {
         totalCount: 10,
@@ -246,7 +246,7 @@ describe("CleanupDetails", () => {
   });
 
   test("cooldown banner and skip control remain available in Silent mode", () => {
-    const resourceSummary: CleanupResourceSummary = {
+    const resourceSummary: CleanupResourceSummaryView = {
       validationMode: "Silent",
       beforeCleanup: {
         totalCount: 10,
@@ -295,7 +295,7 @@ describe("CleanupDetails", () => {
   });
 
   test("shows the Post-cleanup validation section and Validate Cleanup step in Warn mode", () => {
-    const resourceSummary: CleanupResourceSummary = {
+    const resourceSummary: CleanupResourceSummaryView = {
       validationMode: "Warn",
       beforeCleanup: {
         totalCount: 10,
@@ -350,7 +350,7 @@ describe("CleanupDetails", () => {
   });
 
   test("renders warning (not failure) when validation is warn-only and resources remain", () => {
-    const resourceSummary: CleanupResourceSummary = {
+    const resourceSummary: CleanupResourceSummaryView = {
       beforeCleanup: {
         totalCount: 20,
         ignoredCount: 5,
@@ -418,7 +418,7 @@ describe("CleanupDetails", () => {
   });
 
   test("renders post-cleanup validation section when afterCooldown exists", () => {
-    const resourceSummary: CleanupResourceSummary = {
+    const resourceSummary: CleanupResourceSummaryView = {
       beforeCleanup: { totalCount: 10, ignoredCount: 3, byType: {} },
       afterCooldown: { totalCount: 0, ignoredCount: 3, byType: {} },
       remainingTypes: [],
@@ -442,7 +442,7 @@ describe("CleanupDetails", () => {
   });
 
   describe("Cooldown banner", () => {
-    const cooldownResourceSummary: CleanupResourceSummary = {
+    const cooldownResourceSummary: CleanupResourceSummaryView = {
       beforeCleanup: {
         totalCount: 15,
         ignoredCount: 3,
@@ -453,8 +453,8 @@ describe("CleanupDetails", () => {
     };
 
     function createCoolingDownReport(
-      overrides?: Partial<CleanupReport>,
-    ): CleanupReport {
+      overrides?: Partial<CleanupReportView>,
+    ): CleanupReportView {
       return createMockInProgressReport({
         cleanupStatus: "COOLING_DOWN",
         resourceSummary: cooldownResourceSummary,

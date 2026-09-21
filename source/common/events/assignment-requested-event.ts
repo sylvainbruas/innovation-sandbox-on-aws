@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 import { z } from "zod";
 
-import { LeaseLockIntentSchema } from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
 import { EventDetailTypes } from "@amzn/innovation-sandbox-commons/events/index.js";
 import { IsbEvent } from "@amzn/innovation-sandbox-commons/sdk-clients/event-bridge-client.js";
+import { LeaseLockIntentSchema } from "@amzn/innovation-sandbox-shared/types/lease.js";
 
 export const AssignmentRequestedEventSchema = z.object({
   intent: LeaseLockIntentSchema,

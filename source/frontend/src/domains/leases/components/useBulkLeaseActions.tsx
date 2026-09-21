@@ -6,7 +6,6 @@ import { useQueryClient } from "@tanstack/react-query";
 import { ReactNode, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
-import { LeaseWithLeaseId as Lease } from "@amzn/innovation-sandbox-commons/data/lease/lease";
 import { BatchActionReview } from "@amzn/innovation-sandbox-frontend/components/MultiSelectTableActionReview";
 import {
   showErrorToast,
@@ -22,6 +21,7 @@ import {
   useTerminateLease,
   useUnfreezeLease,
 } from "@amzn/innovation-sandbox-frontend/domains/leases/hooks";
+import { LeaseView } from "@amzn/innovation-sandbox-frontend/domains/leases/model";
 import { useModal } from "@amzn/innovation-sandbox-frontend/hooks/useModal";
 import { useUser } from "@amzn/innovation-sandbox-frontend/hooks/useUser";
 
@@ -33,8 +33,8 @@ import { useUser } from "@amzn/innovation-sandbox-frontend/hooks/useUser";
  */
 export function useBulkLeaseActions(): {
   selectionType: "multi" | undefined;
-  selectedItems: Lease[];
-  onSelectionChange: ((items: Lease[]) => void) | undefined;
+  selectedItems: LeaseView[];
+  onSelectionChange: ((items: LeaseView[]) => void) | undefined;
   headerActions: ReactNode | undefined;
 } {
   const { isAdmin, isManager } = useUser();
@@ -42,7 +42,7 @@ export function useBulkLeaseActions(): {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { showModal } = useModal();
-  const [selectedLeases, setSelectedLeases] = useState<Lease[]>([]);
+  const [selectedLeases, setSelectedLeases] = useState<LeaseView[]>([]);
 
   const { mutateAsync: terminateLease } = useTerminateLease({
     skipInvalidation: true,
@@ -90,16 +90,20 @@ export function useBulkLeaseActions(): {
           items={selectedLeases}
           description={`${selectedLeases.length} lease(s) to ${action}`}
           columnDefinitions={[
-            { id: "user", header: "Owner", cell: (l: Lease) => l.userEmail },
+            {
+              id: "user",
+              header: "Owner",
+              cell: (l: LeaseView) => l.userEmail,
+            },
             {
               id: "template",
               header: "Template",
-              cell: (l: Lease) => l.originalLeaseTemplateName,
+              cell: (l: LeaseView) => l.originalLeaseTemplateName,
             },
           ]}
           identifierKey="leaseId"
           sequential
-          onSubmit={async (lease: Lease) => {
+          onSubmit={async (lease: LeaseView) => {
             await actionFns[action](lease.leaseId);
             deselectLease(lease.leaseId);
           }}

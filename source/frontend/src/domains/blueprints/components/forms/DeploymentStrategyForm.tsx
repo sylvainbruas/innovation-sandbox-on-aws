@@ -19,7 +19,6 @@ import { InfoLink } from "@amzn/innovation-sandbox-frontend/components/InfoLink"
 import { getDeploymentConfig } from "@amzn/innovation-sandbox-frontend/domains/blueprints/helpers";
 import {
   CONCURRENCY_MODE_OPTIONS,
-  ConcurrencyMode,
   DEPLOYMENT_STRATEGY_CONFIGS,
   DeploymentStrategy,
   REGION_CONCURRENCY_OPTIONS,
@@ -28,6 +27,7 @@ import {
   CONCURRENT_PERCENTAGE_CONSTRAINTS,
   FAILURE_TOLERANCE_CONSTRAINTS,
 } from "@amzn/innovation-sandbox-frontend/domains/blueprints/validation";
+import { ConcurrencyMode } from "@amzn/innovation-sandbox-shared/types/blueprint";
 
 interface DeploymentStrategyFormValues {
   deploymentStrategy: DeploymentStrategy;

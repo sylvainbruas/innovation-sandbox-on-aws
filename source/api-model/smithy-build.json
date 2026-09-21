@@ -1,0 +1,252 @@
+{
+  "version": "1.0",
+  "projections": {
+    "aggregate": {
+      "plugins": {
+        "openapi": {
+          "service": "com.amazon.isb#IsbApi",
+          "protocol": "aws.protocols#restJson1",
+          "apiGatewayDefaults": "2023-08-11",
+          "tags": true,
+          "jsonAdd": {
+            "/tags": [
+              {
+                "name": "leases",
+                "description": "Contract that provides a user with temporary access to a sandbox account"
+              },
+              {
+                "name": "leaseTemplates",
+                "description": "Configurations that can be used to request a sandbox lease"
+              },
+              {
+                "name": "blueprints",
+                "description": "Pre-configured infrastructure templates that deploy CloudFormation StackSets to sandbox accounts"
+              },
+              {
+                "name": "accounts",
+                "description": "AWS accounts registered as sandbox accounts within the solution"
+              },
+              {
+                "name": "configurations",
+                "description": "Global configurations used by the solution"
+              },
+              {
+                "name": "principals",
+                "description": "IAM Identity Center principal discovery for lease assignment"
+              }
+            ],
+            "/servers": [
+              {
+                "url": "{apiBaseUrl}",
+                "description": "Base URL used to make API requests",
+                "variables": {
+                  "apiBaseUrl": {
+                    "default": "https://example.com/api",
+                    "description": "Base URL used to make API requests"
+                  }
+                }
+              }
+            ],
+            "/info/license": {
+              "name": "Apache 2.0",
+              "url": "http://www.apache.org/licenses/LICENSE-2.0.html"
+            },
+            "/components/securitySchemes/aws.auth.sigv4/description": "AWS Signature Version 4 over the `execute-api` service. Required on every request: the API uses IAM authorization (`AuthorizationType.IAM`), and there is no bearer-token or Cognito authorizer. The caller type is determined from the IAM principal.",
+            "/components/securitySchemes/isbIdentity": {
+              "type": "apiKey",
+              "name": "x-isb-identity",
+              "in": "header",
+              "description": "Cognito ID token, verified via JWKS. Carries the claims used for RBAC. Required for human callers (Identity Pool roles). M2M callers (per-client assumed IAM roles) derive their role from the assumed-role ARN and must NOT send this header; a request presenting both an M2M principal and `x-isb-identity` is rejected with 400."
+            },
+            "/security": [
+              {
+                "aws.auth.sigv4": [],
+                "isbIdentity": []
+              },
+              {
+                "aws.auth.sigv4": []
+              }
+            ],
+            "/components/schemas/Principal/properties/principalId/example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+            "/components/schemas/Principal/properties/displayName/example": "Jane Doe",
+            "/components/schemas/Principal/properties/email/example": "jane@example.com",
+            "/components/schemas/PrincipalSearchResult/properties/totalMatches/example": 47,
+            "/components/schemas/NotificationConfiguration/properties/emailFrom/example": "isb-noreply@example.com",
+            "/components/schemas/AdminConfiguration/properties/isbManagedRegions/example": [
+              "us-east-1",
+              "us-west-2"
+            ],
+            "/components/schemas/ConfigurationResponseMetadata/properties/createdTime/example": "2023-05-01T12:00:00Z",
+            "/components/schemas/ConfigurationResponseMetadata/properties/lastEditTime/example": "2023-05-01T12:00:00Z",
+            "/components/schemas/SandboxAccount/properties/awsAccountId/example": "123456789012",
+            "/components/schemas/SandboxAccount/properties/driftAtLastScan/example": false,
+            "/components/schemas/SandboxAccountStatus/example": "Available",
+            "/components/schemas/AccountMetadata/properties/createdTime/example": "2023-05-01T12:00:00Z",
+            "/components/schemas/AccountMetadata/properties/lastEditTime/example": "2023-05-01T12:00:00Z",
+            "/components/schemas/CleanupReport/properties/accountId/example": "123456789012",
+            "/components/schemas/CleanupReport/properties/durableExecutionArn/example": "arn:aws:lambda:us-east-1:123456789012:function:ISB-DurableOrchestration:1/durable-execution/abc123",
+            "/components/schemas/CleanupReportStatus/example": "COMPLETED",
+            "/components/schemas/CleanupReport/properties/cleanupStatus/example": "NUKE_PHASE_1",
+            "/components/schemas/CleanupReport/properties/startedAt/example": "2026-03-25T14:30:00.000Z",
+            "/components/schemas/CleanupReport/properties/completedAt/example": "2026-03-25T15:45:00.000Z",
+            "/components/schemas/CleanupReport/properties/reasonForCleanup/example": "LEASE_TERMINATION",
+            "/components/schemas/CleanupReportError/properties/step/example": "validate-spoke-role",
+            "/components/schemas/CleanupReportError/properties/message/example": "Cleanup spoke role not found",
+            "/components/schemas/CleanupStep/properties/name/example": "nuke-phase-1",
+            "/components/schemas/CleanupStep/properties/startedAt/example": "2026-03-25T14:30:00.000Z",
+            "/components/schemas/ResourceSummary/properties/validationMode/example": "Quarantine",
+            "/components/schemas/ResourceSummary/properties/remainingTypes/example": [],
+            "/components/schemas/ResourceCount/properties/totalCount/example": 42,
+            "/components/schemas/ResourceCount/properties/ignoredCount/example": 5,
+            "/components/schemas/ResourceCountByType/example": {
+              "ec2:instance": 3,
+              "s3:bucket": 2,
+              "logs:log-group": 12
+            },
+            "/components/schemas/Blueprint/properties/blueprintId/example": "12345678-90ab-4cde-8f12-34567890abcd",
+            "/components/schemas/StackSetConfig/properties/blueprintId/example": "12345678-90ab-4cde-8f12-34567890abcd",
+            "/components/schemas/DeleteBlueprintData/properties/blueprintId/example": "12345678-90ab-4cde-8f12-34567890abcd",
+            "/components/schemas/Blueprint/properties/name/example": "Web-Application-Blueprint",
+            "/components/schemas/RegisterBlueprintRequestContent/properties/name/example": "Web-Application-Blueprint",
+            "/components/schemas/UpdateBlueprintRequestContent/properties/name/example": "Web-Application-Blueprint",
+            "/components/schemas/StackSetSummary/properties/stackSetName/example": "my-stackset",
+            "/components/schemas/StackSetConfig/properties/stackSetId/example": "12345678-1234-1234-1234-123456789012",
+            "/components/schemas/StackSetSummary/properties/stackSetId/example": "12345678-1234-1234-1234-123456789012",
+            "/components/schemas/RegisterBlueprintRequestContent/properties/stackSetId/example": "12345678-1234-1234-1234-123456789012",
+            "/components/schemas/StackSetConfig/properties/administrationRoleArn/example": "arn:aws:iam::123456789012:role/StackSetAdministrationRole",
+            "/components/schemas/StackSetConfig/properties/executionRoleName/example": "StackSetExecutionRole",
+            "/components/schemas/Blueprint/properties/deploymentTimeoutMinutes/example": 60,
+            "/components/schemas/RegisterBlueprintRequestContent/properties/deploymentTimeoutMinutes/example": 60,
+            "/components/schemas/UpdateBlueprintRequestContent/properties/deploymentTimeoutMinutes/example": 60,
+            "/components/schemas/StackSetConfig/properties/regions/example": [
+              "us-east-1",
+              "us-west-2"
+            ],
+            "/components/schemas/RegisterBlueprintRequestContent/properties/regions/example": [
+              "us-east-1",
+              "us-west-2"
+            ],
+            "/components/schemas/StackSetConfig/properties/deploymentOrder/example": 1,
+            "/components/schemas/BlueprintTags/example": {
+              "environment": "production",
+              "team": "platform"
+            },
+            "/components/schemas/BlueprintMetadata/properties/createdTime/example": "2023-05-01T12:00:00Z",
+            "/components/schemas/BlueprintMetadata/properties/lastEditTime/example": "2023-05-01T12:00:00Z",
+            "/components/schemas/BlueprintMetadata/properties/schemaVersion/example": 1,
+            "/components/schemas/DeleteBlueprintData/properties/message/example": "Blueprint unregistered successfully",
+            "/components/schemas/Lease/properties/userEmail/example": "user@example.com",
+            "/components/schemas/Lease/properties/uuid/example": "12345678-90ab-4cde-8f12-34567890abcd",
+            "/components/schemas/Lease/properties/originalLeaseTemplateUuid/example": "12345678-90ab-4cde-8f12-34567890abcd",
+            "/components/schemas/Lease/properties/originalLeaseTemplateName/example": "Example Template",
+            "/components/schemas/Lease/properties/leaseDurationInHours/example": 24,
+            "/components/schemas/Lease/properties/maxSpend/example": 100,
+            "/components/schemas/Lease/properties/comments/example": "This is a comment",
+            "/components/schemas/Lease/properties/costReportGroup/example": "Engineering",
+            "/components/schemas/Lease/properties/approvedBy/example": "admin@example.com",
+            "/components/schemas/Lease/properties/allowOwnerToShareLease/example": false,
+            "/components/schemas/Lease/properties/awsAccountId/example": "123456789012",
+            "/components/schemas/Lease/properties/startDate/example": "2025-01-15T08:30:00Z",
+            "/components/schemas/Lease/properties/expirationDate/example": "2025-01-22T08:30:00Z",
+            "/components/schemas/Lease/properties/endDate/example": "2025-01-22T08:30:00Z",
+            "/components/schemas/Lease/properties/totalCostAccrued/example": 45.67,
+            "/components/schemas/LeaseStatus/example": "Active",
+            "/components/schemas/LeaseMetadata/properties/createdTime/example": "2023-05-01T12:00:00Z",
+            "/components/schemas/LeaseMetadata/properties/lastEditTime/example": "2023-05-01T12:00:00Z",
+            "/components/schemas/AssignmentView/properties/principalId/example": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+            "/components/schemas/LeaseWithId/properties/leaseId/example": "BASE64STRING",
+            "/components/schemas/SharedLease/properties/leaseId/example": "BASE64STRING",
+            "/components/schemas/LeaseTemplate/properties/uuid/example": "12345678-90ab-4cde-8f12-34567890abcd",
+            "/components/schemas/LeaseTemplate/properties/name/example": "Example Template",
+            "/components/schemas/LeaseTemplate/properties/description/example": "Example Template Description",
+            "/components/schemas/LeaseTemplate/properties/requiresApproval/example": true,
+            "/components/schemas/LeaseTemplate/properties/createdBy/example": "user@example.com",
+            "/components/schemas/LeaseTemplate/properties/maxSpend/example": 100,
+            "/components/schemas/LeaseTemplate/properties/leaseDurationInHours/example": 24,
+            "/components/schemas/LeaseTemplate/properties/costReportGroup/example": "Engineering",
+            "/components/schemas/LeaseTemplate/properties/blueprintId/example": "12345678-90ab-4cde-8f12-34567890abcd",
+            "/components/schemas/LeaseTemplate/properties/allowOwnerToShareLease/example": false,
+            "/components/schemas/BudgetThreshold/properties/dollarsSpent/example": 80,
+            "/components/schemas/DurationThreshold/properties/hoursRemaining/example": 12,
+            "/components/schemas/Metadata/properties/createdTime/example": "2023-05-01T12:00:00Z",
+            "/components/schemas/Metadata/properties/lastEditTime/example": "2023-05-01T12:00:00Z",
+            "/components/schemas/Metadata/properties/schemaVersion/example": 1,
+            "/components/schemas/Visibility/example": "PUBLIC",
+            "/components/schemas/ThresholdAction/example": "ALERT"
+          }
+        },
+        "typescript-client-codegen": {
+          "service": "com.amazon.isb#IsbApi",
+          "package": "@amzn/innovation-sandbox-api-client",
+          "packageVersion": "1.3.3"
+        }
+      }
+    },
+    "server-lease-templates": {
+      "plugins": {
+        "typescript-ssdk-codegen": {
+          "service": "com.amazon.isb#LeaseTemplatesApi",
+          "package": "@amzn/innovation-sandbox-api-server",
+          "packageVersion": "1.3.3",
+          "requiredMemberMode": "strict",
+          "disableDefaultValidation": true
+        }
+      }
+    },
+    "server-configurations": {
+      "plugins": {
+        "typescript-ssdk-codegen": {
+          "service": "com.amazon.isb#ConfigurationsApi",
+          "package": "@amzn/innovation-sandbox-api-server",
+          "packageVersion": "1.3.3",
+          "requiredMemberMode": "strict",
+          "disableDefaultValidation": true
+        }
+      }
+    },
+    "server-principals": {
+      "plugins": {
+        "typescript-ssdk-codegen": {
+          "service": "com.amazon.isb#PrincipalsApi",
+          "package": "@amzn/innovation-sandbox-api-server",
+          "packageVersion": "1.3.3",
+          "requiredMemberMode": "strict",
+          "disableDefaultValidation": true
+        }
+      }
+    },
+    "server-accounts": {
+      "plugins": {
+        "typescript-ssdk-codegen": {
+          "service": "com.amazon.isb#AccountsApi",
+          "package": "@amzn/innovation-sandbox-api-server",
+          "packageVersion": "1.3.3",
+          "requiredMemberMode": "strict",
+          "disableDefaultValidation": true
+        }
+      }
+    },
+    "server-leases": {
+      "plugins": {
+        "typescript-ssdk-codegen": {
+          "service": "com.amazon.isb#LeasesApi",
+          "package": "@amzn/innovation-sandbox-api-server",
+          "packageVersion": "1.3.3",
+          "requiredMemberMode": "strict",
+          "disableDefaultValidation": true
+        }
+      }
+    },
+    "server-blueprints": {
+      "plugins": {
+        "typescript-ssdk-codegen": {
+          "service": "com.amazon.isb#BlueprintsApi",
+          "package": "@amzn/innovation-sandbox-api-server",
+          "packageVersion": "1.3.3",
+          "requiredMemberMode": "strict",
+          "disableDefaultValidation": true
+        }
+      }
+    }
+  }
+}

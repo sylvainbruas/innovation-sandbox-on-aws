@@ -224,11 +224,13 @@ describe("CognitoAuthService", () => {
 
   describe("getCredentials", () => {
     it("returns Identity Pool credentials from the session", async () => {
+      const expiration = new Date("2026-08-06T13:00:00.000Z");
       vi.mocked(fetchAuthSession).mockResolvedValue({
         credentials: {
           accessKeyId: "AKIA-TEST",
           secretAccessKey: "secret-test",
           sessionToken: "token-test",
+          expiration,
         },
       } as any);
 
@@ -238,6 +240,7 @@ describe("CognitoAuthService", () => {
         accessKeyId: "AKIA-TEST",
         secretAccessKey: "secret-test",
         sessionToken: "token-test",
+        expiration,
       });
     });
 

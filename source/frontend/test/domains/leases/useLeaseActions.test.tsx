@@ -5,10 +5,7 @@ import { renderHook } from "@testing-library/react";
 import { ReactNode } from "react";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
-import {
-  Lease,
-  LeaseWithLeaseId,
-} from "@amzn/innovation-sandbox-commons/data/lease/lease.js";
+import { LeaseView } from "@amzn/innovation-sandbox-frontend/domains/leases/model";
 import { useLeaseActions } from "@amzn/innovation-sandbox-frontend/domains/leases/useLeaseActions";
 import { ModalProvider } from "@amzn/innovation-sandbox-frontend/hooks/useModal";
 import { createConfiguration } from "@amzn/innovation-sandbox-frontend/mocks/factories/configurationFactory";
@@ -62,7 +59,7 @@ const managerUser = {
   roles: ["Manager" as const],
 };
 
-const withLeaseId = (lease: Lease): LeaseWithLeaseId => ({
+const withLeaseId = (lease: LeaseView): LeaseView => ({
   ...lease,
   leaseId: "encoded-lease-id",
 });
@@ -72,7 +69,7 @@ const wrapper = ({ children }: { children: ReactNode }) => (
 );
 
 const renderActions = (
-  lease: LeaseWithLeaseId | undefined,
+  lease: LeaseView | undefined,
   options?: { includeElevatedActions?: boolean },
 ) => renderHook(() => useLeaseActions(lease, options), { wrapper });
 
@@ -339,7 +336,8 @@ describe("useLeaseActions", () => {
       );
 
       expect(result.current.canTerminate).toBe(false);
-      expect(result.current.hasAnyAction).toBe(false);
+      expect(result.current.canLogin).toBe(true);
+      expect(result.current.hasAnyAction).toBe(true);
     });
   });
 
@@ -386,15 +384,13 @@ describe("useLeaseActions", () => {
       expect(result.current.canUnfreeze).toBe(false);
     });
 
-    test("reports an action for a frozen lease with includeElevatedActions", () => {
-      // A frozen lease has no login/terminate/pending action, so unfreeze is
-      // the only thing keeping hasAnyAction true here.
+    test("reports Login as an action for an admin's frozen lease", () => {
+      // Login eligibility is separate from elevated operator controls, so an
+      // admin can open the account console without freeze/unfreeze controls.
       mockUseUser.mockReturnValue({ user: adminUser, isAdmin: true });
       const frozenLease = withLeaseId(createActiveLease({ status: "Frozen" }));
 
-      expect(renderActions(frozenLease).result.current.hasAnyAction).toBe(
-        false,
-      );
+      expect(renderActions(frozenLease).result.current.hasAnyAction).toBe(true);
       expect(
         renderActions(frozenLease, { includeElevatedActions: true }).result
           .current.hasAnyAction,

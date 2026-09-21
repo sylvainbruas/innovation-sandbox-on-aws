@@ -1,6 +1,6 @@
 // Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 // SPDX-License-Identifier: Apache-2.0
-import type { IsbRole } from "@amzn/innovation-sandbox-commons/utils/auth-utils.js";
+import type { IsbRole } from "@amzn/innovation-sandbox-shared/utils/auth-utils.js";
 
 export type HttpMethod =
   | "OPTIONS"

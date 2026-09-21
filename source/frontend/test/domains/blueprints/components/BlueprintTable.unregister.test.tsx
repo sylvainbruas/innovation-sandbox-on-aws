@@ -49,13 +49,13 @@ describe("BlueprintTable - Unregister cache invalidation", () => {
   const blueprint1 = createBlueprintWithStackSets({
     blueprint: createBlueprint({
       name: "Blueprint-1",
-      blueprintId: "00000000-0000-0000-0000-000000000001",
+      blueprintId: "00000000-0000-4000-8000-000000000001",
     }),
   });
   const blueprint2 = createBlueprintWithStackSets({
     blueprint: createBlueprint({
       name: "Blueprint-2",
-      blueprintId: "00000000-0000-0000-0000-000000000002",
+      blueprintId: "00000000-0000-4000-8000-000000000002",
     }),
   });
 

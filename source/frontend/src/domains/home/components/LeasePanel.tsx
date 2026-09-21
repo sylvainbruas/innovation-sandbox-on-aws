@@ -10,11 +10,6 @@ import {
   SpaceBetween,
 } from "@cloudscape-design/components";
 
-import {
-  isExpiredLease,
-  isMonitoredLease,
-  LeaseWithLeaseId,
-} from "@amzn/innovation-sandbox-commons/data/lease/lease";
 import { AccountId } from "@amzn/innovation-sandbox-frontend/components/AccountId";
 import { BudgetProgressBar } from "@amzn/innovation-sandbox-frontend/components/BudgetProgressBar";
 import { DurationStatus } from "@amzn/innovation-sandbox-frontend/components/DurationStatus";
@@ -23,12 +18,17 @@ import { LeaseTemplateName } from "@amzn/innovation-sandbox-frontend/components/
 import { LeaseActions } from "@amzn/innovation-sandbox-frontend/domains/leases/components/LeaseActions";
 import { LeaseStatusBadge } from "@amzn/innovation-sandbox-frontend/domains/leases/components/LeaseStatusBadge";
 import { isLeaseOwner } from "@amzn/innovation-sandbox-frontend/domains/leases/helpers";
+import { LeaseView } from "@amzn/innovation-sandbox-frontend/domains/leases/model";
 import { useLeaseActions } from "@amzn/innovation-sandbox-frontend/domains/leases/useLeaseActions";
 import { getLeaseExpiryInfo } from "@amzn/innovation-sandbox-frontend/helpers/LeaseExpiryInfo";
 import { useUser } from "@amzn/innovation-sandbox-frontend/hooks/useUser";
+import {
+  isExpiredLease,
+  isMonitoredLease,
+} from "@amzn/innovation-sandbox-shared/types/lease.js";
 
 interface LeasePanelProps {
-  lease: LeaseWithLeaseId;
+  lease: LeaseView;
 }
 
 export const LeasePanel = ({ lease }: LeasePanelProps) => {

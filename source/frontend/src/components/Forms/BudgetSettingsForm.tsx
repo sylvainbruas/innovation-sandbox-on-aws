@@ -12,13 +12,13 @@ import {
   SelectProps,
   SpaceBetween,
 } from "@cloudscape-design/components";
+import { useEffect } from "react";
 import { useFieldArray, useFormContext } from "react-hook-form";
 
-import { BudgetThreshold } from "@amzn/innovation-sandbox-commons/data/lease-template/lease-template";
 import InputField from "@amzn/innovation-sandbox-frontend/components/FormFields/InputField";
 import SelectField from "@amzn/innovation-sandbox-frontend/components/FormFields/SelectField";
 import ToggleField from "@amzn/innovation-sandbox-frontend/components/FormFields/ToggleField";
-import { useEffect } from "react";
+import { BudgetThreshold } from "@amzn/innovation-sandbox-shared/types/lease-template";
 
 export const THRESHOLD_ACTION_OPTIONS: readonly SelectProps.Option[] = [
   { label: "Send Alert", value: "ALERT" },

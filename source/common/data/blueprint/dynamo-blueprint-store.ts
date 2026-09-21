@@ -11,7 +11,6 @@ import { DateTime } from "luxon";
 
 import {
   BLUEPRINT_SK,
-  DEPLOYMENT_HISTORY_RETENTION_DAYS,
   DEPLOYMENT_SK_PREFIX,
   STACKSET_SK_PREFIX,
   generateBlueprintPK,
@@ -23,14 +22,14 @@ import {
   BlueprintStore,
 } from "@amzn/innovation-sandbox-commons/data/blueprint/blueprint-store.js";
 import {
-  BlueprintItem,
-  BlueprintItemSchema,
   BlueprintSchemaVersion,
-  BlueprintWithStackSets,
-  BlueprintWithStackSetsSchema,
-  DeploymentHistoryItem,
-  DeploymentHistoryItemSchema,
-  StackSetItem,
+  PersistedBlueprintItem,
+  PersistedBlueprintItemSchema,
+  PersistedBlueprintWithStackSets,
+  PersistedBlueprintWithStackSetsSchema,
+  PersistedDeploymentHistoryItem,
+  PersistedDeploymentHistoryItemSchema,
+  PersistedStackSetItem,
 } from "@amzn/innovation-sandbox-commons/data/blueprint/blueprint.js";
 import {
   PaginatedQueryResult,
@@ -55,6 +54,7 @@ import {
   withMetadata,
 } from "@amzn/innovation-sandbox-commons/data/utils.js";
 import { nowAsIsoDatetimeString } from "@amzn/innovation-sandbox-commons/utils/time-utils.js";
+import { DEPLOYMENT_HISTORY_RETENTION_DAYS } from "@amzn/innovation-sandbox-shared/types/blueprint.js";
 import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
 
 export class DynamoBlueprintStore extends BlueprintStore {
@@ -77,9 +77,9 @@ export class DynamoBlueprintStore extends BlueprintStore {
   }
 
   public async createBlueprintWithStackSet(
-    blueprint: BlueprintItem,
-    stackSet: StackSetItem,
-  ): Promise<BlueprintWithStackSets> {
+    blueprint: PersistedBlueprintItem,
+    stackSet: PersistedStackSetItem,
+  ): Promise<PersistedBlueprintWithStackSets> {
     const blueprintWithMeta = withUpdatedMetadata(
       blueprint,
       BlueprintSchemaVersion,
@@ -127,9 +127,9 @@ export class DynamoBlueprintStore extends BlueprintStore {
   /**
    * Update blueprint metadata (mutable fields only)
    */
-  @validateItem(BlueprintItemSchema)
+  @validateItem(PersistedBlueprintItemSchema)
   @withMetadata(BlueprintSchemaVersion)
-  public async update<T extends BlueprintItem>(
+  public async update<T extends PersistedBlueprintItem>(
     blueprint: T,
     expected?: T,
   ): Promise<PutResult<T>> {
@@ -180,12 +180,12 @@ export class DynamoBlueprintStore extends BlueprintStore {
 
   /**
    * Update blueprint and stackSet together atomically.
-   * Used when updating fields that span both BlueprintItem and StackSetItem.
+   * Used when updating fields that span both PersistedBlueprintItem and PersistedStackSetItem.
    */
   public async updateBlueprintWithStackSet(
-    blueprint: BlueprintItem,
-    stackSet: StackSetItem,
-  ): Promise<BlueprintWithStackSets> {
+    blueprint: PersistedBlueprintItem,
+    stackSet: PersistedStackSetItem,
+  ): Promise<PersistedBlueprintWithStackSets> {
     const blueprintWithMeta = withUpdatedMetadata(
       blueprint,
       BlueprintSchemaVersion,
@@ -294,7 +294,7 @@ export class DynamoBlueprintStore extends BlueprintStore {
   public async listBlueprints(props?: {
     pageIdentifier?: string;
     pageSize?: number;
-  }): Promise<PaginatedQueryResult<BlueprintWithStackSets>> {
+  }): Promise<PaginatedQueryResult<PersistedBlueprintWithStackSets>> {
     const { pageSize, pageIdentifier } = props ?? {};
 
     const result = await this.ddbClient.send(
@@ -312,7 +312,7 @@ export class DynamoBlueprintStore extends BlueprintStore {
 
     const blueprintItems = parseResults(
       result.Items,
-      BlueprintItemSchema,
+      PersistedBlueprintItemSchema,
     ).result;
 
     // Fetch recent deployments for each blueprint (last 10)
@@ -336,7 +336,7 @@ export class DynamoBlueprintStore extends BlueprintStore {
 
         const recentDeployments = parseResults(
           deploymentsResult.Items,
-          DeploymentHistoryItemSchema,
+          PersistedDeploymentHistoryItemSchema,
         ).result;
 
         // For list view, we don't need stackSets, just blueprint + deployments
@@ -359,7 +359,7 @@ export class DynamoBlueprintStore extends BlueprintStore {
    */
   public async get(
     blueprintId: string,
-  ): Promise<SingleItemResult<BlueprintWithStackSets>> {
+  ): Promise<SingleItemResult<PersistedBlueprintWithStackSets>> {
     const pk = generateBlueprintPK(blueprintId);
 
     // Query 1: Get blueprint item
@@ -379,7 +379,7 @@ export class DynamoBlueprintStore extends BlueprintStore {
       return { result: undefined };
     }
 
-    const blueprint = blueprintItems[0] as BlueprintItem;
+    const blueprint = blueprintItems[0] as PersistedBlueprintItem;
 
     // Query 2: Get all stackset items
     const stackSetResult = await this.ddbClient.send(
@@ -394,7 +394,7 @@ export class DynamoBlueprintStore extends BlueprintStore {
     );
 
     const stackSets =
-      stackSetResult.Items?.map((item) => item as StackSetItem) || [];
+      stackSetResult.Items?.map((item) => item as PersistedStackSetItem) || [];
 
     // Query 3: Get recent deployments in reverse chronological order
     const deploymentsResult = await this.ddbClient.send(
@@ -411,10 +411,11 @@ export class DynamoBlueprintStore extends BlueprintStore {
     );
 
     const deployments =
-      deploymentsResult.Items?.map((item) => item as DeploymentHistoryItem) ||
-      [];
+      deploymentsResult.Items?.map(
+        (item) => item as PersistedDeploymentHistoryItem,
+      ) || [];
 
-    const blueprintWithStackSets: BlueprintWithStackSets = {
+    const blueprintWithStackSets: PersistedBlueprintWithStackSets = {
       blueprint,
       stackSets,
       recentDeployments: deployments,
@@ -422,7 +423,7 @@ export class DynamoBlueprintStore extends BlueprintStore {
 
     return parseSingleItemResult(
       blueprintWithStackSets,
-      BlueprintWithStackSetsSchema,
+      PersistedBlueprintWithStackSetsSchema,
     );
   }
 
@@ -436,7 +437,7 @@ export class DynamoBlueprintStore extends BlueprintStore {
     accountId: string;
     operationId: string;
     deploymentStartedAt: string;
-  }): Promise<DeploymentHistoryItem> {
+  }): Promise<PersistedDeploymentHistoryItem> {
     const {
       blueprintId,
       stackSetId,
@@ -450,7 +451,7 @@ export class DynamoBlueprintStore extends BlueprintStore {
     const sk = generateDeploymentSK(deploymentStartedAt, operationId);
     const now = nowAsIsoDatetimeString();
 
-    const deploymentItem: DeploymentHistoryItem = {
+    const deploymentItem: PersistedDeploymentHistoryItem = {
       PK: pk,
       SK: sk,
       itemType: "DEPLOYMENT",
@@ -487,7 +488,7 @@ export class DynamoBlueprintStore extends BlueprintStore {
       pageIdentifier?: string;
       pageSize?: number;
     },
-  ): Promise<PaginatedQueryResult<DeploymentHistoryItem>> {
+  ): Promise<PaginatedQueryResult<PersistedDeploymentHistoryItem>> {
     const { pageSize = 20, pageIdentifier } = props ?? {};
     const pk = generateBlueprintPK(blueprintId);
 
@@ -506,7 +507,7 @@ export class DynamoBlueprintStore extends BlueprintStore {
     );
 
     return {
-      ...parseResults(result.Items, DeploymentHistoryItemSchema),
+      ...parseResults(result.Items, PersistedDeploymentHistoryItemSchema),
       nextPageIdentifier: base64EncodeCompositeKey(result.LastEvaluatedKey),
     };
   }
